@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../platform/http/app-env';
-import { createApi, ErrorSchema, json } from '../../platform/http/openapi';
+import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
 import { rateLimit } from '../../platform/http/rate-limit';
 import {
   ApproveInput,
@@ -132,7 +132,14 @@ const historyRoute = createRoute({
   method: 'get',
   path: '/api/entities/{id}/history',
   request: { params: HistoryParams, query: HistoryQuery },
-  responses: { 200: json(HistorySchema), 404: json(ErrorSchema, 'Not found') },
+  responses: {
+    200: json(HistorySchema),
+    308: {
+      ...json(RedirectSchema, 'The id was merged into another entity; follow `Location`'),
+      headers: z.object({ Location: z.string() }),
+    },
+    404: json(ErrorSchema, 'Not found'),
+  },
 });
 
 const ANON_LIMIT = 20;
@@ -244,6 +251,9 @@ export function changesRoutes(changes: ChangesService) {
 
   app.openapi(historyRoute, async (c) => {
     const page = await changes.history(c.req.valid('param').id, c.req.valid('query'));
+    if ('redirectTo' in page) {
+      return c.json(page, 308, { Location: `/api/entities/${page.redirectTo}/history` });
+    }
     return c.json(page, 200);
   });
 

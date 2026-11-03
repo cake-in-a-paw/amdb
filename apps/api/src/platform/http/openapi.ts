@@ -12,6 +12,9 @@ export const json = <T extends z.ZodType>(schema: T, description = 'OK') => ({
   content: { 'application/json': { schema } },
 });
 
+/** Body of a 308 for a merged id; `Location` carries the same target. */
+export const RedirectSchema = z.object({ redirectTo: z.uuid() });
+
 export const OkSchema = z.object({ ok: z.literal(true) });
 
 /** OpenAPIHono with our error format for request-validation failures. */

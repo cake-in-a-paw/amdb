@@ -5,10 +5,11 @@ import { z } from '@hono/zod-openapi';
 import { and, arrayContains, eq, inArray, isNull, ne, or } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
-import { ApiError, conflict } from '../../platform/http/errors';
+import { resolveWinner } from '../../platform/db/merge';
+import { badRequest, conflict } from '../../platform/http/errors';
 import { normalizeTitle } from '../catalog/normalize';
 import type { ChangeRow } from './repository';
-import { RelatePayload, UnrelatePayload } from './schemas';
+import { MergePayload, RelatePayload, UnrelatePayload } from './schemas';
 
 /**
  * The one place catalog tables are written (constitution VIII). Each applied change returns the
@@ -29,7 +30,19 @@ export const InverseSchema = z.discriminatedUnion('op', [
   z.object({ op: z.literal('remove_relation'), relationId: z.uuid() }),
   /** Inverse of an unrelate. */
   z.object({ op: z.literal('restore_relation'), relationId: z.uuid() }),
-  z.object({ op: z.literal('unmerge'), from: z.uuid(), into: z.uuid(), movedRelationIds: z.array(z.uuid()) }),
+  /**
+   * Inverse of a merge: `from` is live again and the relations repointed to `into` go back
+   * (`movedAsTo` are those whose `to` end moved, the rest moved their `from` end); relations the
+   * merge dropped as duplicates are restored.
+   */
+  z.object({
+    op: z.literal('unmerge'),
+    from: z.uuid(),
+    into: z.uuid(),
+    movedRelationIds: z.array(z.uuid()),
+    movedAsTo: z.array(z.uuid()),
+    removedRelationIds: z.array(z.uuid()),
+  }),
 ]);
 export type Inverse = z.infer<typeof InverseSchema>;
 
@@ -136,19 +149,6 @@ async function kindRow(tx: Tx, kind: EntityKind, id: string): Promise<Record<str
   return row;
 }
 
-/** Follows `merged_into_id` to the entity that finally holds `id`'s data. */
-async function winner(tx: Tx, id: string): Promise<string> {
-  let current = id;
-  const seen = new Set<string>();
-  for (;;) {
-    const [row] = await tx.select({ into: entities.mergedIntoId }).from(entities).where(eq(entities.id, current));
-    if (!row?.into) return current;
-    if (seen.has(current)) throw new Error(`merge cycle at ${current}`);
-    seen.add(current);
-    current = row.into;
-  }
-}
-
 /** The live entity `id` (not removed or retracted), locked for the rest of the transaction. */
 async function lockEntity(tx: Tx, id: string) {
   const [row] = await tx
@@ -170,8 +170,6 @@ function targetOf(change: ChangeRow): string {
   if (!change.entityId) throw new Error(`change ${change.id} (${change.op}) has no entity id`);
   return change.entityId;
 }
-
-const notImplemented = () => new ApiError(501, 'not_implemented', 'Merging isn’t available yet');
 
 /** Applies one change to current state in `tx`, returning its inverse. Throws ApiError on conflict. */
 export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
@@ -198,7 +196,7 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       return { op: 'retract_entity', entityId: id };
     }
     case 'update': {
-      const id = await winner(tx, targetOf(change));
+      const id = await resolveWinner(tx, targetOf(change));
       const entity = await requireEntity(tx, id);
       const current = await kindRow(tx, change.kind, id);
       const base = change.base;
@@ -229,9 +227,9 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
     }
     case 'relate': {
       const p = RelatePayload.parse(change.payload);
-      const from = await winner(tx, p.from);
+      const from = await resolveWinner(tx, p.from);
       await requireEntity(tx, from);
-      const to = p.to ? await winner(tx, p.to) : null;
+      const to = p.to ? await resolveWinner(tx, p.to) : null;
       if (to) await requireEntity(tx, to);
       const relationId = randomUUID();
       await tx.insert(relations).values({
@@ -258,9 +256,80 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       if (!removed.length) throw conflict('stale_change', `Relation ${relationId} was already removed`, { relationId });
       return { op: 'restore_relation', relationId };
     }
-    case 'merge':
-      throw notImplemented();
+    case 'merge': {
+      const { from: fromId, into } = MergePayload.parse(change.payload);
+      const intoId = await resolveWinner(tx, into);
+      if (intoId === fromId) throw badRequest('self_merge', 'An entity can’t merge into itself');
+      const { loser, target } = await lockPair(tx, fromId, intoId);
+      if (loser.mergedIntoId) throw conflict('already_merged', `Entity ${fromId} was already merged`);
+      if (target.mergedIntoId) throw conflict('stale_change', `Entity ${intoId} was merged away meanwhile`);
+      if (loser.kind !== change.kind || target.kind !== loser.kind) {
+        throw badRequest('kind_mismatch', 'Only entities of the same kind can be merged');
+      }
+      const touching = (id: string) =>
+        and(or(eq(relations.fromId, id), eq(relations.toId, id)), isNull(relations.removedByChange));
+      const loserRels = await tx
+        .select()
+        .from(relations)
+        .where(touching(fromId))
+        .orderBy(relations.createdAt, relations.id)
+        .for('update');
+      const seen = new Set((await tx.select().from(relations).where(touching(intoId))).map(relationKey));
+      const moved: string[] = [];
+      const movedAsTo: string[] = [];
+      const removed: string[] = [];
+      for (const r of loserRels) {
+        const after = {
+          ...r,
+          fromId: r.fromId === fromId ? intoId : r.fromId,
+          toId: r.toId === fromId ? intoId : r.toId,
+        };
+        // Repointing would duplicate a relation the winner has (or link it to itself): drop it.
+        if (after.fromId === after.toId || seen.has(relationKey(after))) {
+          removed.push(r.id);
+          continue;
+        }
+        seen.add(relationKey(after));
+        moved.push(r.id);
+        if (r.toId === fromId) movedAsTo.push(r.id);
+        await tx.update(relations).set({ fromId: after.fromId, toId: after.toId }).where(eq(relations.id, r.id));
+      }
+      if (removed.length) {
+        await tx.update(relations).set({ removedByChange: change.id }).where(inArray(relations.id, removed));
+      }
+      await tx.update(entities).set({ mergedIntoId: intoId, updatedAt: new Date() }).where(eq(entities.id, fromId));
+      await tx.update(entities).set({ updatedAt: new Date() }).where(eq(entities.id, intoId));
+      return {
+        op: 'unmerge',
+        from: fromId,
+        into: intoId,
+        movedRelationIds: moved,
+        movedAsTo,
+        removedRelationIds: removed,
+      };
+    }
   }
+}
+
+/** Two relations are duplicates when they agree on everything but position and identity. */
+const relationKey = (r: typeof relations.$inferSelect) =>
+  JSON.stringify([r.type, r.fromId, r.toId, r.role, r.linkType, r.scheme, r.value]);
+
+/**
+ * Locks `fromId` and `intoId` (in id order, so concurrent merges can't deadlock) and returns
+ * them. Throws 409 if either isn't live. Merged ones are still returned: callers check.
+ */
+async function lockPair(tx: Tx, fromId: string, intoId: string) {
+  const rows = new Map<string, typeof entities.$inferSelect>();
+  for (const id of [fromId, intoId].toSorted()) {
+    const row = await lockEntity(tx, id);
+    if (!row) throw conflict('entity_unavailable', `Entity ${id} is removed or doesn’t exist`);
+    rows.set(id, row);
+  }
+  const loser = rows.get(fromId);
+  const target = rows.get(intoId);
+  if (!loser || !target) throw new Error('lockPair lost an entity');
+  return { loser, target };
 }
 
 /**
@@ -292,7 +361,7 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       return;
     }
     case 'update': {
-      const id = await winner(tx, targetOf(change));
+      const id = await resolveWinner(tx, targetOf(change));
       const entity = await requireEntity(tx, id);
       const changed = Object.keys(fieldsOf(change.payload)).filter((k) => entity.fieldSources[k] !== change.id);
       if (changed.length) {
@@ -315,8 +384,33 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       if (!asLeft) throw conflict('stale_change', `Relation ${relationId} changed since this change went live`);
       return;
     }
-    case 'merge':
-      throw notImplemented();
+    case 'merge': {
+      const inverse = InverseSchema.parse(change.inverse);
+      if (inverse.op !== 'unmerge') throw new Error(`merge change ${change.id} has inverse ${inverse.op}`);
+      const stale = (why: string) => conflict('stale_change', why);
+      const { loser, target } = await lockPair(tx, inverse.from, inverse.into);
+      if (loser.mergedIntoId !== inverse.into)
+        throw stale(`Entity ${inverse.from} is no longer merged into ${inverse.into}`);
+      if (target.mergedIntoId) throw stale(`Entity ${inverse.into} was merged into another entity since`);
+      const moved = inverse.movedRelationIds.length
+        ? await tx.select().from(relations).where(inArray(relations.id, inverse.movedRelationIds)).for('update')
+        : [];
+      const asTo = new Set(inverse.movedAsTo);
+      const intact = moved.filter((r) => !r.removedByChange && (asTo.has(r.id) ? r.toId : r.fromId) === inverse.into);
+      if (intact.length !== inverse.movedRelationIds.length) {
+        throw stale('Relations this merge moved have changed since');
+      }
+      const dropped = inverse.removedRelationIds.length
+        ? await tx.select().from(relations).where(inArray(relations.id, inverse.removedRelationIds)).for('update')
+        : [];
+      if (
+        dropped.length !== inverse.removedRelationIds.length ||
+        dropped.some((r) => r.removedByChange !== change.id)
+      ) {
+        throw stale('Relations this merge dropped have changed since');
+      }
+      return;
+    }
   }
 }
 
@@ -371,7 +465,24 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       await tx.update(relations).set({ removedByChange: null }).where(eq(relations.id, inverse.relationId));
       return;
     }
-    case 'unmerge':
-      throw notImplemented();
+    case 'unmerge': {
+      const { loser, target } = await lockPair(tx, inverse.from, inverse.into);
+      if (loser.mergedIntoId !== inverse.into || target.mergedIntoId) {
+        throw conflict('stale_change', `Entity ${inverse.from} is no longer merged into ${inverse.into}`);
+      }
+      const asTo = inverse.movedRelationIds.filter((id) => inverse.movedAsTo.includes(id));
+      const asFrom = inverse.movedRelationIds.filter((id) => !inverse.movedAsTo.includes(id));
+      if (asTo.length) await tx.update(relations).set({ toId: inverse.from }).where(inArray(relations.id, asTo));
+      if (asFrom.length) await tx.update(relations).set({ fromId: inverse.from }).where(inArray(relations.id, asFrom));
+      if (inverse.removedRelationIds.length) {
+        await tx
+          .update(relations)
+          .set({ removedByChange: null })
+          .where(inArray(relations.id, inverse.removedRelationIds));
+      }
+      await tx.update(entities).set({ mergedIntoId: null, updatedAt: new Date() }).where(eq(entities.id, inverse.from));
+      await tx.update(entities).set({ updatedAt: new Date() }).where(eq(entities.id, inverse.into));
+      return;
+    }
   }
 }

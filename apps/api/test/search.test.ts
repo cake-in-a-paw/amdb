@@ -95,7 +95,18 @@ it('search leaves out pending and retracted entities', async () => {
   }
 });
 
-it.todo('search skips merged entities');
+it('search skips merged entities', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    const created = await publish(author, mod, [work('Arrival'), { ...work('Arrival (dup)'), ref: 'd' }]);
+    const [a, b] = created.changes.map((c) => c.entityId!);
+    expect((await search('q=arrival')).items).toHaveLength(2);
+    await publish(author, mod, [{ op: 'merge', kind: 'work', from: b, into: a }]);
+    expect((await search('q=arrival')).items.map((i) => i.id)).toEqual([a]);
+  } finally {
+    await t.close();
+  }
+});
 
 it('duplicates shows a pending create’s title, mediaType and year, and nothing else', async () => {
   const { t, author, mod, anon } = await setup();

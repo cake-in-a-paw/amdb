@@ -188,6 +188,9 @@ export function changesRepository(db: DbOrTx) {
             inArray(changes.status, ['approved', 'published']),
             or(
               eq(changes.entityId, entityId),
+              // A merge into this entity, and the revert of one.
+              and(eq(changes.op, 'merge'), sql`${changes.payload}->>'into' = ${entityId}`),
+              sql`exists (select 1 from ${changes} m where m.op = 'merge' and m.payload->>'into' = ${entityId} and m.id::text = ${changes.payload}->>'revertOf')`,
               sql`${changes.relationId} in (select ${relations.id} from ${relations} where ${relations.fromId} = ${entityId} or ${relations.toId} = ${entityId})`,
             ),
             after

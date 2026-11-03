@@ -1941,6 +1941,33 @@
               }
             }
           },
+          "308": {
+            "description": "The id was merged into another entity; follow `Location`",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectTo": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "redirectTo"
+                  ]
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not found",
             "content": {
@@ -2419,6 +2446,33 @@
                     "fields",
                     "fieldSources",
                     "relations"
+                  ]
+                }
+              }
+            }
+          },
+          "308": {
+            "description": "The id was merged into another entity; follow `Location`",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectTo": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "redirectTo"
                   ]
                 }
               }

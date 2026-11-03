@@ -1,5 +1,6 @@
 import { MediaType, type EntityKind } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
+import { resolveWinner } from '../../platform/db/merge';
 import { notFound } from '../../platform/http/errors';
 import { decodeKeyCursor, encodeKeyCursor } from '../../platform/http/pagination';
 import { normalizeTitle } from './normalize';
@@ -35,12 +36,13 @@ export function createCatalogService(db: Db) {
   const repo = catalogRepository(db);
 
   return {
-    /** Current state of a live entity. A reserved id whose create isn't live yet is unknown: 404. */
-    async getEntity(id: string): Promise<EntityView> {
+    /** Current state of a live entity; a merged id answers `{ redirectTo }` with its winner. A reserved id whose create isn't live yet is unknown: 404. */
+    async getEntity(id: string): Promise<EntityView | { redirectTo: string }> {
+      const winnerId = await resolveWinner(db, id);
+      if (winnerId !== id) return { redirectTo: winnerId };
       const entity = await repo.findEntity(id);
-      // A retracted entity is unknown. Merged and removed ones get their own answers in later tasks;
-      // until then they are not found either.
-      if (!entity || entity.removedAt || entity.retractedByChange || entity.mergedIntoId) throw notFound();
+      // A retracted entity is unknown. Removed ones get their own answer in a later task; until then not found either.
+      if (!entity || entity.removedAt || entity.retractedByChange) throw notFound();
       const row = await repo.kindRow(entity.kind, id);
       if (!row) throw new Error(`entity ${id} has no ${entity.kind} row`);
       const fields = Object.fromEntries(Object.entries(row).filter(([k]) => !DERIVED.has(k)));

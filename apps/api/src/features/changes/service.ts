@@ -10,6 +10,7 @@ import {
 import type { z } from '@hono/zod-openapi';
 import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
+import { resolveWinner } from '../../platform/db/merge';
 import { badRequest, conflict, notFound } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { normalizeTitle } from '../catalog/normalize';
@@ -28,6 +29,7 @@ import {
   type ApproveInput,
   ChangeInput,
   HistoryCursor,
+  type HistorySchema,
   QueueCursor,
   type EntityRef,
   MergePayload,
@@ -322,9 +324,11 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           };
         }
         case 'merge': {
-          if (change.from === change.into) throw badRequest('invalid_merge', 'An entity can’t merge into itself');
+          // Merging into an entity that was itself merged goes to its winner.
+          const intoId = await resolveWinner(db, change.into);
+          if (change.from === intoId) throw badRequest('self_merge', 'An entity can’t merge into itself');
           const from = await lookupEntity(actor, change.from);
-          const into = await lookupEntity(actor, change.into);
+          const into = await lookupEntity(actor, intoId);
           expectKind(index, from, change.kind);
           expectKind(index, into, change.kind);
           return {
@@ -506,8 +510,14 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       });
     },
 
-    /** Approved and published changes that touched the entity, newest first. Public. */
-    async history(id: string, query: { cursor?: string; limit: number }) {
+    /** Approved and published changes that touched the entity, newest first. Public. A merged id answers `{ redirectTo }`. */
+    async history(
+      id: string,
+      query: { cursor?: string; limit: number },
+    ): Promise<{ redirectTo: string } | z.infer<typeof HistorySchema>> {
+      // A merged id's history is its winner's.
+      const winnerId = await resolveWinner(db, id);
+      if (winnerId !== id) return { redirectTo: winnerId };
       if (!(await repo.findEntity(id))) throw notFound();
       const rows = await repo.history(id, decodeKeyCursor(query.cursor, HistoryCursor), query.limit);
       const items = rows.slice(0, query.limit);
