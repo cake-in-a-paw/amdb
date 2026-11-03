@@ -24,6 +24,13 @@ export interface QueueKey {
   seq: number;
 }
 
+/** The history sort key: newest applied first, then submission order, then id. */
+export interface HistoryKey {
+  appliedAt: string;
+  seq: number;
+  id: string;
+}
+
 export type Owner = { userId: string } | { anonHash: string };
 
 export interface NewChange {
@@ -162,6 +169,40 @@ export function changesRepository(db: DbOrTx) {
 
     async findResubmission(id: string) {
       const [row] = await db.select({ id: changes.id }).from(changes).where(eq(changes.resubmitOf, id));
+      return row ?? null;
+    },
+
+    /**
+     * Approved and published changes that touched the entity (as a target, or through a relation
+     * it is an end of), newest first; fetches `limit` + 1.
+     */
+    async history(entityId: string, after: HistoryKey | null, limit: number) {
+      return db
+        .select({ change: changes, authorUserId: submissions.authorUserId })
+        .from(changes)
+        .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .where(
+          and(
+            inArray(changes.status, ['approved', 'published']),
+            or(
+              eq(changes.entityId, entityId),
+              sql`${changes.relationId} in (select ${relations.id} from ${relations} where ${relations.fromId} = ${entityId} or ${relations.toId} = ${entityId})`,
+            ),
+            after
+              ? sql`(${changes.appliedAt}, ${changes.seq}, ${changes.id}) < (${after.appliedAt}::timestamptz, ${after.seq}::int, ${after.id}::uuid)`
+              : undefined,
+          ),
+        )
+        .orderBy(desc(changes.appliedAt), desc(changes.seq), desc(changes.id))
+        .limit(limit + 1);
+    },
+
+    /** The live revert of `id`, if any. */
+    async findRevert(id: string) {
+      const [row] = await db
+        .select({ id: changes.id })
+        .from(changes)
+        .where(and(sql`${changes.payload}->>'revertOf' = ${id}`, inArray(changes.status, ['approved', 'published'])));
       return row ?? null;
     },
 

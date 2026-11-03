@@ -1,13 +1,37 @@
+import { MediaType, type EntityKind } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
 import { notFound } from '../../platform/http/errors';
+import { decodeKeyCursor, encodeKeyCursor } from '../../platform/http/pagination';
+import { normalizeTitle } from './normalize';
 import { catalogRepository } from './repository';
-import type { EntityView, Summary } from './schemas';
+import { type EntityView, SearchCursor, type SearchQuery, type Summary } from './schemas';
 
 /** Columns derived from others, not shown as fields. */
 const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
 
 const byPosition = <T extends { position?: number }>(items: T[]) =>
   items.toSorted((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
+
+/** The most pending creates one duplicate check looks through. */
+const PENDING_SCAN = 500;
+/** The most existing matches a duplicate check lists. */
+const DUPLICATE_LIMIT = 10;
+
+interface SummaryRow {
+  id: string;
+  kind: EntityKind;
+  title: string;
+  mediaType: MediaType | null;
+  releaseYear: number | null;
+}
+
+const toSummary = (s: SummaryRow): Summary => ({
+  id: s.id,
+  kind: s.kind,
+  title: s.title,
+  ...(s.mediaType ? { mediaType: s.mediaType } : {}),
+  ...(s.releaseYear !== null ? { releaseYear: s.releaseYear } : {}),
+});
 
 export function createCatalogService(db: Db) {
   const repo = catalogRepository(db);
@@ -26,16 +50,7 @@ export function createCatalogService(db: Db) {
       const active = await repo.activeRelations(id);
       const others = active.flatMap((r) => [r.fromId, r.toId]).filter((x): x is string => !!x && x !== id);
       const summaries = new Map(
-        (await repo.summaries([...new Set(others)])).map((s): [string, Summary] => [
-          s.id,
-          {
-            id: s.id,
-            kind: s.kind,
-            title: s.title,
-            ...(s.mediaType ? { mediaType: s.mediaType } : {}),
-            ...(s.releaseYear !== null ? { releaseYear: s.releaseYear } : {}),
-          },
-        ]),
+        (await repo.summaries([...new Set(others)])).map((s): [string, Summary] => [s.id, toSummary(s)]),
       );
       // Only relations to listed entities are shown; `summaries` holds exactly those.
       const isShown = (x: string | null) => x === null || x === id || summaries.has(x);
@@ -111,7 +126,53 @@ export function createCatalogService(db: Db) {
           relations.works = incoming('work_tag').map((r) => ({ relationId: r.id, work: summary(r.fromId) }));
           break;
       }
-      return { id, kind: entity.kind, fields, relations };
+      return { id, kind: entity.kind, fields, fieldSources: entity.fieldSources, relations };
+    },
+
+    /** Listed entities matching the query, alphabetical by title. Excludes removed, retracted and merged ones. */
+    async search(query: SearchQuery) {
+      const rows = await repo.search(
+        normalizeTitle(query.q),
+        { kind: query.kind, mediaType: query.mediaType },
+        decodeKeyCursor(query.cursor, SearchCursor),
+        query.limit,
+      );
+      const items = rows.slice(0, query.limit);
+      const last = items.at(-1);
+      return {
+        items: items.map(toSummary),
+        nextCursor: rows.length > query.limit && last ? encodeKeyCursor({ title: last.title, id: last.id }) : null,
+      };
+    },
+
+    /**
+     * What a contributor should look at before creating `title`: the entities that already match,
+     * and pending creates that match, showing only kind, title, media type and year (spec §5.3).
+     */
+    async duplicates(query: { kind: EntityKind; title: string; mediaType?: MediaType }) {
+      const norm = normalizeTitle(query.title);
+      const existing = await repo.search(
+        norm,
+        { kind: query.kind, mediaType: query.mediaType },
+        null,
+        DUPLICATE_LIMIT - 1,
+      );
+      const pending = (await repo.pendingCreates(query.kind, PENDING_SCAN)).flatMap(({ payload }) => {
+        const title = payload?.title ?? payload?.name;
+        const mediaType = MediaType.safeParse(payload?.mediaType);
+        const year = payload?.releaseYear;
+        if (typeof title !== 'string' || !normalizeTitle(title).includes(norm)) return [];
+        if (query.mediaType && (!mediaType.success || mediaType.data !== query.mediaType)) return [];
+        return [
+          {
+            kind: query.kind,
+            title,
+            mediaType: mediaType.success ? mediaType.data : null,
+            releaseYear: typeof year === 'number' ? year : null,
+          },
+        ];
+      });
+      return { existing: existing.map(toSummary), pending };
     },
   };
 }

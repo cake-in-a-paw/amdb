@@ -31,10 +31,16 @@
                 "properties": {
                   "role": {
                     "type": "string",
-                    "enum": ["contributor", "moderator", "admin"]
+                    "enum": [
+                      "contributor",
+                      "moderator",
+                      "admin"
+                    ]
                   }
                 },
-                "required": ["role"]
+                "required": [
+                  "role"
+                ]
               }
             }
           }
@@ -53,10 +59,17 @@
                     },
                     "role": {
                       "type": "string",
-                      "enum": ["contributor", "moderator", "admin"]
+                      "enum": [
+                        "contributor",
+                        "moderator",
+                        "admin"
+                      ]
                     }
                   },
-                  "required": ["id", "role"]
+                  "required": [
+                    "id",
+                    "role"
+                  ]
                 }
               }
             }
@@ -81,10 +94,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -103,7 +121,9 @@
                 "properties": {
                   "cc0": {
                     "type": "boolean",
-                    "enum": [true]
+                    "enum": [
+                      true
+                    ]
                   },
                   "note": {
                     "type": "string",
@@ -118,11 +138,19 @@
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": ["create"]
+                              "enum": [
+                                "create"
+                              ]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": ["work", "creator", "series", "property", "tag"]
+                              "enum": [
+                                "work",
+                                "creator",
+                                "series",
+                                "property",
+                                "tag"
+                              ]
                             },
                             "ref": {
                               "type": "string",
@@ -136,18 +164,31 @@
                               }
                             }
                           },
-                          "required": ["op", "kind", "ref", "fields"]
+                          "required": [
+                            "op",
+                            "kind",
+                            "ref",
+                            "fields"
+                          ]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": ["update"]
+                              "enum": [
+                                "update"
+                              ]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": ["work", "creator", "series", "property", "tag"]
+                              "enum": [
+                                "work",
+                                "creator",
+                                "series",
+                                "property",
+                                "tag"
+                              ]
                             },
                             "entityId": {
                               "type": "string",
@@ -160,14 +201,21 @@
                               }
                             }
                           },
-                          "required": ["op", "kind", "entityId", "fields"]
+                          "required": [
+                            "op",
+                            "kind",
+                            "entityId",
+                            "fields"
+                          ]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": ["relate"]
+                              "enum": [
+                                "relate"
+                              ]
                             },
                             "type": {
                               "type": "string",
@@ -190,7 +238,9 @@
                                       "format": "uuid"
                                     }
                                   },
-                                  "required": ["id"]
+                                  "required": [
+                                    "id"
+                                  ]
                                 },
                                 {
                                   "type": "object",
@@ -201,7 +251,9 @@
                                       "maxLength": 40
                                     }
                                   },
-                                  "required": ["ref"]
+                                  "required": [
+                                    "ref"
+                                  ]
                                 }
                               ]
                             },
@@ -215,7 +267,9 @@
                                       "format": "uuid"
                                     }
                                   },
-                                  "required": ["id"]
+                                  "required": [
+                                    "id"
+                                  ]
                                 },
                                 {
                                   "type": "object",
@@ -226,7 +280,9 @@
                                       "maxLength": 40
                                     }
                                   },
-                                  "required": ["ref"]
+                                  "required": [
+                                    "ref"
+                                  ]
                                 }
                               ]
                             },
@@ -242,11 +298,21 @@
                                 },
                                 "linkType": {
                                   "type": "string",
-                                  "enum": ["adapted_from", "sequel_of", "remake_of", "spin_off_of"]
+                                  "enum": [
+                                    "adapted_from",
+                                    "sequel_of",
+                                    "remake_of",
+                                    "spin_off_of"
+                                  ]
                                 },
                                 "scheme": {
                                   "type": "string",
-                                  "enum": ["wikidata", "openlibrary", "isbn13", "imdb"]
+                                  "enum": [
+                                    "wikidata",
+                                    "openlibrary",
+                                    "isbn13",
+                                    "imdb"
+                                  ]
                                 },
                                 "value": {
                                   "type": "string"
@@ -254,32 +320,50 @@
                               }
                             }
                           },
-                          "required": ["op", "type", "from", "data"]
+                          "required": [
+                            "op",
+                            "type",
+                            "from",
+                            "data"
+                          ]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": ["unrelate"]
+                              "enum": [
+                                "unrelate"
+                              ]
                             },
                             "relationId": {
                               "type": "string",
                               "format": "uuid"
                             }
                           },
-                          "required": ["op", "relationId"]
+                          "required": [
+                            "op",
+                            "relationId"
+                          ]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": ["merge"]
+                              "enum": [
+                                "merge"
+                              ]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": ["work", "creator", "series", "property", "tag"]
+                              "enum": [
+                                "work",
+                                "creator",
+                                "series",
+                                "property",
+                                "tag"
+                              ]
                             },
                             "from": {
                               "type": "string",
@@ -290,7 +374,12 @@
                               "format": "uuid"
                             }
                           },
-                          "required": ["op", "kind", "from", "into"]
+                          "required": [
+                            "op",
+                            "kind",
+                            "from",
+                            "into"
+                          ]
                         }
                       ]
                     },
@@ -298,7 +387,10 @@
                     "maxItems": 200
                   }
                 },
-                "required": ["cc0", "changes"]
+                "required": [
+                  "cc0",
+                  "changes"
+                ]
               }
             }
           }
@@ -329,11 +421,22 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": ["create", "update", "relate", "unrelate", "merge"]
+                            "enum": [
+                              "create",
+                              "update",
+                              "relate",
+                              "unrelate",
+                              "merge"
+                            ]
                           },
                           "status": {
                             "type": "string",
-                            "enum": ["pending", "published", "approved", "rejected"]
+                            "enum": [
+                              "pending",
+                              "published",
+                              "approved",
+                              "rejected"
+                            ]
                           },
                           "entityId": {
                             "type": "string",
@@ -341,11 +444,20 @@
                             "format": "uuid"
                           }
                         },
-                        "required": ["id", "seq", "op", "status", "entityId"]
+                        "required": [
+                          "id",
+                          "seq",
+                          "op",
+                          "status",
+                          "entityId"
+                        ]
                       }
                     }
                   },
-                  "required": ["id", "changes"]
+                  "required": [
+                    "id",
+                    "changes"
+                  ]
                 }
               }
             }
@@ -370,10 +482,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -398,10 +515,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -461,11 +583,23 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": ["create", "update", "relate", "unrelate", "merge"]
+                            "enum": [
+                              "create",
+                              "update",
+                              "relate",
+                              "unrelate",
+                              "merge"
+                            ]
                           },
                           "kind": {
                             "type": "string",
-                            "enum": ["work", "creator", "series", "property", "tag"]
+                            "enum": [
+                              "work",
+                              "creator",
+                              "series",
+                              "property",
+                              "tag"
+                            ]
                           },
                           "entityId": {
                             "type": "string",
@@ -479,7 +613,12 @@
                           },
                           "status": {
                             "type": "string",
-                            "enum": ["pending", "published", "approved", "rejected"]
+                            "enum": [
+                              "pending",
+                              "published",
+                              "approved",
+                              "rejected"
+                            ]
                           },
                           "reason": {
                             "type": "string",
@@ -523,7 +662,13 @@
                       }
                     }
                   },
-                  "required": ["id", "note", "createdAt", "authorUserId", "changes"]
+                  "required": [
+                    "id",
+                    "note",
+                    "createdAt",
+                    "authorUserId",
+                    "changes"
+                  ]
                 }
               }
             }
@@ -548,10 +693,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -621,22 +771,50 @@
                                 },
                                 "op": {
                                   "type": "string",
-                                  "enum": ["create", "update", "relate", "unrelate", "merge"]
+                                  "enum": [
+                                    "create",
+                                    "update",
+                                    "relate",
+                                    "unrelate",
+                                    "merge"
+                                  ]
                                 },
                                 "kind": {
                                   "type": "string",
-                                  "enum": ["work", "creator", "series", "property", "tag"]
+                                  "enum": [
+                                    "work",
+                                    "creator",
+                                    "series",
+                                    "property",
+                                    "tag"
+                                  ]
                                 },
                                 "status": {
                                   "type": "string",
-                                  "enum": ["pending", "published", "approved", "rejected"]
+                                  "enum": [
+                                    "pending",
+                                    "published",
+                                    "approved",
+                                    "rejected"
+                                  ]
                                 }
                               },
-                              "required": ["id", "seq", "op", "kind", "status"]
+                              "required": [
+                                "id",
+                                "seq",
+                                "op",
+                                "kind",
+                                "status"
+                              ]
                             }
                           }
                         },
-                        "required": ["id", "note", "createdAt", "changes"]
+                        "required": [
+                          "id",
+                          "note",
+                          "createdAt",
+                          "changes"
+                        ]
                       }
                     },
                     "nextCursor": {
@@ -644,7 +822,10 @@
                       "nullable": true
                     }
                   },
-                  "required": ["items", "nextCursor"]
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
                 }
               }
             }
@@ -669,10 +850,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -728,11 +914,23 @@
                               },
                               "op": {
                                 "type": "string",
-                                "enum": ["create", "update", "relate", "unrelate", "merge"]
+                                "enum": [
+                                  "create",
+                                  "update",
+                                  "relate",
+                                  "unrelate",
+                                  "merge"
+                                ]
                               },
                               "kind": {
                                 "type": "string",
-                                "enum": ["work", "creator", "series", "property", "tag"]
+                                "enum": [
+                                  "work",
+                                  "creator",
+                                  "series",
+                                  "property",
+                                  "tag"
+                                ]
                               },
                               "entityId": {
                                 "type": "string",
@@ -746,7 +944,12 @@
                               },
                               "status": {
                                 "type": "string",
-                                "enum": ["pending", "published", "approved", "rejected"]
+                                "enum": [
+                                  "pending",
+                                  "published",
+                                  "approved",
+                                  "rejected"
+                                ]
                               },
                               "reason": {
                                 "type": "string",
@@ -809,7 +1012,9 @@
                                 "anyOf": [
                                   {
                                     "type": "string",
-                                    "enum": ["anonymous"]
+                                    "enum": [
+                                      "anonymous"
+                                    ]
                                   },
                                   {
                                     "type": "object",
@@ -819,18 +1024,27 @@
                                         "format": "uuid"
                                       }
                                     },
-                                    "required": ["userId"]
+                                    "required": [
+                                      "userId"
+                                    ]
                                   }
                                 ]
                               }
                             },
-                            "required": ["id", "author"]
+                            "required": [
+                              "id",
+                              "author"
+                            ]
                           },
                           "ageSeconds": {
                             "type": "integer"
                           }
                         },
-                        "required": ["change", "submission", "ageSeconds"]
+                        "required": [
+                          "change",
+                          "submission",
+                          "ageSeconds"
+                        ]
                       }
                     },
                     "nextCursor": {
@@ -838,7 +1052,10 @@
                       "nullable": true
                     }
                   },
-                  "required": ["items", "nextCursor"]
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
                 }
               }
             }
@@ -863,10 +1080,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -919,10 +1141,18 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": ["pending", "published", "approved", "rejected"]
+                      "enum": [
+                        "pending",
+                        "published",
+                        "approved",
+                        "rejected"
+                      ]
                     }
                   },
-                  "required": ["id", "status"]
+                  "required": [
+                    "id",
+                    "status"
+                  ]
                 }
               }
             }
@@ -947,10 +1177,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -975,10 +1210,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1003,10 +1243,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1031,10 +1276,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1068,7 +1318,9 @@
                     "maxLength": 1000
                   }
                 },
-                "required": ["reason"]
+                "required": [
+                  "reason"
+                ]
               }
             }
           }
@@ -1087,10 +1339,18 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": ["pending", "published", "approved", "rejected"]
+                      "enum": [
+                        "pending",
+                        "published",
+                        "approved",
+                        "rejected"
+                      ]
                     }
                   },
-                  "required": ["id", "status"]
+                  "required": [
+                    "id",
+                    "status"
+                  ]
                 }
               }
             }
@@ -1115,10 +1375,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1143,10 +1408,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1171,10 +1441,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1245,11 +1520,22 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": ["create", "update", "relate", "unrelate", "merge"]
+                            "enum": [
+                              "create",
+                              "update",
+                              "relate",
+                              "unrelate",
+                              "merge"
+                            ]
                           },
                           "status": {
                             "type": "string",
-                            "enum": ["pending", "published", "approved", "rejected"]
+                            "enum": [
+                              "pending",
+                              "published",
+                              "approved",
+                              "rejected"
+                            ]
                           },
                           "entityId": {
                             "type": "string",
@@ -1257,11 +1543,20 @@
                             "format": "uuid"
                           }
                         },
-                        "required": ["id", "seq", "op", "status", "entityId"]
+                        "required": [
+                          "id",
+                          "seq",
+                          "op",
+                          "status",
+                          "entityId"
+                        ]
                       }
                     }
                   },
-                  "required": ["id", "changes"]
+                  "required": [
+                    "id",
+                    "changes"
+                  ]
                 }
               }
             }
@@ -1286,10 +1581,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1314,10 +1614,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1342,10 +1647,329 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/changes/{id}/revert": {
+      "post": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "pending",
+                        "published",
+                        "approved",
+                        "rejected"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not live, already reverted, or later changes depend on it",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/entities/{id}/history": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "changeId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "op": {
+                                "type": "string",
+                                "enum": [
+                                  "create",
+                                  "update",
+                                  "relate",
+                                  "unrelate",
+                                  "merge"
+                                ]
+                              },
+                              "payload": {
+                                "type": "object",
+                                "additionalProperties": {
+                                  "nullable": true
+                                }
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "anonymous"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "userId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      }
+                                    },
+                                    "required": [
+                                      "userId"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "human"
+                                ]
+                              },
+                              "appliedAt": {
+                                "type": "string",
+                                "format": "date-time"
+                              },
+                              "revertOf": {
+                                "type": "string",
+                                "nullable": true,
+                                "format": "uuid"
+                              }
+                            },
+                            "required": [
+                              "changeId",
+                              "op",
+                              "payload",
+                              "author",
+                              "source",
+                              "appliedAt",
+                              "revertOf"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "changeId": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "op": {
+                                "type": "string",
+                                "enum": [
+                                  "create",
+                                  "update",
+                                  "relate",
+                                  "unrelate",
+                                  "merge"
+                                ]
+                              },
+                              "redacted": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "nullable": true
+                              }
+                            },
+                            "required": [
+                              "changeId",
+                              "op",
+                              "redacted",
+                              "reason"
+                            ]
+                          }
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1380,12 +2004,25 @@
                     },
                     "kind": {
                       "type": "string",
-                      "enum": ["work", "creator", "series", "property", "tag"]
+                      "enum": [
+                        "work",
+                        "creator",
+                        "series",
+                        "property",
+                        "tag"
+                      ]
                     },
                     "fields": {
                       "type": "object",
                       "additionalProperties": {
                         "nullable": true
+                      }
+                    },
+                    "fieldSources": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string",
+                        "format": "uuid"
                       }
                     },
                     "relations": {
@@ -1409,20 +2046,33 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               },
                               "role": {
                                 "type": "string"
@@ -1431,7 +2081,11 @@
                                 "type": "integer"
                               }
                             },
-                            "required": ["relationId", "creator", "role"]
+                            "required": [
+                              "relationId",
+                              "creator",
+                              "role"
+                            ]
                           }
                         },
                         "works": {
@@ -1452,20 +2106,33 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               },
                               "role": {
                                 "type": "string"
@@ -1474,7 +2141,10 @@
                                 "type": "integer"
                               }
                             },
-                            "required": ["relationId", "work"]
+                            "required": [
+                              "relationId",
+                              "work"
+                            ]
                           }
                         },
                         "series": {
@@ -1495,26 +2165,43 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               },
                               "position": {
                                 "type": "integer"
                               }
                             },
-                            "required": ["relationId", "series", "position"]
+                            "required": [
+                              "relationId",
+                              "series",
+                              "position"
+                            ]
                           }
                         },
                         "properties": {
@@ -1535,23 +2222,39 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               }
                             },
-                            "required": ["relationId", "property"]
+                            "required": [
+                              "relationId",
+                              "property"
+                            ]
                           }
                         },
                         "links": {
@@ -1565,11 +2268,19 @@
                               },
                               "type": {
                                 "type": "string",
-                                "enum": ["adapted_from", "sequel_of", "remake_of", "spin_off_of"]
+                                "enum": [
+                                  "adapted_from",
+                                  "sequel_of",
+                                  "remake_of",
+                                  "spin_off_of"
+                                ]
                               },
                               "direction": {
                                 "type": "string",
-                                "enum": ["outgoing", "incoming"]
+                                "enum": [
+                                  "outgoing",
+                                  "incoming"
+                                ]
                               },
                               "work": {
                                 "type": "object",
@@ -1580,23 +2291,41 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               }
                             },
-                            "required": ["relationId", "type", "direction", "work"]
+                            "required": [
+                              "relationId",
+                              "type",
+                              "direction",
+                              "work"
+                            ]
                           }
                         },
                         "tags": {
@@ -1617,23 +2346,39 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": ["work", "creator", "series", "property", "tag"]
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": ["film_tv", "book"]
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": ["id", "kind", "title"]
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
                               }
                             },
-                            "required": ["relationId", "tag"]
+                            "required": [
+                              "relationId",
+                              "tag"
+                            ]
                           }
                         },
                         "externalIds": {
@@ -1647,19 +2392,34 @@
                               },
                               "scheme": {
                                 "type": "string",
-                                "enum": ["wikidata", "openlibrary", "isbn13", "imdb"]
+                                "enum": [
+                                  "wikidata",
+                                  "openlibrary",
+                                  "isbn13",
+                                  "imdb"
+                                ]
                               },
                               "value": {
                                 "type": "string"
                               }
                             },
-                            "required": ["relationId", "scheme", "value"]
+                            "required": [
+                              "relationId",
+                              "scheme",
+                              "value"
+                            ]
                           }
                         }
                       }
                     }
                   },
-                  "required": ["id", "kind", "fields", "relations"]
+                  "required": [
+                    "id",
+                    "kind",
+                    "fields",
+                    "fieldSources",
+                    "relations"
+                  ]
                 }
               }
             }
@@ -1684,10 +2444,346 @@
                           "nullable": true
                         }
                       },
-                      "required": ["code", "message"]
+                      "required": [
+                        "code",
+                        "message"
+                      ]
                     }
                   },
-                  "required": ["error"]
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "work",
+                "creator",
+                "series",
+                "property",
+                "tag"
+              ]
+            },
+            "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "film_tv",
+                "book"
+              ]
+            },
+            "required": false,
+            "name": "mediaType",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "work",
+                              "creator",
+                              "series",
+                              "property",
+                              "tag"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "enum": [
+                              "film_tv",
+                              "book"
+                            ]
+                          },
+                          "releaseYear": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/duplicates": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "work",
+                "creator",
+                "series",
+                "property",
+                "tag"
+              ]
+            },
+            "required": true,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            },
+            "required": true,
+            "name": "title",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "film_tv",
+                "book"
+              ]
+            },
+            "required": false,
+            "name": "mediaType",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "existing": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "work",
+                              "creator",
+                              "series",
+                              "property",
+                              "tag"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "enum": [
+                              "film_tv",
+                              "book"
+                            ]
+                          },
+                          "releaseYear": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title"
+                        ]
+                      }
+                    },
+                    "pending": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "work",
+                              "creator",
+                              "series",
+                              "property",
+                              "tag"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "nullable": true,
+                            "enum": [
+                              "film_tv",
+                              "book",
+                              null
+                            ]
+                          },
+                          "releaseYear": {
+                            "type": "integer",
+                            "nullable": true
+                          }
+                        },
+                        "required": [
+                          "kind",
+                          "title",
+                          "mediaType",
+                          "releaseYear"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "existing",
+                    "pending"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
                 }
               }
             }
@@ -1707,10 +2803,14 @@
                   "properties": {
                     "ok": {
                       "type": "boolean",
-                      "enum": [true]
+                      "enum": [
+                        true
+                      ]
                     }
                   },
-                  "required": ["ok"]
+                  "required": [
+                    "ok"
+                  ]
                 }
               }
             }

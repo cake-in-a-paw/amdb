@@ -159,3 +159,29 @@ export const ResubmitInput = z.object({
 export type ResubmitInput = z.infer<typeof ResubmitInput>;
 
 export const ReviewedSchema = z.object({ id: z.uuid(), status: ChangeStatus });
+
+// --- Public history ---
+
+export const HistoryParams = z.object({ id: z.uuid() });
+
+export const HistoryQuery = z.object(PageQuery);
+
+/** The decoded history cursor: the last item's (appliedAt, seq, id). */
+export const HistoryCursor = z.object({ appliedAt: z.iso.datetime(), seq: z.number().int(), id: z.uuid() });
+
+export const HistoryItemSchema = z.union([
+  z.object({
+    changeId: z.uuid(),
+    op: ChangeOp,
+    /** The change's fields; for a revert, `{ revertOf }`. */
+    payload: z.record(z.string(), z.unknown()),
+    author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+    source: z.literal('human'),
+    appliedAt: z.iso.datetime(),
+    revertOf: z.uuid().nullable(),
+  }),
+  /** A change erased for legal or abuse reasons: only that it happened and why. */
+  z.object({ changeId: z.uuid(), op: ChangeOp, redacted: z.literal(true), reason: z.string().nullable() }),
+]);
+
+export const HistorySchema = z.object({ items: z.array(HistoryItemSchema), nextCursor: z.string().nullable() });

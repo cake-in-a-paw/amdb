@@ -14,11 +14,19 @@ import { badRequest, conflict, notFound } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { isModerator } from '../users/identity';
 import { applyChange, applyInverse, assertUndoable, fieldsOf, type Inverse, InverseSchema } from './apply';
-import { type ChangeRow, changesRepository, type NewChange, type Owner, type QueueKey } from './repository';
+import {
+  type ChangeRow,
+  changesRepository,
+  type HistoryKey,
+  type NewChange,
+  type Owner,
+  type QueueKey,
+} from './repository';
 import { holdAll, type ReviewPolicy } from './review-policy';
 import {
   type ApproveInput,
   ChangeInput,
+  HistoryCursor,
   QueueCursor,
   type EntityRef,
   MergePayload,
@@ -474,6 +482,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         const r = changesRepository(tx);
         const { change, reviewed } = await lockForReview(tx, actor, id);
         if (change.status === 'published') {
+          if (await r.findRevert(id)) throw conflict('already_reverted', 'This change was already reverted');
           await assertUndoable(tx, change);
           await applyInverse(tx, inverseOf(change), change.id);
         }
@@ -490,6 +499,80 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           frontier = next;
         }
         return { id, status: 'rejected' as const };
+      });
+    },
+
+    /** Approved and published changes that touched the entity, newest first. Public. */
+    async history(id: string, query: { cursor?: string; limit: number }) {
+      if (!(await repo.findEntity(id))) throw notFound();
+      const rows = await repo.history(id, decodeKeyCursor(query.cursor, HistoryCursor), query.limit);
+      const items = rows.slice(0, query.limit);
+      const last = items.at(-1)?.change;
+      const key = (c: ChangeRow): HistoryKey => ({
+        // Every change in history was applied.
+        appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
+        seq: c.seq,
+        id: c.id,
+      });
+      return {
+        items: items.map(({ change: c, authorUserId }) => {
+          if (c.redactedAt) {
+            return { changeId: c.id, op: c.op, redacted: true as const, reason: c.redactionReason };
+          }
+          const revertOf = c.payload?.revertOf;
+          return {
+            changeId: c.id,
+            op: c.op,
+            // Without `submitted`: what a moderator edited out of a contributor's original stays out of public view.
+            payload: fieldsOf(c.payload),
+            author: authorUserId ? { userId: authorUserId } : ('anonymous' as const),
+            source: 'human' as const,
+            appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
+            revertOf: typeof revertOf === 'string' ? revertOf : null,
+          };
+        }),
+        nextCursor: rows.length > query.limit && last ? encodeKeyCursor(key(last)) : null,
+      };
+    },
+
+    /**
+     * Undoes a live change as a new, approved change whose payload is `{ revertOf }`. Moderators
+     * only (others 404). A revert has no inverse of its own: to undo one, submit the change again.
+     */
+    async revert(actor: Actor, id: string) {
+      if (actor.kind !== 'user' || !isModerator(actor)) throw notFound();
+      const moderator = actor.userId;
+      return db.transaction(async (tx) => {
+        const r = changesRepository(tx);
+        const change = await r.lockChange(id);
+        if (!change) throw notFound();
+        if (!isLive(change.status)) throw conflict('not_live', 'Only an approved or published change can be reverted');
+        if (change.redactedAt || !change.inverse) {
+          throw conflict('redacted', 'This change was removed and can’t be reverted');
+        }
+        if (typeof change.payload?.revertOf === 'string') {
+          throw conflict('not_revertable', 'A revert can’t be reverted; submit the change again instead');
+        }
+        if (await r.findRevert(id)) throw conflict('already_reverted', 'This change was already reverted');
+        await assertUndoable(tx, change);
+        const created = await r.insertSubmission({ userId: moderator }, `Revert of change ${id}`, [
+          {
+            id: randomUUID(),
+            seq: 1,
+            op: change.op,
+            kind: change.kind,
+            entityId: change.entityId,
+            relationId: change.relationId,
+            payload: { revertOf: id },
+            dependsOn: [],
+          },
+        ]);
+        const revertId = created.changes[0]?.id;
+        if (!revertId) throw new Error('revert insert returned no row');
+        await applyInverse(tx, inverseOf(change), revertId);
+        const now = new Date();
+        await r.updateChange(revertId, { status: 'approved', reviewedBy: moderator, reviewedAt: now, appliedAt: now });
+        return { id: revertId, status: 'approved' as const };
       });
     },
 

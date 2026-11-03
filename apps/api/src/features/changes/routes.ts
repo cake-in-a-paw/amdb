@@ -6,6 +6,9 @@ import { rateLimit } from '../../platform/http/rate-limit';
 import {
   ApproveInput,
   ChangeIdParam,
+  HistoryParams,
+  HistoryQuery,
+  HistorySchema,
   MySubmissionsQuery,
   MySubmissionsSchema,
   QueueQuery,
@@ -114,6 +117,24 @@ const resubmitRoute = createRoute({
   },
 });
 
+const revertRoute = createRoute({
+  method: 'post',
+  path: '/api/changes/{id}/revert',
+  request: { params: ChangeIdParam },
+  responses: {
+    200: json(ReviewedSchema),
+    404: json(ErrorSchema, 'Not found'),
+    409: json(ErrorSchema, 'Not live, already reverted, or later changes depend on it'),
+  },
+});
+
+const historyRoute = createRoute({
+  method: 'get',
+  path: '/api/entities/{id}/history',
+  request: { params: HistoryParams, query: HistoryQuery },
+  responses: { 200: json(HistorySchema), 404: json(ErrorSchema, 'Not found') },
+});
+
 const ANON_LIMIT = 20;
 const ANON_WINDOW_MS = 60 * 60 * 1000;
 
@@ -214,6 +235,16 @@ export function changesRoutes(changes: ChangesService) {
   app.openapi(resubmitRoute, async (c) => {
     const created = await changes.resubmit(c.var.actor, c.req.valid('param').id, c.req.valid('json') ?? {});
     return c.json(created, 201);
+  });
+
+  app.openapi(revertRoute, async (c) => {
+    const result = await changes.revert(c.var.actor, c.req.valid('param').id);
+    return c.json(result, 200);
+  });
+
+  app.openapi(historyRoute, async (c) => {
+    const page = await changes.history(c.req.valid('param').id, c.req.valid('query'));
+    return c.json(page, 200);
   });
 
   return app;
