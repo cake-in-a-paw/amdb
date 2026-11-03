@@ -689,9 +689,9 @@ export async function eraseRedacted(tx: Tx, change: ChangeRow): Promise<void> {
  * Removes copies of a redacted change's content held by other changes, so a later revert can't
  * bring it back. For an update or create: every other change on the entity it landed on (and on
  * the entities merged into that one) loses the redacted fields from its `set_fields` inverse
- * where they hold the redacted value or are sourced to the redacted change, and its `base` keeps
- * those keys as `REDACTED_VALUE`, so the base still never matches and the change stays stale. For a
- * relate: any unrelate inverse that would restore its relation (left unrestorable: null) and the
+ * where they hold the redacted value (a null, which clears, is no content) or are sourced to the
+ * redacted change, and its `base` keeps those keys as `REDACTED_VALUE`, so the base still never
+ * matches and the change stays stale. For a relate: any unrelate inverse that would restore its relation (left unrestorable: null) and the
  * merge inverses that would restore it as a dropped duplicate.
  */
 export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
@@ -714,7 +714,8 @@ export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
       const dropInverse = keys.filter(
         (k) =>
           own &&
-          (own.fieldSources[k] === change.id || (k in own.fields && isDeepStrictEqual(own.fields[k], redacted[k]))),
+          (own.fieldSources[k] === change.id ||
+            (redacted[k] !== null && k in own.fields && isDeepStrictEqual(own.fields[k], redacted[k]))),
       );
       const base = other.base;
       const eraseBase = keys.filter(
@@ -722,7 +723,7 @@ export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
           base &&
           k in base &&
           !RedactedValue.safeParse(base[k]).success &&
-          (dropInverse.includes(k) || isDeepStrictEqual(base[k], redacted[k])),
+          (dropInverse.includes(k) || (redacted[k] !== null && isDeepStrictEqual(base[k], redacted[k]))),
       );
       if (!dropInverse.length && !eraseBase.length) continue;
       await tx
