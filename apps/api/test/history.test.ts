@@ -302,3 +302,71 @@ it('reviving a retracted entity resets every column to the new create’s values
     await t.close();
   }
 });
+
+it('a create can be reverted once the updates built on it are reverted', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const created = await publish(author, mod, [work]);
+    const id = created.changes[0]!.entityId!;
+    const upd = await publish(author, mod, [update(id, { title: 'Arrival (2016)' })]);
+    expect((await mod.post(`/api/changes/${upd.changes[0]!.id}/revert`)).status).toBe(200);
+    const res = await mod.post(`/api/changes/${created.changes[0]!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await t.as({ kind: 'none' }).get(`/api/entities/${id}`)).status).toBe(404);
+  } finally {
+    await t.close();
+  }
+});
+
+it('reverting a create rejects the pending changes made against its entity', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const created = await publish(author, mod, [work]);
+    const id = created.changes[0]!.entityId!;
+    const other = await publish(author, mod, [{ ...work, fields: { ...work.fields, title: 'Arrival (copy)' } }]);
+    const pending = await submit(author, [
+      update(id, { title: 'Arrival (2016)' }),
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Denis', kind: 'person' } },
+      { op: 'relate', type: 'work_creator', from: { id }, to: { ref: 'c' }, data: { role: 'director' } },
+    ]);
+    const merge = await submit(author, [{ op: 'merge', kind: 'work', from: other.changes[0]!.entityId, into: id }]);
+    expect((await mod.post(`/api/changes/${created.changes[0]!.id}/revert`)).status).toBe(200);
+
+    const statuses = async (subId: string) =>
+      (
+        (await (await author.get(`/api/submissions/${subId}`)).json()) as {
+          changes: { status: string; reason: string | null }[];
+        }
+      ).changes;
+    const [upd, creator, relate] = await statuses(pending.id);
+    expect(upd).toMatchObject({ status: 'rejected', reason: 'The entity was reverted' });
+    expect(creator?.status).toBe('pending');
+    expect(relate?.status).toBe('rejected');
+    expect((await statuses(merge.id))[0]).toMatchObject({ status: 'rejected', reason: 'The entity was reverted' });
+  } finally {
+    await t.close();
+  }
+});
+
+it('reverting a relate rejects pending unrelates of its relation', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      work,
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Denis', kind: 'person' } },
+      { op: 'relate', type: 'work_creator', from: { ref: 'w' }, to: { ref: 'c' }, data: { role: 'director' } },
+    ]);
+    const detail = (await (await mod.get(`/api/submissions/${made.id}`)).json()) as {
+      changes: { relationId: string | null }[];
+    };
+    const relationId = detail.changes[2]!.relationId!;
+    const un = await submit(author, [{ op: 'unrelate', relationId }]);
+    expect((await mod.post(`/api/changes/${made.changes[2]!.id}/revert`)).status).toBe(200);
+    const sub = (await (await author.get(`/api/submissions/${un.id}`)).json()) as {
+      changes: { status: string; reason: string | null }[];
+    };
+    expect(sub.changes[0]).toMatchObject({ status: 'rejected', reason: 'The relation was reverted' });
+  } finally {
+    await t.close();
+  }
+});

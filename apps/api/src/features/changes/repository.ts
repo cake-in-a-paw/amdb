@@ -178,6 +178,16 @@ export function changesRepository(db: DbOrTx) {
       return rows.map((r) => r.id);
     },
 
+    /** Rejects the still-pending unrelates of relation `relationId`; returns their ids. */
+    async rejectPendingUnrelates(relationId: string, patch: ChangePatch) {
+      const rows = await db
+        .update(changes)
+        .set({ ...patch, status: 'rejected' })
+        .where(and(eq(changes.status, 'pending'), eq(changes.op, 'unrelate'), eq(changes.relationId, relationId)))
+        .returning({ id: changes.id });
+      return rows.map((r) => r.id);
+    },
+
     /** A change with who submitted it. */
     async getChangeWithAuthor(id: string) {
       const [row] = await db
@@ -259,8 +269,8 @@ export function changesRepository(db: DbOrTx) {
     },
 
     /**
-     * Rejects the still-pending changes that act on entity `entityId` (as their target, or as a
-     * relate's other end); returns their ids.
+     * Rejects the still-pending changes that act on entity `entityId` (as their target, a
+     * relate's other end, or a merge's `into`); returns their ids.
      */
     async rejectPendingTargeting(entityId: string, patch: ChangePatch) {
       const rows = await db
@@ -272,6 +282,7 @@ export function changesRepository(db: DbOrTx) {
             or(
               eq(changes.entityId, entityId),
               and(eq(changes.op, 'relate'), sql`${changes.payload}->>'to' = ${entityId}`),
+              and(eq(changes.op, 'merge'), sql`${changes.payload}->>'into' = ${entityId}`),
             ),
           ),
         )

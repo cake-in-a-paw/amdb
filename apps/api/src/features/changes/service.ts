@@ -404,7 +404,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
 
   /**
    * Rejects the pending changes that depend on `roots`, transitively. A rejected create (or a
-   * removed entity) also takes down pending changes made against its entity after it went live:
+   * removed or reverted entity) also takes down pending changes made against its entity after it went live:
    * they name the entity but, submitted once it existed, have no `depends_on` entry.
    */
   async function cascadeReject(
@@ -626,9 +626,22 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         ]);
         const revertId = created.changes[0]?.id;
         if (!revertId) throw new Error('revert insert returned no row');
-        await applyInverse(tx, inverseOf(change), revertId);
+        const inverse = inverseOf(change);
+        await applyInverse(tx, inverse, revertId);
         const now = new Date();
         await r.updateChange(revertId, { status: 'approved', reviewedBy: moderator, reviewedAt: now, appliedAt: now });
+        // Pending changes that act on what the revert took away could only fail at approval: reject them now.
+        const reviewed = { reviewedBy: moderator, reviewedAt: now };
+        if (inverse.op === 'retract_entity') {
+          await cascadeReject(r, [], inverse.entityId, reviewed, 'The entity was reverted');
+        }
+        if (inverse.op === 'remove_relation') {
+          const unrelates = await r.rejectPendingUnrelates(inverse.relationId, {
+            ...reviewed,
+            reason: 'The relation was reverted',
+          });
+          await cascadeReject(r, unrelates, null, reviewed, 'The relation was reverted');
+        }
         return { id: revertId, status: 'approved' as const };
       });
     },

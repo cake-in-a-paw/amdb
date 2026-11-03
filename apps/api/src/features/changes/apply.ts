@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { type EntityKind, FieldsFor } from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
-import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
+import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
 import { mergeFamily, resolveWinner } from '../../platform/db/merge';
@@ -351,6 +351,8 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       const id = targetOf(change);
       // Lock first, so a change applied concurrently against the entity is either seen below or waits.
       if (!(await lockEntity(tx, id))) throw conflict('stale_change', `Entity ${id} is no longer live`);
+      // Not dependents: reverts (they only undo), changes already reverted, and redacted changes
+      // (they can't be undone, and their content is erased anyway).
       const dependents = await tx
         .select({ id: changes.id })
         .from(changes)
@@ -359,6 +361,9 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
             ne(changes.id, change.id),
             inArray(changes.status, ['published', 'approved']),
             or(arrayContains(changes.dependsOn, [change.id]), eq(changes.entityId, id)),
+            isNull(changes.redactedAt),
+            sql`${changes.payload}->>'revertOf' is null`,
+            sql`not exists (select 1 from ${changes} r where r.payload->>'revertOf' = ${changes.id}::text and r.status in ('approved', 'published'))`,
           ),
         );
       if (dependents.length) {
