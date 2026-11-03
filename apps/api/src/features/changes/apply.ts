@@ -173,6 +173,27 @@ async function requireEntity(tx: Tx, id: string) {
   }
 }
 
+/**
+ * Like `requireEntity` for several ids: locks the live entities they resolve to, in id order so two
+ * transactions locking the same pair can't deadlock, and returns a lookup from a named id to it.
+ */
+async function requireEntities(tx: Tx, ids: string[]): Promise<(named: string) => string> {
+  for (;;) {
+    const targets = await Promise.all(ids.map((id) => resolveWinner(tx, id)));
+    let mergedMeanwhile = false;
+    for (const id of [...new Set(targets)].toSorted()) {
+      const entity = await lockEntity(tx, id);
+      if (!entity) throw conflict('dependency_pending', `Entity ${id} doesn't exist yet`);
+      if (entity.mergedIntoId) mergedMeanwhile = true;
+    }
+    // A merge took one away before it was locked: resolve again (the locks held stay held).
+    if (!mergedMeanwhile) {
+      const resolved = new Map(ids.map((id, i) => [id, targets[i] ?? id]));
+      return (named) => resolved.get(named) ?? named;
+    }
+  }
+}
+
 /** The change's target entity, after merges. */
 function targetOf(change: ChangeRow): string {
   if (!change.entityId) throw new Error(`change ${change.id} (${change.op}) has no entity id`);
@@ -236,8 +257,9 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
     }
     case 'relate': {
       const p = RelatePayload.parse(change.payload);
-      const from = (await requireEntity(tx, p.from)).id;
-      const to = p.to ? (await requireEntity(tx, p.to)).id : null;
+      const ends = await requireEntities(tx, p.to ? [p.from, p.to] : [p.from]);
+      const from = ends(p.from);
+      const to = p.to ? ends(p.to) : null;
       const relationId = randomUUID();
       await tx.insert(relations).values({
         id: relationId,
