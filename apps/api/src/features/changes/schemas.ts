@@ -69,6 +69,9 @@ export const ChangeSchema = z.object({
   relationId: z.uuid().nullable(),
   status: ChangeStatus,
   reason: z.string().nullable(),
+  /** Whether the change's content was erased (legal or abuse removal); `payload` and `base` are then null. */
+  redacted: z.boolean(),
+  redactionReason: z.string().nullable(),
   /** Null once redacted. After edit-and-approve, `payload.submitted` holds what the contributor sent. */
   payload: z.record(z.string(), z.unknown()).nullable(),
   base: z.record(z.string(), z.unknown()).nullable(),
@@ -157,6 +160,22 @@ export const ResubmitInput = z.object({
   data: z.record(z.string(), z.unknown()).optional(),
 });
 export type ResubmitInput = z.infer<typeof ResubmitInput>;
+
+export const RedactInput = z.object({
+  reason: z.string().trim().min(1).max(1000),
+  /** Required when the change's content is still live: also takes it down (its entity, or a relate's relation). */
+  removeEntity: z.boolean().optional(),
+});
+export type RedactInput = z.infer<typeof RedactInput>;
+
+export const RedactedSchema = z.object({
+  id: z.uuid(),
+  /** What was taken down with the change, if its content was live. */
+  entityId: z.uuid().nullable(),
+  relationId: z.uuid().nullable(),
+});
+
+export const ClaimedSchema = z.object({ claimed: z.number().int() });
 
 export const ReviewedSchema = z.object({ id: z.uuid(), status: ChangeStatus });
 

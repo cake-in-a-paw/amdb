@@ -14,6 +14,7 @@ const getEntityRoute = createRoute({
       headers: z.object({ Location: z.string() }),
     },
     404: json(ErrorSchema, 'Not found'),
+    410: json(ErrorSchema, 'Removed'),
   },
 });
 

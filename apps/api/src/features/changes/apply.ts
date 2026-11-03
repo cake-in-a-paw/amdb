@@ -508,3 +508,58 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
     }
   }
 }
+
+/** What a change's effects still hold in the catalog: the live entity and/or relation it put there. */
+export interface CurrentContent {
+  entityId: string | null;
+  relationId: string | null;
+}
+
+/**
+ * The live content of an applied change, or null when its effects are gone. A create is current
+ * while its entity is neither retracted nor removed; an update while any field's source is the
+ * change; a relate while its relation is active; a merge while the loser is still merged into
+ * `into`. An unrelate carries only a relation id, so it never counts. Locks what it reads.
+ */
+export async function currentContent(tx: Tx, change: ChangeRow): Promise<CurrentContent | null> {
+  switch (change.op) {
+    case 'create':
+    case 'update': {
+      const entity = await lockEntity(tx, targetOf(change));
+      if (!entity) return null;
+      if (change.op === 'update') {
+        const keys = Object.keys(fieldsOf(change.payload));
+        if (!keys.some((k) => entity.fieldSources[k] === change.id)) return null;
+      }
+      return { entityId: entity.id, relationId: null };
+    }
+    case 'relate': {
+      if (!change.relationId) return null;
+      const [row] = await tx
+        .select({ removedBy: relations.removedByChange })
+        .from(relations)
+        .where(eq(relations.id, change.relationId))
+        .for('update');
+      return row && row.removedBy === null ? { entityId: null, relationId: change.relationId } : null;
+    }
+    case 'merge': {
+      const inverse = InverseSchema.safeParse(change.inverse);
+      if (!inverse.success || inverse.data.op !== 'unmerge') return null;
+      const loser = await lockEntity(tx, inverse.data.from);
+      return loser?.mergedIntoId === inverse.data.into ? { entityId: loser.id, relationId: null } : null;
+    }
+    case 'unrelate':
+      return null;
+  }
+}
+
+/** Removes an entity from public view (legal or abuse removal). Its rows and history stay. */
+export async function applyRemoval(tx: Tx, entityId: string): Promise<void> {
+  const now = new Date();
+  await tx.update(entities).set({ removedAt: now, updatedAt: now }).where(eq(entities.id, entityId));
+}
+
+/** Retires a relation on behalf of a redaction; it is recorded as removed by that change. */
+export async function applyRelationRemoval(tx: Tx, relationId: string, changeId: string): Promise<void> {
+  await tx.update(relations).set({ removedByChange: changeId }).where(eq(relations.id, relationId));
+}

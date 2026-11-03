@@ -2,9 +2,13 @@ import { createRoute, z } from '@hono/zod-openapi';
 import type { Context } from 'hono';
 import type { AppEnv } from '../../platform/http/app-env';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
+import { anonHashOf } from '../users/identity';
 import { rateLimit } from '../../platform/http/rate-limit';
 import {
   ApproveInput,
+  ClaimedSchema,
+  RedactedSchema,
+  RedactInput,
   ChangeIdParam,
   HistoryParams,
   HistoryQuery,
@@ -34,6 +38,8 @@ const changeView = (r: ChangeRecord) => ({
   relationId: r.relationId,
   status: r.status,
   reason: r.reason,
+  redacted: r.redactedAt !== null,
+  redactionReason: r.redactionReason,
   payload: r.payload,
   base: r.base,
   dependsOn: r.dependsOn,
@@ -128,6 +134,31 @@ const revertRoute = createRoute({
   },
 });
 
+const redactRoute = createRoute({
+  method: 'post',
+  path: '/api/admin/changes/{id}/redact',
+  request: {
+    params: ChangeIdParam,
+    body: { content: { 'application/json': { schema: RedactInput } }, required: true },
+  },
+  responses: {
+    200: json(RedactedSchema),
+    400: json(ErrorSchema, 'Invalid request'),
+    404: json(ErrorSchema, 'Not found'),
+    409: json(ErrorSchema, 'Already removed, a revert, or its content is live and removeEntity is not set'),
+  },
+});
+
+const claimRoute = createRoute({
+  method: 'post',
+  path: '/api/me/claim-anonymous',
+  responses: {
+    200: json(ClaimedSchema),
+    400: json(ErrorSchema, 'No anonymous token'),
+    401: json(ErrorSchema, 'Not signed in'),
+  },
+});
+
 const historyRoute = createRoute({
   method: 'get',
   path: '/api/entities/{id}/history',
@@ -139,6 +170,7 @@ const historyRoute = createRoute({
       headers: z.object({ Location: z.string() }),
     },
     404: json(ErrorSchema, 'Not found'),
+    410: json(ErrorSchema, 'Removed'),
   },
 });
 
@@ -246,6 +278,17 @@ export function changesRoutes(changes: ChangesService) {
 
   app.openapi(revertRoute, async (c) => {
     const result = await changes.revert(c.var.actor, c.req.valid('param').id);
+    return c.json(result, 200);
+  });
+
+  app.openapi(redactRoute, async (c) => {
+    const result = await changes.redact(c.var.actor, c.req.valid('param').id, c.req.valid('json'));
+    return c.json(result, 200);
+  });
+
+  app.openapi(claimRoute, async (c) => {
+    // The session wins over the header in `resolveActor`, so the token is read from the header itself.
+    const result = await changes.claimAnonymous(c.var.actor, anonHashOf(c.req.header('x-amdb-anon')));
     return c.json(result, 200);
   });
 

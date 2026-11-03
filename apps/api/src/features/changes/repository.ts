@@ -1,5 +1,5 @@
 import type { ChangeOp, EntityKind, MediaType } from '@amdb/shared';
-import { and, arrayContains, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   changes,
   creators,
@@ -72,6 +72,15 @@ export function changesRepository(db: DbOrTx) {
       return row ? { kind: row.kind, mediaType: row.mediaType } : null;
     },
 
+    /** Whether the entity was taken down by a redaction. */
+    async isRemoved(id: string) {
+      const [row] = await db
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, id), isNotNull(entities.removedAt)));
+      return !!row;
+    },
+
     /** The still-pending create that reserved `id`, with who submitted it. */
     async findPendingCreate(id: string) {
       const [row] = await db
@@ -133,6 +142,16 @@ export function changesRepository(db: DbOrTx) {
     async lockChange(id: string): Promise<ChangeRow | null> {
       const [row] = await db.select().from(changes).where(eq(changes.id, id)).for('update');
       return row ?? null;
+    },
+
+    /** Moves the anonymous token's submissions to the user in one statement; returns how many. */
+    async claimSubmissions(anonHash: string, userId: string) {
+      const rows = await db
+        .update(submissions)
+        .set({ authorUserId: userId, anonHash: null })
+        .where(eq(submissions.anonHash, anonHash))
+        .returning({ id: submissions.id });
+      return rows.length;
     },
 
     /** The statuses of `ids`, share-locked so a concurrent reject waits for this transaction. */
@@ -229,6 +248,7 @@ export function changesRepository(db: DbOrTx) {
         .where(
           and(
             inArray(changes.status, ['pending', 'published']),
+            isNull(changes.redactedAt),
             after
               ? sql`(${changes.createdAt}, ${changes.submissionId}, ${changes.seq}) > (${after.createdAt}::timestamptz, ${after.submissionId}::uuid, ${after.seq}::int)`
               : undefined,

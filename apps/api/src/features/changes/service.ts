@@ -11,11 +11,21 @@ import type { z } from '@hono/zod-openapi';
 import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
 import { resolveWinner } from '../../platform/db/merge';
-import { badRequest, conflict, notFound } from '../../platform/http/errors';
+import { badRequest, conflict, gone, notFound, unauthenticated } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { normalizeTitle } from '../catalog/normalize';
-import { isModerator } from '../users/identity';
-import { applyChange, applyInverse, assertUndoable, fieldsOf, type Inverse, InverseSchema } from './apply';
+import { isAdmin, isModerator } from '../users/identity';
+import {
+  applyChange,
+  applyInverse,
+  applyRelationRemoval,
+  applyRemoval,
+  assertUndoable,
+  currentContent,
+  fieldsOf,
+  type Inverse,
+  InverseSchema,
+} from './apply';
 import {
   type ChangeRow,
   changesRepository,
@@ -27,6 +37,7 @@ import {
 import { holdAll, type ReviewPolicy } from './review-policy';
 import {
   type ApproveInput,
+  type RedactInput,
   ChangeInput,
   HistoryCursor,
   type HistorySchema,
@@ -388,6 +399,29 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
     });
   }
 
+  /**
+   * After `change` is rejected: rejects the pending changes that depend on it, transitively. A
+   * rejected create also takes down pending changes made against its entity after it went live:
+   * they name the entity but, submitted once it existed, have no `depends_on` entry.
+   */
+  async function rejectDependents(
+    r: ReturnType<typeof changesRepository>,
+    change: ChangeRow,
+    reviewed: { reviewedBy: string; reviewedAt: Date },
+  ) {
+    const because = (dep: string) => ({ ...reviewed, reason: `Depends on rejected change ${dep}` });
+    const targeting =
+      change.op === 'create' && change.entityId
+        ? await r.rejectPendingTargeting(change.entityId, because(change.id))
+        : [];
+    let frontier = [change.id, ...targeting];
+    while (frontier.length) {
+      const next: string[] = [];
+      for (const dep of frontier) next.push(...(await r.rejectPendingDependents(dep, because(dep))));
+      frontier = next;
+    }
+  }
+
   /** Edit-and-approve: the moderator's fields merged in, the contributor's original kept as `submitted`. */
   function edited(change: ChangeRow, fields: Record<string, unknown>) {
     if (change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
@@ -416,6 +450,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
     if (actor.kind !== 'user' || !isModerator(actor)) throw notFound();
     const change = await changesRepository(tx).lockChange(id);
     if (!change) throw notFound();
+    if (change.redactedAt) throw conflict('redacted', 'This change was removed and can’t be reviewed');
     if (change.status === 'approved' || change.status === 'rejected') {
       throw conflict('already_reviewed', `This change was already ${change.status}`);
     }
@@ -496,17 +531,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           await applyInverse(tx, inverseOf(change), change.id);
         }
         await r.updateChange(id, { ...reviewed, status: 'rejected', reason });
-        const because = (dep: string) => ({ ...reviewed, reason: `Depends on rejected change ${dep}` });
-        // A rejected create also takes down pending changes made against its entity after it went
-        // live: they name the entity but, submitted once it existed, have no `depends_on` entry.
-        const targeting =
-          change.op === 'create' && change.entityId ? await r.rejectPendingTargeting(change.entityId, because(id)) : [];
-        let frontier = [id, ...targeting];
-        while (frontier.length) {
-          const next: string[] = [];
-          for (const dep of frontier) next.push(...(await r.rejectPendingDependents(dep, because(dep))));
-          frontier = next;
-        }
+        await rejectDependents(r, change, reviewed);
         return { id, status: 'rejected' as const };
       });
     },
@@ -516,6 +541,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       id: string,
       query: { cursor?: string; limit: number },
     ): Promise<{ redirectTo: string } | z.infer<typeof HistorySchema>> {
+      if (await repo.isRemoved(id)) throw gone('removed', 'This entity was removed');
       // A merged id's history is its winner's.
       const winnerId = await resolveWinner(db, id);
       if (winnerId !== id) return { redirectTo: winnerId };
@@ -589,6 +615,71 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         await r.updateChange(revertId, { status: 'approved', reviewedBy: moderator, reviewedAt: now, appliedAt: now });
         return { id: revertId, status: 'approved' as const };
       });
+    },
+
+    /**
+     * Erases a change's content (legal or abuse removal), keeping who, when and why. Admins only
+     * (others 404). Content that is still current in the catalog is removed with it, and only
+     * when `removeEntity` is set, else 409 `content_is_current`: a create or update removes its
+     * entity, a merge its loser, a relate its relation. A pending change is rejected so it can't
+     * go live. A revert holds nothing to erase and is refused.
+     */
+    async redact(actor: Actor, id: string, input: RedactInput) {
+      if (!isAdmin(actor) || actor.kind !== 'user') throw notFound();
+      const admin = actor.userId;
+      return db.transaction(async (tx) => {
+        const r = changesRepository(tx);
+        const change = await r.lockChange(id);
+        if (!change) throw notFound();
+        if (change.redactedAt) throw conflict('already_redacted', 'This change was already removed');
+        if (typeof change.payload?.revertOf === 'string') {
+          throw conflict('not_redactable', 'A revert holds no content; remove the change it reverted');
+        }
+        const now = new Date();
+        const removed: { entityId: string | null; relationId: string | null } = { entityId: null, relationId: null };
+        if (isLive(change.status)) {
+          const current = await currentContent(tx, change);
+          if (current && !input.removeEntity) {
+            throw conflict(
+              'content_is_current',
+              'This change’s content is live; pass removeEntity to take it down too',
+              {
+                entityId: current.entityId,
+                relationId: current.relationId,
+              },
+            );
+          }
+          if (current?.entityId) await applyRemoval(tx, current.entityId);
+          if (current?.relationId) await applyRelationRemoval(tx, current.relationId, change.id);
+          removed.entityId = current?.entityId ?? null;
+          removed.relationId = current?.relationId ?? null;
+        }
+        const pending = change.status === 'pending';
+        await r.updateChange(id, {
+          payload: null,
+          base: null,
+          inverse: null,
+          titleNorm: null,
+          redactedAt: now,
+          redactionReason: input.reason,
+          ...(pending
+            ? { status: 'rejected' as const, reason: 'Removed by an administrator', reviewedBy: admin, reviewedAt: now }
+            : {}),
+        });
+        if (pending) await rejectDependents(r, change, { reviewedBy: admin, reviewedAt: now });
+        return { id, ...removed };
+      });
+    },
+
+    /** Moves every anonymous submission of this token to the signed-in user. Idempotent: a second claim moves none. */
+    async claimAnonymous(actor: Actor, anonHash: string | null) {
+      if (actor.kind !== 'user') throw unauthenticated();
+      if (!anonHash)
+        throw badRequest(
+          'anon_token_required',
+          'Send the anonymous token in x-amdb-anon (32–128 URL-safe characters).',
+        );
+      return { claimed: await repo.claimSubmissions(anonHash, actor.userId) };
     },
 
     /** The rejected change's author sends it again, as a new change in a new submission. */
