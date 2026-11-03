@@ -23,6 +23,8 @@ export interface AppDeps {
   webOrigin?: string;
   /** Decides whether a new change waits for a moderator or goes live now. Defaults to `holdAll`. */
   reviewPolicy?: ReviewPolicy;
+  /** Proxies in front of the API that append to `x-forwarded-for`. Defaults to 1 (Railway's edge). */
+  trustedProxyHops?: number;
 }
 
 const healthRoute = createRoute({
@@ -43,7 +45,8 @@ export function createApp(deps: AppDeps) {
         origin: deps.webOrigin,
         credentials: true,
         allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-        allowHeaders: ['content-type'],
+        allowHeaders: ['content-type', 'x-amdb-anon'],
+        exposeHeaders: ['Retry-After', 'Location'],
       }),
     );
   }
@@ -56,7 +59,12 @@ export function createApp(deps: AppDeps) {
   const users = createUsersService(deps.db, deps.getSession);
   app.use('/api/*', resolveActor(users));
   app.route('/', usersRoutes(users));
-  app.route('/', changesRoutes(createChangesService(deps.db, deps.reviewPolicy ?? holdAll)));
+  app.route(
+    '/',
+    changesRoutes(createChangesService(deps.db, deps.reviewPolicy ?? holdAll), {
+      trustedProxyHops: deps.trustedProxyHops ?? 1,
+    }),
+  );
   app.route('/', catalogRoutes(createCatalogService(deps.db)));
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));

@@ -19,6 +19,7 @@ const app = createApp({
   getSession: (headers) => getSessionFromAuth(auth, headers),
   authHandler: (request) => auth.handler(request),
   webOrigin: env.WEB_ORIGIN,
+  trustedProxyHops: env.TRUSTED_PROXY_HOPS,
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

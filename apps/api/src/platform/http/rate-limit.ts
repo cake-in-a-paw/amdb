@@ -4,9 +4,23 @@ import type { AppEnv } from './app-env';
 import { ApiError } from './errors';
 
 /**
+ * The client's address from `x-forwarded-for`, trusting only the last `trustedHops` entries:
+ * each trusted proxy appends the address it saw, so the entry `trustedHops` from the right is the
+ * one the outermost trusted proxy recorded, and everything left of it is whatever the client sent.
+ * Null when the header is missing or has fewer entries than that (nothing trustworthy to key on).
+ */
+export function clientIp(c: Context<AppEnv>, trustedHops: number): string | null {
+  const entries = (c.req.header('x-forwarded-for') ?? '')
+    .split(',')
+    .map((e) => e.trim())
+    .filter(Boolean);
+  return entries.length >= trustedHops ? (entries[entries.length - trustedHops] ?? null) : null;
+}
+
+/**
  * An in-memory fixed-window limiter. `key` names the bucket for a request, or returns null to
- * leave the request alone. State lives in this process (see Production Annotations in the
- * contribution-engine spec).
+ * leave the request alone. State lives in this process (see Production Annotations in the AMDB
+ * design spec, docs/superpowers/specs/2026-11-02-amdb-design.md).
  */
 export function rateLimit({
   key,

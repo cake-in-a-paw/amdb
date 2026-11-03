@@ -209,18 +209,34 @@ it('an update of another visible pending create depends on it; one nobody can se
   }
 });
 
-it('the 21st anonymous submission in an hour is 429', async () => {
+/** An anonymous submission with its own `x-forwarded-for` (omitted when null). */
+const anonPost = (t: Awaited<ReturnType<typeof setupTest>>, tok: string, xff: string | null) =>
+  t.app.request('/api/submissions', {
+    method: 'POST',
+    headers: {
+      'x-amdb-anon': tok,
+      'content-type': 'application/json',
+      ...(xff === null ? {} : { 'x-forwarded-for': xff }),
+    },
+    body: JSON.stringify(submission([work])),
+  });
+
+async function expectLimited(res: Response) {
+  expect(res.status).toBe(429);
+  expect(await res.json()).toMatchObject({ error: { code: 'rate_limited' } });
+  const retryAfter = Number(res.headers.get('retry-after'));
+  expect(retryAfter).toBeGreaterThan(0);
+  expect(retryAfter).toBeLessThanOrEqual(3600);
+}
+
+it('the 21st anonymous submission in an hour from one client is 429 with Retry-After', async () => {
   const t = await setupTest();
   try {
-    const anon = t.as({ kind: 'anon', token: token('a') });
-    for (let i = 0; i < 20; i++) expect((await anon.post('/api/submissions', submission([work]))).status).toBe(201);
-    const res = await anon.post('/api/submissions', submission([work]));
-    expect(res.status).toBe(429);
-    expect(await res.json()).toMatchObject({ error: { code: 'rate_limited' } });
-    // Another visitor, and signed-in users, are unaffected.
-    expect((await t.as({ kind: 'anon', token: token('b') }).post('/api/submissions', submission([work]))).status).toBe(
-      201,
-    );
+    for (let i = 0; i < 20; i++) expect((await anonPost(t, token('a'), '198.51.100.1')).status).toBe(201);
+    await expectLimited(await anonPost(t, token('a'), '198.51.100.1'));
+    // Another client, and signed-in users, are unaffected. (A visitor is told apart by address:
+    // anonymous tokens are free, so a fresh token is no new visitor.)
+    expect((await anonPost(t, token('b'), '198.51.100.2')).status).toBe(201);
     const userId = await t.createUser();
     expect((await t.as({ kind: 'user', userId }).post('/api/submissions', submission([work]))).status).toBe(201);
   } finally {
@@ -228,17 +244,79 @@ it('the 21st anonymous submission in an hour is 429', async () => {
   }
 });
 
-it('anonymous submissions are also limited per client IP', async () => {
+it('a fresh anonymous token per request doesn’t escape the limit', async () => {
   const t = await setupTest();
   try {
-    const post = (tok: string) =>
-      t.app.request('/api/submissions', {
-        method: 'POST',
-        headers: { 'x-amdb-anon': tok, 'x-forwarded-for': '203.0.113.9, 10.0.0.1', 'content-type': 'application/json' },
-        body: JSON.stringify(submission([work])),
-      });
-    for (let i = 0; i < 20; i++) expect((await post(token(String.fromCharCode(97 + i)))).status).toBe(201);
-    expect((await post(token('z'))).status).toBe(429);
+    for (let i = 0; i < 20; i++)
+      expect((await anonPost(t, token(String.fromCharCode(97 + i)), '198.51.100.1')).status).toBe(201);
+    await expectLimited(await anonPost(t, token('z'), '198.51.100.1'));
+  } finally {
+    await t.close();
+  }
+});
+
+it('the limit keys on the address the trusted proxy appended, not on entries the client sent', async () => {
+  const t = await setupTest();
+  try {
+    // Behind one appending proxy, everything left of the last entry is client-controlled.
+    for (let i = 0; i < 20; i++) expect((await anonPost(t, token('a'), `10.0.0.${i}, 203.0.113.9`)).status).toBe(201);
+    await expectLimited(await anonPost(t, token('a'), '10.0.0.99, 203.0.113.9'));
+    expect((await anonPost(t, token('a'), '10.0.0.1, 203.0.113.10')).status).toBe(201);
+  } finally {
+    await t.close();
+  }
+});
+
+it('with two trusted proxy hops, the second entry from the right is the client', async () => {
+  const t = await setupTest({ trustedProxyHops: 2 });
+  try {
+    for (let i = 0; i < 20; i++) {
+      expect((await anonPost(t, token('a'), `10.0.0.${i}, 203.0.113.9, 192.0.2.${i}`)).status).toBe(201);
+    }
+    await expectLimited(await anonPost(t, token('a'), '10.0.0.99, 203.0.113.9, 192.0.2.99'));
+    expect((await anonPost(t, token('a'), '203.0.113.10, 192.0.2.1')).status).toBe(201);
+  } finally {
+    await t.close();
+  }
+});
+
+it('anonymous submissions without a forwarded address share one bucket', async () => {
+  const t = await setupTest();
+  try {
+    for (let i = 0; i < 20; i++) expect((await anonPost(t, token(String.fromCharCode(97 + i)), null)).status).toBe(201);
+    await expectLimited(await anonPost(t, token('z'), null));
+    // Fewer entries than trusted hops can't be trusted either.
+    await expectLimited(await anonPost(t, token('y'), ''));
+  } finally {
+    await t.close();
+  }
+});
+
+it('CORS lets the web app send the anonymous token and read Retry-After and Location', async () => {
+  const t = await setupTest({ webOrigin: 'https://web.example' });
+  try {
+    const res = await t.app.request('/api/submissions', {
+      method: 'OPTIONS',
+      headers: {
+        Origin: 'https://web.example',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type,x-amdb-anon',
+      },
+    });
+    expect(res.status).toBe(204);
+    expect(
+      res.headers
+        .get('access-control-allow-headers')
+        ?.split(',')
+        .map((h) => h.trim().toLowerCase()),
+    ).toEqual(expect.arrayContaining(['content-type', 'x-amdb-anon']));
+    const get = await t.app.request('/api/health', { headers: { Origin: 'https://web.example' } });
+    expect(
+      get.headers
+        .get('access-control-expose-headers')
+        ?.split(',')
+        .map((h) => h.trim()),
+    ).toEqual(expect.arrayContaining(['Retry-After', 'Location']));
   } finally {
     await t.close();
   }

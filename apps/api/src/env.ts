@@ -13,6 +13,8 @@ const EnvSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string().min(1),
   EMAIL_API_KEY: z.string().min(1),
   EMAIL_FROM: z.string().min(1),
+  /** Proxies in front of the API that append to X-Forwarded-For; the client is that many entries from the right. */
+  TRUSTED_PROXY_HOPS: z.coerce.number().int().min(1).default(1),
   /** Comma-separated addresses; an account created with one of them is an admin. Unset means none. */
   ADMIN_EMAILS: z
     .string()

@@ -1,8 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import type { Context } from 'hono';
-import type { AppEnv } from '../../platform/http/app-env';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
-import { rateLimit } from '../../platform/http/rate-limit';
+import { clientIp, rateLimit } from '../../platform/http/rate-limit';
 import {
   ApproveInput,
   ClaimedSchema,
@@ -187,29 +185,25 @@ const historyRoute = createRoute({
 const ANON_LIMIT = 20;
 const ANON_WINDOW_MS = 60 * 60 * 1000;
 
-/** The client's address as the first `x-forwarded-for` entry; absent when no proxy set it. */
-const clientIp = (c: Context<AppEnv>) => c.req.header('x-forwarded-for')?.split(',')[0]?.trim() || null;
+export interface ChangesRoutesOptions {
+  /** How many proxies in front of the API append to `x-forwarded-for` (see `clientIp`). */
+  trustedProxyHops: number;
+}
 
-export function changesRoutes(changes: ChangesService) {
+export function changesRoutes(changes: ChangesService, { trustedProxyHops }: ChangesRoutesOptions) {
   const app = createApi();
 
-  // Anonymous submissions only, per anon token and per client IP.
-  const anonPost = (bucket: (c: Context<AppEnv>) => string | null) => (c: Context<AppEnv>) =>
-    c.req.method === 'POST' && c.var.actor.kind === 'anon' ? bucket(c) : null;
+  // Anonymous submissions, per client address. Anonymous tokens are free to mint, so they name no
+  // one; requests without a trustworthy address share one bucket.
   app.use(
     '/api/submissions',
     rateLimit({
       limit: ANON_LIMIT,
       windowMs: ANON_WINDOW_MS,
-      key: anonPost((c) => (c.var.actor.kind === 'anon' ? `hash:${c.var.actor.anonHash}` : null)),
-    }),
-    rateLimit({
-      limit: ANON_LIMIT,
-      windowMs: ANON_WINDOW_MS,
-      key: anonPost((c) => {
-        const ip = clientIp(c);
-        return ip ? `ip:${ip}` : null;
-      }),
+      key: (c) =>
+        c.req.method === 'POST' && c.var.actor.kind === 'anon'
+          ? `ip:${clientIp(c, trustedProxyHops) ?? 'unknown'}`
+          : null,
     }),
   );
 
