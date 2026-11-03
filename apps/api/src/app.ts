@@ -1,5 +1,10 @@
 import { createRoute } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
+import { changesRoutes } from './features/changes/routes';
+import { createChangesService } from './features/changes/service';
+import { resolveActor } from './features/users/middleware';
+import { usersRoutes } from './features/users/routes';
+import { createUsersService } from './features/users/service';
 import type { Db } from './platform/db/types';
 import type { SessionInfo } from './platform/http/app-env';
 import { errorBody, handleError, withErrorShape } from './platform/http/errors';
@@ -42,6 +47,11 @@ export function createApp(deps: AppDeps) {
     const handler = deps.authHandler;
     app.on(['GET', 'POST'], '/api/auth/*', async (c) => withErrorShape(await handler(c.req.raw)));
   }
+
+  const users = createUsersService(deps.db, deps.getSession);
+  app.use('/api/*', resolveActor(users));
+  app.route('/', usersRoutes(users));
+  app.route('/', changesRoutes(createChangesService(deps.db)));
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 

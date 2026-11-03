@@ -22,6 +22,13 @@
       "when": 1793729144935,
       "tag": "0002_relation_checks",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793729783828,
+      "tag": "0003_users_name_optional",
+      "breakpoints": true
     }
   ]
 }

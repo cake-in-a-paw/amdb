@@ -40,7 +40,8 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),
   email: citext('email').notNull().unique(),
   emailVerified: boolean('email_verified').notNull().default(false),
-  name: text('name').notNull(),
+  /** Null until the user gives one; an email-code sign-up has none. */
+  name: text('name'),
   image: text('image'),
   role: text('role').$type<Role>().notNull().default('contributor'),
   createdAt: ts('created_at').notNull().defaultNow(),
