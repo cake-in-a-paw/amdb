@@ -102,6 +102,11 @@ it('approving a link before its creates is 409 dependency_pending', async () => 
   const { t, author, mod, modId } = await setup();
   try {
     const created = await submit(author, [work, creator, link]);
+    // Only moderators review; to anyone else the change doesn't exist.
+    expect((await author.post(`/api/changes/${created.changes[0]!.id}/approve`)).status).toBe(404);
+    expect(
+      (await t.as({ kind: 'anon', token: token('a') }).post(`/api/changes/${created.changes[0]!.id}/approve`)).status,
+    ).toBe(404);
     const res = await mod.post(`/api/changes/${created.changes[2]!.id}/approve`);
     expect(res.status).toBe(409);
     expect(await res.json()).toMatchObject({ error: { code: 'dependency_pending' } });
@@ -138,6 +143,8 @@ it('rejecting a create rejects its pending link with the dependency reason; the 
 
     // Only the author may resubmit.
     expect((await mod.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Arrival' } })).status).toBe(404);
+    expect((await t.as({ kind: 'anon', token: token('z') }).post(`/api/changes/${w!.id}/resubmit`)).status).toBe(404);
+    expect((await t.as({ kind: 'none' }).post(`/api/changes/${w!.id}/resubmit`)).status).toBe(404);
 
     const again = await author.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Arrival (2016)' } });
     expect(again.status).toBe(201);
