@@ -1,5 +1,5 @@
 import type { EntityKind, MediaType } from '@amdb/shared';
-import { and, asc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 import type { SearchCursor } from './schemas';
@@ -108,13 +108,53 @@ export function catalogRepository(db: DbOrTx) {
         .limit(limit + 1);
     },
 
-    /** Pending creates of `kind`, newest first, with the fields the duplicate check may show. */
-    async pendingCreates(kind: EntityKind, limit: number) {
+    /**
+     * The duplicate check's matching, the same for existing and pending: the normalized title or
+     * name contains `norm`. Listed entities, by title; fetches at most `limit`.
+     */
+    async existingMatching(norm: string, filter: { kind: EntityKind; mediaType?: MediaType }, limit: number) {
+      const pattern = `%${likeEscape(norm)}%`;
+      return db
+        .select(summaryColumns)
+        .from(entities)
+        .leftJoin(works, eq(works.entityId, entities.id))
+        .leftJoin(creators, eq(creators.entityId, entities.id))
+        .leftJoin(series, eq(series.entityId, entities.id))
+        .leftJoin(properties, eq(properties.entityId, entities.id))
+        .leftJoin(tags, eq(tags.entityId, entities.id))
+        .where(
+          and(
+            listed(),
+            eq(entities.kind, filter.kind),
+            filter.mediaType ? eq(works.mediaType, filter.mediaType) : undefined,
+            or(
+              sql`${works.titleNorm} like ${pattern}`,
+              sql`${creators.nameNorm} like ${pattern}`,
+              sql`${series.titleNorm} like ${pattern}`,
+              sql`${properties.titleNorm} like ${pattern}`,
+              sql`lower(${tags.name}) like ${pattern}`,
+            ),
+          ),
+        )
+        .orderBy(asc(titleExpr), asc(entities.id))
+        .limit(limit);
+    },
+
+    /** Pending creates whose normalized title or name contains `norm`, newest first, with only the fields the duplicate check may show. */
+    async pendingMatching(norm: string, filter: { kind: EntityKind; mediaType?: MediaType }, limit: number) {
       return db
         .select({ payload: changes.payload })
         .from(changes)
-        .where(and(eq(changes.op, 'create'), eq(changes.kind, kind), eq(changes.status, 'pending')))
-        .orderBy(sql`${changes.createdAt} desc`)
+        .where(
+          and(
+            eq(changes.op, 'create'),
+            eq(changes.status, 'pending'),
+            eq(changes.kind, filter.kind),
+            sql`${changes.titleNorm} like ${`%${likeEscape(norm)}%`}`,
+            filter.mediaType ? sql`${changes.payload}->>'mediaType' = ${filter.mediaType}` : undefined,
+          ),
+        )
+        .orderBy(desc(changes.createdAt))
         .limit(limit);
     },
   };

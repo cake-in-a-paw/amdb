@@ -170,7 +170,7 @@ it('revert restores the previous title and appears in history with revertOf', as
   }
 });
 
-it('revert answers 409 has_dependents when a later change builds on it, and reverting a create retracts the entity', async () => {
+it('reverting an update whose fields changed later is 409 stale_change, a create with later changes is 409 has_dependents, and a lone create reverts', async () => {
   const { t, author, mod, anon } = await setup();
   try {
     const created = await publish(author, mod, [work]);
@@ -195,7 +195,7 @@ it('revert answers 409 has_dependents when a later change builds on it, and reve
   }
 });
 
-it('revert undoes a relate and an unrelate', async () => {
+it('revert undoes a relate (removes it) and an unrelate (restores it)', async () => {
   const { t, author, mod, anon } = await setup();
   try {
     const created = await publish(author, mod, [
@@ -205,9 +205,19 @@ it('revert undoes a relate and an unrelate', async () => {
     ]);
     const [w, , link] = created.changes;
     const creators = async () =>
-      ((await (await anon.get(`/api/entities/${w!.entityId}`)).json()) as { relations: { creators: unknown[] } })
-        .relations.creators;
+      (
+        (await (await anon.get(`/api/entities/${w!.entityId}`)).json()) as {
+          relations: { creators: { relationId: string }[] };
+        }
+      ).relations.creators;
     expect(await creators()).toHaveLength(1);
+    const relationId = (await creators())[0]!.relationId;
+
+    const unrelate = await publish(author, mod, [{ op: 'unrelate', relationId }]);
+    expect(await creators()).toHaveLength(0);
+    expect((await mod.post(`/api/changes/${unrelate.changes[0]!.id}/revert`)).status).toBe(200);
+    expect((await creators()).map((c) => c.relationId)).toEqual([relationId]);
+
     expect((await mod.post(`/api/changes/${link!.id}/revert`)).status).toBe(200);
     expect(await creators()).toHaveLength(0);
   } finally {

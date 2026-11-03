@@ -57,13 +57,18 @@ export const EntitySchema = z.object({
 });
 export type EntityView = z.infer<typeof EntitySchema>;
 
-export const SearchQuery = z.object({
-  q: z.string().trim().min(1).max(200),
-  kind: EntityKind.optional(),
-  /** Only works have a media type, so this limits results to works of it. */
-  mediaType: MediaType.optional(),
-  ...PageQuery,
-});
+export const SearchQuery = z
+  .object({
+    q: z.string().trim().min(1).max(200),
+    kind: EntityKind.optional(),
+    /** Only works have a media type, so this limits results to works of it. */
+    mediaType: MediaType.optional(),
+    ...PageQuery,
+  })
+  .refine((q) => !q.mediaType || !q.kind || q.kind === 'work', {
+    message: 'mediaType only applies to works',
+    path: ['mediaType'],
+  });
 export type SearchQuery = z.infer<typeof SearchQuery>;
 
 /** The decoded search cursor: the last result's sort title and id. */
@@ -72,11 +77,16 @@ export type SearchCursor = z.infer<typeof SearchCursor>;
 
 export const SearchSchema = z.object({ items: z.array(SummarySchema), nextCursor: z.string().nullable() });
 
-export const DuplicatesQuery = z.object({
-  kind: EntityKind,
-  title: z.string().trim().min(1).max(200),
-  mediaType: MediaType.optional(),
-});
+export const DuplicatesQuery = z
+  .object({
+    kind: EntityKind,
+    title: z.string().trim().min(1).max(200),
+    mediaType: MediaType.optional(),
+  })
+  .refine((q) => !q.mediaType || q.kind === 'work', {
+    message: 'mediaType only applies to works',
+    path: ['mediaType'],
+  });
 
 /** Spec §5.3: a pending create shows only these four fields, to anyone. */
 export const PendingDuplicateSchema = z.object({

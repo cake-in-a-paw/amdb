@@ -12,6 +12,7 @@ import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
 import { badRequest, conflict, notFound } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
+import { normalizeTitle } from '../catalog/normalize';
 import { isModerator } from '../users/identity';
 import { applyChange, applyInverse, assertUndoable, fieldsOf, type Inverse, InverseSchema } from './apply';
 import {
@@ -234,7 +235,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
             dependsOn: id,
           });
-          return { id, seq, op: 'create', kind: change.kind, entityId, payload, dependsOn: [] };
+          // `title` for works, series and properties; `name` for creators and tags.
+          const label = payload.title ?? payload.name;
+          const titleNorm = typeof label === 'string' ? normalizeTitle(label) : null;
+          return { id, seq, op: 'create', kind: change.kind, entityId, payload, titleNorm, dependsOn: [] };
         }
         case 'update': {
           const target = await lookupEntity(actor, change.entityId);

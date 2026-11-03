@@ -41,6 +41,8 @@ export interface NewChange {
   entityId: string | null;
   relationId?: string | null;
   payload: Record<string, unknown>;
+  /** A create's normalized title or name. */
+  titleNorm?: string | null;
   base?: Record<string, unknown> | null;
   dependsOn: string[];
   resubmitOf?: string | null;

@@ -140,3 +140,35 @@ it('duplicates ignores rejected creates and other media types, and covers creato
     await t.close();
   }
 });
+
+it('duplicates finds a pending create titled "  Amélie " by "amelie", with the same matching as existing', async () => {
+  const { t, author, mod, anon } = await setup();
+  try {
+    await submit(author, [work('  Amélie ', { releaseYear: 2001 })]);
+    await publish(author, mod, [{ ...work('Amélie Poulain'), ref: 'x' }]);
+    const body = (await (await anon.get('/api/duplicates?kind=work&title=amelie')).json()) as {
+      existing: Summary[];
+      pending: Record<string, unknown>[];
+    };
+    expect(body.pending).toEqual([{ kind: 'work', title: 'Amélie', mediaType: 'film_tv', releaseYear: 2001 }]);
+    expect(body.existing.map((e) => e.title)).toEqual(['Amélie Poulain']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a mediaType with a kind other than work is a 400', async () => {
+  const { t, anon } = await setup();
+  try {
+    for (const path of [
+      '/api/search?q=x&kind=creator&mediaType=book',
+      '/api/duplicates?kind=creator&title=x&mediaType=book',
+    ]) {
+      const res = await anon.get(path);
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: { code: string } }).error.code).toBe('invalid_request');
+    }
+  } finally {
+    await t.close();
+  }
+});

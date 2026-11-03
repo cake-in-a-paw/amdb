@@ -257,9 +257,16 @@ export const changes = pgTable(
     appliedAt: ts('applied_at'),
     redactedAt: ts('redacted_at'),
     redactionReason: text('redaction_reason'),
+    /** A create's normalized title or name, so the duplicate check can find pending creates. */
+    titleNorm: text('title_norm'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
-  (t) => [index('changes_status_created_idx').on(t.status, t.createdAt)],
+  (t) => [
+    index('changes_status_created_idx').on(t.status, t.createdAt),
+    index('changes_pending_create_idx')
+      .on(t.kind, t.titleNorm)
+      .where(sql`${t.op} = 'create' AND ${t.status} = 'pending'`),
+  ],
 );
 
 export const relations = pgTable(

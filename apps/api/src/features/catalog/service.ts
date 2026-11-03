@@ -12,10 +12,8 @@ const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
 const byPosition = <T extends { position?: number }>(items: T[]) =>
   items.toSorted((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
 
-/** The most pending creates one duplicate check looks through. */
-const PENDING_SCAN = 500;
-/** The most existing matches a duplicate check lists. */
-const DUPLICATE_LIMIT = 10;
+/** The most existing matches, and the most pending ones, a duplicate check lists. */
+const DUPLICATE_LIMIT = 20;
 
 interface SummaryRow {
   id: string;
@@ -151,26 +149,17 @@ export function createCatalogService(db: Db) {
      */
     async duplicates(query: { kind: EntityKind; title: string; mediaType?: MediaType }) {
       const norm = normalizeTitle(query.title);
-      const existing = await repo.search(
-        norm,
-        { kind: query.kind, mediaType: query.mediaType },
-        null,
-        DUPLICATE_LIMIT - 1,
-      );
-      const pending = (await repo.pendingCreates(query.kind, PENDING_SCAN)).flatMap(({ payload }) => {
-        const title = payload?.title ?? payload?.name;
+      const existing = await repo.existingMatching(norm, query, DUPLICATE_LIMIT);
+      const pending = (await repo.pendingMatching(norm, query, DUPLICATE_LIMIT)).map(({ payload }) => {
         const mediaType = MediaType.safeParse(payload?.mediaType);
         const year = payload?.releaseYear;
-        if (typeof title !== 'string' || !normalizeTitle(title).includes(norm)) return [];
-        if (query.mediaType && (!mediaType.success || mediaType.data !== query.mediaType)) return [];
-        return [
-          {
-            kind: query.kind,
-            title,
-            mediaType: mediaType.success ? mediaType.data : null,
-            releaseYear: typeof year === 'number' ? year : null,
-          },
-        ];
+        return {
+          kind: query.kind,
+          // Matched on the stored normalized title, so the payload has one of these.
+          title: String(payload?.title ?? payload?.name),
+          mediaType: mediaType.success ? mediaType.data : null,
+          releaseYear: typeof year === 'number' ? year : null,
+        };
       });
       return { existing: existing.map(toSummary), pending };
     },

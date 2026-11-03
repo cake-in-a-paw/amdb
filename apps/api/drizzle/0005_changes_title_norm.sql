@@ -1,0 +1,2 @@
+ALTER TABLE "changes" ADD COLUMN "title_norm" text;--> statement-breakpoint
+CREATE INDEX "changes_pending_create_idx" ON "changes" USING btree ("kind","title_norm") WHERE "changes"."op" = 'create' AND "changes"."status" = 'pending';
