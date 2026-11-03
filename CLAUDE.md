@@ -24,7 +24,7 @@ Who may see what is defined in the specs.
 - Every field records where it came from.
 - Importers only read CC0 sources, with the license evidence in their spec. Nothing goes in
   unless its origin can be shown to be CC0.
-- Every submission carries `cc0: true`; one without it is a 400.
+- Every submission records the contributor's CC0 agreement; one without it is rejected.
 - Every importer call has a timeout and a rate limit, and honors `Retry-After`. A failing
   upstream degrades to an explicit "unavailable", never a 500, a hang, or an empty result that
   looks like "no matches".
@@ -33,13 +33,13 @@ Who may see what is defined in the specs.
 
 - No write bypasses the revision log, imports and moderator fixes included.
 - History is append-only; a revert is a new revision.
-- The one exception is legal or abuse removal (redaction): it erases a revision's content
-  (`payload`, `inverse`) but keeps the revision as a stub.
+- The one exception is legal or abuse removal: it erases a revision's content but keeps the
+  revision as a stub (who, when, reason).
 
 ### IV. Contributors' Work Is Never Discarded
 
-- Rejection returns the work with a reason and keeps the change and its payload.
-- Nothing a contributor submitted is hard-deleted, except by redaction (III).
+- Rejection returns the work with a reason and keeps what was submitted.
+- Nothing a contributor submitted is hard-deleted, except by legal or abuse removal (III).
 
 ### V. One Dataset, Three Views
 

@@ -20,11 +20,11 @@ shared, checkable definition of good code before any code exists.
 Carried over from rmd, adapted only where AMDB differs: tests against real Postgres and never
 weakened; simple by default, uniform by rule; feature folders with three layers; types and
 schemas as the contract; the database guarding its invariants; one error shape; dependencies as
-decisions; no dead architecture; the standards and the governance (amendments by ADR, semver).
+decisions; no dead architecture; the standards and the governance (amendments by ADR, semver; the approver is "a second maintainer" rather than rmd's "two teammates", since AMDB has no fixed team).
 The pull-request rule is stated already relaxed, as rmd's ADR 0006 relaxed it: changes may
 land on `main` when `pnpm check` passes, until other contributors commit here.
 
-Replacing rmd's principles I and II, and added around them:
+Adapting rmd's principle I, replacing its principle II, and added around them:
 
 - **Privacy is tested from the outside** adapts rmd's "visibility rules" to AMDB's private
   data: pending and rejected submissions, contributor emails and API usage.

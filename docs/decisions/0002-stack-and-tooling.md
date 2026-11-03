@@ -19,7 +19,8 @@ Same stack as rmd, for the owner's familiarity and shared patterns:
 - **Database:** Postgres through Drizzle (schema in TS, generated migrations), with PGlite for
   tests and local dev.
 - **Auth:** Better Auth in the API.
-- **Web:** a React + Vite single-page app.
+- **Web:** a React + Vite single-page app, with TanStack Router and Query, and Tailwind.
+- **Hosting:** Railway.
 - **Tooling:** Vitest for tests; Prettier and oxlint for format and lint; husky with
   lint-staged and commitlint for hooks (no Python toolchain in this repo); GitHub Actions for CI.
 
@@ -28,6 +29,7 @@ Same stack as rmd, for the owner's familiarity and shared patterns:
 - Fastify, NestJS and Express (server);
 - Kysely, Prisma and raw SQL (database layer);
 - Next.js and SvelteKit (web);
+- Supabase and GCP (hosting);
 - the Python `pre-commit` framework (hooks), rejected because the repo has no Python toolchain.
 
 All were rejected for the same reason: they'd give up the shared patterns with rmd for no gain
