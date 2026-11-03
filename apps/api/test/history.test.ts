@@ -119,6 +119,9 @@ it('history shows a redacted change as a stub with its reason', async () => {
       op: 'update',
       redacted: true,
       reason: 'abuse',
+      // Spec §4.3: the stub keeps who and when.
+      author: { userId: expect.any(String) },
+      appliedAt: expect.any(String),
     });
   } finally {
     await t.close();

@@ -199,8 +199,15 @@ export const HistoryItemSchema = z.union([
     appliedAt: z.iso.datetime(),
     revertOf: z.uuid().nullable(),
   }),
-  /** A change erased for legal or abuse reasons: only that it happened and why. */
-  z.object({ changeId: z.uuid(), op: ChangeOp, redacted: z.literal(true), reason: z.string().nullable() }),
+  /** A change erased for legal or abuse reasons: only who, when and why. */
+  z.object({
+    changeId: z.uuid(),
+    op: ChangeOp,
+    redacted: z.literal(true),
+    reason: z.string().nullable(),
+    author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+    appliedAt: z.iso.datetime(),
+  }),
 ]);
 
 export const HistorySchema = z.object({ items: z.array(HistoryItemSchema), nextCursor: z.string().nullable() });

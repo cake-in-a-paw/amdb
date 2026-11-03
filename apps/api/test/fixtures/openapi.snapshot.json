@@ -2194,13 +2194,41 @@
                               "reason": {
                                 "type": "string",
                                 "nullable": true
+                              },
+                              "author": {
+                                "anyOf": [
+                                  {
+                                    "type": "string",
+                                    "enum": [
+                                      "anonymous"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "userId": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      }
+                                    },
+                                    "required": [
+                                      "userId"
+                                    ]
+                                  }
+                                ]
+                              },
+                              "appliedAt": {
+                                "type": "string",
+                                "format": "date-time"
                               }
                             },
                             "required": [
                               "changeId",
                               "op",
                               "redacted",
-                              "reason"
+                              "reason",
+                              "author",
+                              "appliedAt"
                             ]
                           }
                         ]

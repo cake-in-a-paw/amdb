@@ -553,10 +553,110 @@ export async function currentContent(tx: Tx, change: ChangeRow): Promise<Current
   }
 }
 
-/** Removes an entity from public view (legal or abuse removal). Its rows and history stay. */
+/**
+ * Removes an entity from public view (legal or abuse removal) and erases its free text: the kind
+ * row keeps valid placeholders (NOT NULL columns, `*_norm` consistent, a tag's slug unique), and
+ * the entity's history stays.
+ */
 export async function applyRemoval(tx: Tx, entityId: string): Promise<void> {
   const now = new Date();
-  await tx.update(entities).set({ removedAt: now, updatedAt: now }).where(eq(entities.id, entityId));
+  const [entity] = await tx
+    .update(entities)
+    .set({ removedAt: now, updatedAt: now })
+    .where(eq(entities.id, entityId))
+    .returning({ kind: entities.kind });
+  const placeholder = '[removed]';
+  const norm = normalizeTitle(placeholder);
+  switch (entity?.kind) {
+    case 'work':
+      await tx
+        .update(works)
+        .set({ title: placeholder, titleNorm: norm, originalTitle: null, description: null, attributes: {} })
+        .where(eq(works.entityId, entityId));
+      return;
+    case 'creator':
+      await tx
+        .update(creators)
+        .set({ name: placeholder, nameNorm: norm, description: null })
+        .where(eq(creators.entityId, entityId));
+      return;
+    case 'series':
+      await tx
+        .update(series)
+        .set({ title: placeholder, titleNorm: norm, description: null })
+        .where(eq(series.entityId, entityId));
+      return;
+    case 'property':
+      await tx
+        .update(properties)
+        .set({ title: placeholder, titleNorm: norm, description: null })
+        .where(eq(properties.entityId, entityId));
+      return;
+    case 'tag':
+      await tx
+        .update(tags)
+        .set({ name: placeholder, nameNorm: norm, slug: `removed-${entityId}` })
+        .where(eq(tags.entityId, entityId));
+      return;
+    case undefined:
+      return;
+  }
+}
+
+/**
+ * Removes copies of a redacted change's content held by other changes, so a later revert can't
+ * bring it back: for an update or create, the redacted fields in the `inverse` and `base` of
+ * other changes on the entity that recorded this change as their source; for a relate, any
+ * unrelate inverse that would restore its relation (left unrestorable: null) and the merge
+ * inverses that would restore it as a dropped duplicate.
+ */
+export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
+  if ((change.op === 'create' || change.op === 'update') && change.entityId) {
+    const keys = Object.keys(fieldsOf(change.payload));
+    const others = await tx
+      .select()
+      .from(changes)
+      .where(and(eq(changes.entityId, change.entityId), ne(changes.id, change.id), eq(changes.op, 'update')));
+    for (const other of others) {
+      const inverse = InverseSchema.safeParse(other.inverse);
+      const own = inverse.success && inverse.data.op === 'set_fields' ? inverse.data : null;
+      const drop = keys.filter((k) => (own ? own.fieldSources[k] === change.id : other.status === 'pending'));
+      if (!drop.length) continue;
+      const without = <T extends Record<string, unknown>>(o: T) =>
+        Object.fromEntries(Object.entries(o).filter(([k]) => !drop.includes(k)));
+      await tx
+        .update(changes)
+        .set({
+          base: other.base ? without(other.base) : other.base,
+          inverse: own
+            ? { ...own, fields: without(own.fields), fieldSources: without(own.fieldSources) }
+            : other.inverse,
+        })
+        .where(eq(changes.id, other.id));
+    }
+  }
+  if (change.op === 'relate' && change.relationId) {
+    const relationId = change.relationId;
+    await tx
+      .update(changes)
+      .set({ inverse: null })
+      .where(and(eq(changes.op, 'unrelate'), eq(changes.relationId, relationId)));
+    const merges = await tx.select().from(changes).where(eq(changes.op, 'merge'));
+    for (const m of merges) {
+      const inverse = InverseSchema.safeParse(m.inverse);
+      if (!inverse.success || inverse.data.op !== 'unmerge' || !inverse.data.removedRelationIds.includes(relationId))
+        continue;
+      await tx
+        .update(changes)
+        .set({
+          inverse: {
+            ...inverse.data,
+            removedRelationIds: inverse.data.removedRelationIds.filter((x) => x !== relationId),
+          },
+        })
+        .where(eq(changes.id, m.id));
+    }
+  }
 }
 
 /** Retires a relation on behalf of a redaction; it is recorded as removed by that change. */

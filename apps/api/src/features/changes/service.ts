@@ -14,12 +14,13 @@ import { resolveWinner } from '../../platform/db/merge';
 import { badRequest, conflict, gone, notFound, unauthenticated } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { normalizeTitle } from '../catalog/normalize';
-import { isAdmin, isModerator } from '../users/identity';
+import { anonHashOf, isAdmin, isModerator } from '../users/identity';
 import {
   applyChange,
   applyInverse,
   applyRelationRemoval,
   applyRemoval,
+  scrubRedacted,
   assertUndoable,
   currentContent,
   fieldsOf,
@@ -127,7 +128,8 @@ const relationAfter = (change: ChangeRow, inverse: Inverse) =>
 
 /** Rebuilds a rejected change as a new submission's input, with the author's edits merged in. */
 function resubmission(change: ChangeRow, edits: ResubmitInput): ChangeInput {
-  if (!change.payload) throw conflict('redacted', 'This change was removed and can’t be resubmitted');
+  if (change.redactedAt || !change.payload)
+    throw conflict('redacted', 'This change was removed and can’t be resubmitted');
   if (edits.fields && change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
   if (edits.data && change.op !== 'relate') throw notEditable(change.op, 'data');
   let candidate: unknown;
@@ -400,21 +402,20 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   }
 
   /**
-   * After `change` is rejected: rejects the pending changes that depend on it, transitively. A
-   * rejected create also takes down pending changes made against its entity after it went live:
+   * Rejects the pending changes that depend on `roots`, transitively. A rejected create (or a
+   * removed entity) also takes down pending changes made against its entity after it went live:
    * they name the entity but, submitted once it existed, have no `depends_on` entry.
    */
-  async function rejectDependents(
+  async function cascadeReject(
     r: ReturnType<typeof changesRepository>,
-    change: ChangeRow,
+    roots: string[],
+    entityId: string | null,
     reviewed: { reviewedBy: string; reviewedAt: Date },
+    entityReason: string,
   ) {
     const because = (dep: string) => ({ ...reviewed, reason: `Depends on rejected change ${dep}` });
-    const targeting =
-      change.op === 'create' && change.entityId
-        ? await r.rejectPendingTargeting(change.entityId, because(change.id))
-        : [];
-    let frontier = [change.id, ...targeting];
+    const targeting = entityId ? await r.rejectPendingTargeting(entityId, { ...reviewed, reason: entityReason }) : [];
+    let frontier = [...roots, ...targeting];
     while (frontier.length) {
       const next: string[] = [];
       for (const dep of frontier) next.push(...(await r.rejectPendingDependents(dep, because(dep))));
@@ -526,12 +527,19 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         const r = changesRepository(tx);
         const { change, reviewed } = await lockForReview(tx, actor, id);
         if (change.status === 'published') {
+          if (!change.inverse) throw conflict('redacted', 'This change’s undo data was removed; it can’t be rejected');
           if (await r.findRevert(id)) throw conflict('already_reverted', 'This change was already reverted');
           await assertUndoable(tx, change);
           await applyInverse(tx, inverseOf(change), change.id);
         }
         await r.updateChange(id, { ...reviewed, status: 'rejected', reason });
-        await rejectDependents(r, change, reviewed);
+        await cascadeReject(
+          r,
+          [change.id],
+          change.op === 'create' ? change.entityId : null,
+          reviewed,
+          `Depends on rejected change ${change.id}`,
+        );
         return { id, status: 'rejected' as const };
       });
     },
@@ -558,7 +566,14 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       return {
         items: items.map(({ change: c, authorUserId }) => {
           if (c.redactedAt) {
-            return { changeId: c.id, op: c.op, redacted: true as const, reason: c.redactionReason };
+            return {
+              changeId: c.id,
+              op: c.op,
+              redacted: true as const,
+              reason: c.redactionReason,
+              author: authorUserId ? { userId: authorUserId } : ('anonymous' as const),
+              appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
+            };
           }
           const revertOf = c.payload?.revertOf;
           return {
@@ -649,14 +664,26 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
               },
             );
           }
-          if (current?.entityId) await applyRemoval(tx, current.entityId);
+          if (current?.entityId) {
+            await applyRemoval(tx, current.entityId);
+            // Pending changes against it would only answer dependency_pending: reject them now.
+            await cascadeReject(
+              r,
+              [],
+              current.entityId,
+              { reviewedBy: admin, reviewedAt: now },
+              'The entity was removed',
+            );
+          }
           if (current?.relationId) await applyRelationRemoval(tx, current.relationId, change.id);
           removed.entityId = current?.entityId ?? null;
           removed.relationId = current?.relationId ?? null;
         }
         const pending = change.status === 'pending';
+        await scrubRedacted(tx, change);
         await r.updateChange(id, {
-          payload: null,
+          // A merge keeps `from` and `into`: ids aren't content, and history finds the merge by them.
+          payload: change.op === 'merge' ? MergePayload.parse(change.payload) : null,
           base: null,
           inverse: null,
           titleNorm: null,
@@ -666,14 +693,24 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             ? { status: 'rejected' as const, reason: 'Removed by an administrator', reviewedBy: admin, reviewedAt: now }
             : {}),
         });
-        if (pending) await rejectDependents(r, change, { reviewedBy: admin, reviewedAt: now });
+        if (pending) {
+          await cascadeReject(
+            r,
+            [id],
+            change.op === 'create' ? change.entityId : null,
+            { reviewedBy: admin, reviewedAt: now },
+            `Depends on rejected change ${id}`,
+          );
+        }
         return { id, ...removed };
       });
     },
 
     /** Moves every anonymous submission of this token to the signed-in user. Idempotent: a second claim moves none. */
-    async claimAnonymous(actor: Actor, anonHash: string | null) {
+    async claimAnonymous(actor: Actor, token: string | undefined) {
       if (actor.kind !== 'user') throw unauthenticated();
+      // The session wins over the header in `resolveActor`, so the token is read from the header itself.
+      const anonHash = anonHashOf(token);
       if (!anonHash)
         throw badRequest(
           'anon_token_required',

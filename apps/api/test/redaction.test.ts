@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
+import { works } from '../src/platform/db/schema';
 import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
@@ -44,6 +46,8 @@ it('a redacted change shows in history as redacted with its reason and no payloa
       op: 'update',
       redacted: true,
       reason: 'Contains personal data',
+      author: { userId: expect.any(String) },
+      appliedAt: expect.any(String),
     });
     expect(JSON.stringify(hist)).not.toContain('secret');
 
@@ -209,6 +213,68 @@ it('undoing a merge is a 409 stale_change once a dropped relation’s other end 
     const revert = await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`);
     expect(revert.status).toBe(409);
     expect(await code(revert)).toBe('stale_change');
+  } finally {
+    await t.close();
+  }
+});
+
+it('reverting a later update does not bring redacted content back', async () => {
+  const { t, author, mod, admin, anon, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [film('Arrival')]);
+    const id = made.changes[0]!.entityId!;
+    const upd = (d: string) => [{ op: 'update', kind: 'work', entityId: id, fields: { description: d } }];
+    const a = await publish(author, mod, upd('secret'));
+    const b = await publish(author, mod, upd('fine'));
+    expect((await redact(admin, a.changes[0]!.id, { reason: 'Legal' })).status).toBe(200);
+    const revert = await mod.post(`/api/changes/${b.changes[0]!.id}/revert`);
+    expect(revert.status, await revert.clone().text()).toBe(200);
+
+    const seen = [
+      await (await anon.get(`/api/entities/${id}`)).text(),
+      await (await mod.get(`/api/submissions/${b.id}`)).text(),
+      await (await mod.get(`/api/submissions/${a.id}`)).text(),
+      await (await anon.get(`/api/entities/${id}/history`)).text(),
+      await (await mod.get('/api/moderation/queue')).text(),
+    ];
+    for (const body of seen) expect(body).not.toContain('secret');
+  } finally {
+    await t.close();
+  }
+});
+
+it('removing an entity erases its text and rejects pending changes against it', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [film('Zyxwvut Rising')]);
+    const id = made.changes[0]!.entityId!;
+    const pending = await submit(author, [{ op: 'update', kind: 'work', entityId: id, fields: { description: 'x' } }]);
+    expect((await redact(admin, made.changes[0]!.id, { reason: 'Legal', removeEntity: true })).status).toBe(200);
+    const sub = (await (await author.get(`/api/submissions/${pending.id}`)).json()) as {
+      changes: { status: string }[];
+    };
+    expect(sub.changes[0]!.status).toBe('rejected');
+    const [row] = await t.db.select().from(works).where(eq(works.entityId, id));
+    expect(row).toMatchObject({ title: '[removed]', description: null });
+    expect(JSON.stringify(row)).not.toContain('Zyxwvut');
+  } finally {
+    await t.close();
+  }
+});
+
+it('a redacted merge keeps its ids and stays in the winner’s history', async () => {
+  const { t, author, mod, admin, anon, redact } = await setup();
+  try {
+    const mk = async (name: string) => (await publish(author, mod, [creator(name)])).changes[0]!.entityId!;
+    const winner = await mk('Denis Villeneuve');
+    const loser = await mk('D. Villeneuve');
+    const merged = await publish(author, mod, [{ op: 'merge', kind: 'creator', from: loser, into: winner }]);
+    const res = await redact(admin, merged.changes[0]!.id, { reason: 'Legal', removeEntity: true });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const hist = (await (await anon.get(`/api/entities/${winner}/history`)).json()) as {
+      items: { changeId: string; redacted?: boolean }[];
+    };
+    expect(hist.items.find((i) => i.changeId === merged.changes[0]!.id)?.redacted).toBe(true);
   } finally {
     await t.close();
   }
