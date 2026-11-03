@@ -1,0 +1,15 @@
+# Capture the pushed-refs list (stdin) first: child processes such as pnpm could drain it,
+# and the global hook below needs it.
+refs="$(cat)"
+
+# The constitution's gate: everything must pass before a push.
+pnpm check || exit 1
+
+# Husky's repo-local hooks path replaces any global core.hooksPath, so hand off to the
+# developer's global pre-push hook (e.g. an unsigned-commit guard) instead of silently skipping it.
+# The captured refs are replayed on stdin; the global hook's exit status becomes ours.
+global_dir="$(git config --global --get core.hooksPath || true)"
+case "$global_dir" in "~/"*) global_dir="$HOME/${global_dir#"~/"}" ;; esac
+if [ -n "$global_dir" ] && [ -x "$global_dir/pre-push" ]; then
+  printf '%s\n' "$refs" | "$global_dir/pre-push" "$@"
+fi

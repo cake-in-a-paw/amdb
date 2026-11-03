@@ -1,0 +1,8 @@
+pnpm-lock.yaml
+apps/api/drizzle/
+docs/
+.superpowers/
+coverage/
+dist/
+apps/api/test/fixtures/
+.claude/worktrees/

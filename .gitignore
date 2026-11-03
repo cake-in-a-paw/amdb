@@ -1,0 +1,8 @@
+node_modules/
+.env
+.pglite/
+dist/
+coverage/
+
+# Brainstorm mockups from the superpowers visual companion
+.superpowers/
