@@ -223,7 +223,8 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
         fields: Object.fromEntries(keys.map((k) => [k, current[k] ?? null])),
         fieldSources: Object.fromEntries(keys.map((k) => [k, entity.fieldSources[k] ?? null])),
       };
-      await writeRow(tx, change.kind, id, { ...asInput(current), ...fields }, 'update');
+      // A null field clears it: `asInput` leaves it out, as an absent value.
+      await writeRow(tx, change.kind, id, asInput({ ...current, ...fields }), 'update');
       await tx
         .update(entities)
         .set({

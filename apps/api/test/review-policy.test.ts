@@ -198,3 +198,44 @@ it('rejecting a published create also rejects pending changes made against it on
     await t.close();
   }
 });
+
+it('under a publish policy, a change that conflicts when applied is held and the rest still publish', async () => {
+  const t = await setupTest({ reviewPolicy: () => 'publish' });
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const tag = (ref: string) => ({
+      op: 'create',
+      kind: 'tag',
+      ref,
+      fields: { kind: 'genre', name: 'Drama', slug: 'drama' },
+    });
+    await submit(author, [tag('a')]);
+    const second = await submit(author, [
+      tag('b'),
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Keep me', kind: 'person' } },
+    ]);
+    expect(second.changes.map((c) => c.status)).toEqual(['pending', 'published']);
+    const detail = (await (await author.get(`/api/submissions/${second.id}`)).json()) as Detail;
+    expect(detail.changes.map((c) => c.status)).toEqual(['pending', 'published']);
+    expect((await t.as({ kind: 'none' }).get(`/api/entities/${second.changes[1]!.entityId}`)).status).toBe(200);
+  } finally {
+    await t.close();
+  }
+});
+
+it('under a publish policy, an update that would leave the work invalid is held, not lost', async () => {
+  const t = await setupTest({ reviewPolicy: () => 'publish' });
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const made = await submit(author, [{ ...work, fields: { ...work.fields, releaseYear: 2020, releaseMonth: 2 } }]);
+    const id = made.changes[0]!.entityId!;
+    const upd = await submit(author, [{ op: 'update', kind: 'work', entityId: id, fields: { releaseDay: 30 } }]);
+    expect(upd.changes[0]!.status).toBe('pending');
+    const approve = await mod.post(`/api/changes/${upd.changes[0]!.id}/approve`);
+    expect(approve.status).toBe(409);
+    expect(await approve.json()).toMatchObject({ error: { code: 'invalid_fields' } });
+  } finally {
+    await t.close();
+  }
+});

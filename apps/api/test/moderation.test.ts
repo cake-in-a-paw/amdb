@@ -289,3 +289,71 @@ it('the queue keeps a submission’s changes in order across pages', async () =>
     await t.close();
   }
 });
+
+it('an update can clear an optional field, and reverting it restores the value', async () => {
+  const t = await setupTest();
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const anon = t.as({ kind: 'none' });
+    const made = await publish(author, mod, [
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Denis', kind: 'person', description: 'Director' } },
+    ]);
+    const id = made.changes[0]!.entityId!;
+    const fields = async () =>
+      ((await (await anon.get(`/api/entities/${id}`)).json()) as { fields: Record<string, unknown> }).fields;
+
+    const required = await author.post('/api/submissions', {
+      cc0: true,
+      changes: [{ op: 'update', kind: 'creator', entityId: id, fields: { name: null } }],
+    });
+    expect(required.status).toBe(400);
+
+    const cleared = await publish(author, mod, [
+      { op: 'update', kind: 'creator', entityId: id, fields: { description: null } },
+    ]);
+    expect((await fields()).description).toBeNull();
+    expect((await mod.post(`/api/changes/${cleared.changes[0]!.id}/revert`)).status).toBe(200);
+    expect((await fields()).description).toBe('Director');
+  } finally {
+    await t.close();
+  }
+});
+
+it('an update can clear a work’s release date', async () => {
+  const t = await setupTest();
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const made = await publish(author, mod, [
+      {
+        op: 'create',
+        kind: 'work',
+        ref: 'w',
+        fields: {
+          mediaType: 'book',
+          subtype: null,
+          title: 'Dune',
+          releaseYear: 1965,
+          releaseMonth: 8,
+          description: 'x',
+        },
+      },
+    ]);
+    const id = made.changes[0]!.entityId!;
+    await publish(author, mod, [
+      {
+        op: 'update',
+        kind: 'work',
+        entityId: id,
+        fields: { releaseYear: null, releaseMonth: null, description: null },
+      },
+    ]);
+    const entity = (await (await t.as({ kind: 'none' }).get(`/api/entities/${id}`)).json()) as {
+      fields: Record<string, unknown>;
+    };
+    expect(entity.fields).toMatchObject({ releaseYear: null, releaseMonth: null, description: null, title: 'Dune' });
+  } finally {
+    await t.close();
+  }
+});

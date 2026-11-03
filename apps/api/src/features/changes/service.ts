@@ -5,13 +5,21 @@ import {
   FieldsFor,
   type MediaType,
   type RelationType,
-  WorkFieldsBase,
+  UpdateFieldsFor,
 } from '@amdb/shared';
 import type { z } from '@hono/zod-openapi';
 import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
 import { resolveWinner } from '../../platform/db/merge';
-import { badRequest, conflict, gone, notFound, unauthenticated } from '../../platform/http/errors';
+import {
+  ApiError,
+  badRequest,
+  conflict,
+  gone,
+  isUniqueViolation,
+  notFound,
+  unauthenticated,
+} from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { normalizeTitle } from '../catalog/normalize';
 import { anonHashOf, isAdmin, isModerator } from '../users/identity';
@@ -107,9 +115,9 @@ const isLive = (status: string) => status === 'published' || status === 'approve
 const notEditable = (op: string, what: 'fields' | 'data') =>
   badRequest('not_editable', `A ${op} change has no ${what} to edit`);
 
-/** The field shape a create or update payload must match: a create's full shape, or its partial for an update. */
+/** The field shape a create or update payload must match: a create's full shape, or the update shape (null clears). */
 const shapeFor = (op: 'create' | 'update', kind: EntityKind) =>
-  op === 'create' ? FieldsFor[kind] : kind === 'work' ? WorkFieldsBase.partial() : FieldsFor[kind].partial();
+  op === 'create' ? FieldsFor[kind] : UpdateFieldsFor[kind];
 
 /** A validated change and the row it will be stored as. */
 interface Planned {
@@ -261,9 +269,8 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         case 'update': {
           const target = await lookupEntity(actor, change.entityId);
           expectKind(index, target, change.kind);
-          // `.partial()` of the create shape; a work's cross-field rules are checked when it is applied.
-          const shape = change.kind === 'work' ? WorkFieldsBase.partial() : FieldsFor[change.kind].partial();
-          const parsed = shape.safeParse(change.fields);
+          // A work's cross-field rules are checked when it is applied.
+          const parsed = shapeFor('update', change.kind).safeParse(change.fields);
           if (!parsed.success) throw invalidFields(index, parsed.error);
           const payload: Record<string, unknown> = parsed.data;
           const keys = Object.keys(payload);
@@ -362,7 +369,9 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
 
   /**
    * Stores a submission and asks the review policy about each change in order. A `publish`
-   * decision applies the change now, unless something it depends on isn't live yet.
+   * decision applies the change now, unless something it depends on isn't live yet. A change
+   * that conflicts with current state when applied is held for a moderator instead (its attempt
+   * runs in a savepoint), so the rest of the submission still goes in.
    */
   async function store(tx: Tx, actor: Actor, owner: Owner, note: string | undefined, items: Planned[]) {
     const r = changesRepository(tx);
@@ -377,7 +386,13 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       const waiting = row.dependsOn.filter((d) => !live.has(d));
       const deps = await r.lockStatuses(waiting);
       if (deps.length !== waiting.length || !deps.every((d) => isLive(d.status))) continue;
-      await applyNow(tx, row.id, 'published');
+      try {
+        await tx.transaction((sp) => applyNow(sp, row.id, 'published'));
+      } catch (err) {
+        // Not swallowed: the change stays pending, and a moderator approving it gets this same error.
+        if (err instanceof ApiError || isUniqueViolation(err)) continue;
+        throw err;
+      }
       live.add(row.id);
     }
     return {

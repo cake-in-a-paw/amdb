@@ -19,7 +19,7 @@ function daysInMonth(year: number, month: number): number {
   return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
-/** The `create` shape for a work. Cross-field rules are refinements, so the update shape is the base's `.partial()`. */
+/** The `create` shape for a work, without its cross-field rules (refinements of `WorkFields`, checked again when an update applies). */
 export const WorkFieldsBase = z.object({
   mediaType: MediaType,
   subtype: Subtype.nullable(),
@@ -77,4 +77,23 @@ export const FieldsFor = {
   series: SeriesFields,
   property: PropertyFields,
   tag: TagFields,
+} satisfies Record<EntityKind, z.ZodType>;
+
+/**
+ * The `update` shapes: every field optional, and an optional field may be `null`, which clears it.
+ * Required fields stay non-null. A work's cross-field rules are checked when the update applies.
+ */
+export const UpdateFieldsFor = {
+  work: WorkFieldsBase.extend({
+    originalTitle: title.nullable(),
+    description: description.nullable(),
+    releaseYear: WorkFieldsBase.shape.releaseYear.unwrap().nullable(),
+    releaseMonth: WorkFieldsBase.shape.releaseMonth.unwrap().nullable(),
+    releaseDay: WorkFieldsBase.shape.releaseDay.unwrap().nullable(),
+    attributes: WorkFieldsBase.shape.attributes.unwrap().nullable(),
+  }).partial(),
+  creator: CreatorFields.extend({ description: description.nullable() }).partial(),
+  series: SeriesFields.extend({ description: description.nullable() }).partial(),
+  property: PropertyFields.extend({ description: description.nullable() }).partial(),
+  tag: TagFields.partial(),
 } satisfies Record<EntityKind, z.ZodType>;
