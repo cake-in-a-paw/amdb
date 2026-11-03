@@ -59,28 +59,29 @@ export const SubmissionCreatedSchema = z.object({
   ),
 });
 
+/** A change as its author and moderators see it. */
+export const ChangeSchema = z.object({
+  id: z.uuid(),
+  seq: z.number().int(),
+  op: ChangeOp,
+  kind: EntityKind,
+  entityId: z.uuid().nullable(),
+  relationId: z.uuid().nullable(),
+  status: ChangeStatus,
+  reason: z.string().nullable(),
+  /** Null once redacted. After edit-and-approve, `payload.submitted` holds what the contributor sent. */
+  payload: z.record(z.string(), z.unknown()).nullable(),
+  base: z.record(z.string(), z.unknown()).nullable(),
+  dependsOn: z.array(z.uuid()),
+});
+
 export const SubmissionDetailSchema = z.object({
   id: z.uuid(),
   note: z.string().nullable(),
   createdAt: z.iso.datetime(),
   /** The account that submitted it; null for an anonymous submission, whose token is never shown. */
   authorUserId: z.uuid().nullable(),
-  changes: z.array(
-    z.object({
-      id: z.uuid(),
-      seq: z.number().int(),
-      op: ChangeOp,
-      kind: EntityKind,
-      entityId: z.uuid().nullable(),
-      relationId: z.uuid().nullable(),
-      status: ChangeStatus,
-      reason: z.string().nullable(),
-      /** Null once redacted. */
-      payload: z.record(z.string(), z.unknown()).nullable(),
-      base: z.record(z.string(), z.unknown()).nullable(),
-      dependsOn: z.array(z.uuid()),
-    }),
-  ),
+  changes: z.array(ChangeSchema),
 });
 
 export const MySubmissionsQuery = z.object(PageQuery);
@@ -98,3 +99,60 @@ export const MySubmissionsSchema = z.object({
   ),
   nextCursor: z.string().nullable(),
 });
+
+// --- Stored payloads (what a change row's `payload` holds, per op) ---
+
+export const RelatePayload = z.object({
+  type: RelationType,
+  from: z.uuid(),
+  to: z.uuid().nullable(),
+  data: z
+    .object({
+      role: z.string(),
+      position: z.number().int(),
+      linkType: WorkLinkType,
+      scheme: IdScheme,
+      value: z.string(),
+    })
+    .partial(),
+});
+export const UnrelatePayload = z.object({ relationId: z.uuid() });
+export const MergePayload = z.object({ from: z.uuid(), into: z.uuid() });
+
+// --- Moderation ---
+
+export const ChangeIdParam = z.object({ id: z.uuid() });
+
+export const QueueQuery = z.object(PageQuery);
+
+export const QueueSchema = z.object({
+  items: z.array(
+    z.object({
+      change: ChangeSchema.extend({ submissionId: z.uuid(), createdAt: z.iso.datetime() }),
+      submission: z.object({
+        id: z.uuid(),
+        author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+      }),
+      ageSeconds: z.number().int(),
+    }),
+  ),
+  nextCursor: z.string().nullable(),
+});
+
+export const ApproveInput = z.object({
+  /** Edit-and-approve: merged into a create's or update's fields; the original is kept as `payload.submitted`. */
+  fields: z.record(z.string(), z.unknown()).optional(),
+});
+export type ApproveInput = z.infer<typeof ApproveInput>;
+
+export const RejectInput = z.object({ reason: z.string().trim().min(1).max(1000) });
+
+export const ResubmitInput = z.object({
+  /** Merged into a create's or update's fields. */
+  fields: z.record(z.string(), z.unknown()).optional(),
+  /** Merged into a relate's `data`. */
+  data: z.record(z.string(), z.unknown()).optional(),
+});
+export type ResubmitInput = z.infer<typeof ResubmitInput>;
+
+export const ReviewedSchema = z.object({ id: z.uuid(), status: ChangeStatus });

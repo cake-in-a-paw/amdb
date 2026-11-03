@@ -41,8 +41,7 @@ it('a signed-in user submits a new work with a creator and a work_creator link',
     expect(d.changes[0]?.dependsOn).toEqual([]);
     expect(d.changes[0]?.payload).toMatchObject({ title: 'Arrival', lifecycle: 'unknown' });
 
-    // The reserved work is not an entity until approved. (GET /api/entities/:id arrives with Task 5;
-    // for now the route doesn't exist and answers the same 404.)
+    // The reserved work is not an entity until approved (moderation.test.ts shows the same id at 200 after).
     const reserved = await t.app.request(`/api/entities/${w!.entityId}`);
     expect(reserved.status).toBe(404);
   } finally {

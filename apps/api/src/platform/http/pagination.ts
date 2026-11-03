@@ -40,6 +40,12 @@ export function cursorBefore(ts: PgColumn | SQL, id: PgColumn, cursor: Cursor | 
   return sql`(${ts}, ${id}) < (${cursor.createdAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
 }
 
+/** Rows strictly newer than the cursor, for (ts ASC, id ASC) ordering. */
+export function cursorAfter(ts: PgColumn | SQL, id: PgColumn, cursor: Cursor | null): SQL | undefined {
+  if (!cursor) return undefined;
+  return sql`(${ts}, ${id}) > (${cursor.createdAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
+}
+
 /** Callers fetch limit + 1 rows; the extra row only signals that another page exists. */
 export function toPage<T>(rows: T[], limit: number, key: (row: T) => Cursor) {
   const items = rows.slice(0, limit);

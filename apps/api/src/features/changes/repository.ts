@@ -1,5 +1,5 @@
 import type { ChangeOp, EntityKind, MediaType } from '@amdb/shared';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import {
   changes,
   creators,
@@ -12,7 +12,10 @@ import {
   works,
 } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
-import { type Cursor, cursorBefore } from '../../platform/http/pagination';
+import { type Cursor, cursorAfter, cursorBefore } from '../../platform/http/pagination';
+
+export type ChangeRow = typeof changes.$inferSelect;
+export type ChangePatch = Partial<Omit<ChangeRow, 'id' | 'submissionId' | 'seq' | 'createdAt'>>;
 
 export type Owner = { userId: string } | { anonHash: string };
 
@@ -26,6 +29,7 @@ export interface NewChange {
   payload: Record<string, unknown>;
   base?: Record<string, unknown> | null;
   dependsOn: string[];
+  resubmitOf?: string | null;
 }
 
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
@@ -100,6 +104,64 @@ export function changesRepository(db: DbOrTx) {
           entityId: changes.entityId,
         });
       return { id: submission.id, changes: inserted.toSorted((a, b) => a.seq - b.seq) };
+    },
+
+    /** The change, locked until the transaction ends. */
+    async lockChange(id: string): Promise<ChangeRow | null> {
+      const [row] = await db.select().from(changes).where(eq(changes.id, id)).for('update');
+      return row ?? null;
+    },
+
+    /** The statuses of `ids`, share-locked so a concurrent reject waits for this transaction. */
+    async lockStatuses(ids: string[]) {
+      if (!ids.length) return [];
+      return db
+        .select({ id: changes.id, status: changes.status })
+        .from(changes)
+        .where(inArray(changes.id, ids))
+        .for('share');
+    },
+
+    async updateChange(id: string, patch: ChangePatch) {
+      await db.update(changes).set(patch).where(eq(changes.id, id));
+    },
+
+    /** Rejects the still-pending changes that depend on `id`; returns their ids. */
+    async rejectPendingDependents(id: string, patch: ChangePatch) {
+      const rows = await db
+        .update(changes)
+        .set({ ...patch, status: 'rejected' })
+        .where(and(eq(changes.status, 'pending'), arrayContains(changes.dependsOn, [id])))
+        .returning({ id: changes.id });
+      return rows.map((r) => r.id);
+    },
+
+    /** A change with who submitted it. */
+    async getChangeWithAuthor(id: string) {
+      const [row] = await db
+        .select({ change: changes, authorUserId: submissions.authorUserId, anonHash: submissions.anonHash })
+        .from(changes)
+        .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .where(eq(changes.id, id));
+      return row ?? null;
+    },
+
+    async findResubmission(id: string) {
+      const [row] = await db.select({ id: changes.id }).from(changes).where(eq(changes.resubmitOf, id));
+      return row ?? null;
+    },
+
+    /** Pending and published changes, oldest first; fetches `limit` + 1. */
+    async queue(cursor: Cursor | null, limit: number) {
+      return db
+        .select({ change: changes, authorUserId: submissions.authorUserId })
+        .from(changes)
+        .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .where(
+          and(inArray(changes.status, ['pending', 'published']), cursorAfter(changes.createdAt, changes.id, cursor)),
+        )
+        .orderBy(asc(changes.createdAt), asc(changes.id))
+        .limit(limit + 1);
     },
 
     async getSubmission(id: string) {

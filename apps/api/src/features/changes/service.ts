@@ -8,13 +8,24 @@ import {
   WorkFieldsBase,
 } from '@amdb/shared';
 import type { z } from '@hono/zod-openapi';
-import type { Db } from '../../platform/db/types';
+import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
-import { badRequest, notFound } from '../../platform/http/errors';
+import { badRequest, conflict, notFound } from '../../platform/http/errors';
 import { decodeCursor, toPage } from '../../platform/http/pagination';
 import { isModerator } from '../users/identity';
-import { type ChangeInput, type EntityRef, type SubmissionInput } from './schemas';
-import { changesRepository, type NewChange, type Owner } from './repository';
+import { applyChange, applyInverse, assertUndoable, fieldsOf, type Inverse, InverseSchema } from './apply';
+import { type ChangeRow, changesRepository, type NewChange, type Owner } from './repository';
+import { holdAll, type ReviewPolicy } from './review-policy';
+import {
+  type ApproveInput,
+  ChangeInput,
+  type EntityRef,
+  MergePayload,
+  RelatePayload,
+  type ResubmitInput,
+  type SubmissionInput,
+  UnrelatePayload,
+} from './schemas';
 
 /** An entity a change refers to: existing, or reserved by a pending create. */
 interface Resolved {
@@ -52,14 +63,99 @@ function invalidFields(index: number, error: z.ZodError) {
   );
 }
 
-export function createChangesService(db: Db) {
-  const repo = changesRepository(db);
+/** The submitter of a change or submission, by account or anonymous token. */
+interface Authored {
+  authorUserId: string | null;
+  anonHash: string | null;
+}
 
-  /** Whether the actor may see this pending create: its author, or a moderator. */
-  const canSee = (actor: Actor, row: { authorUserId: string | null; anonHash: string | null }) =>
-    isModerator(actor) ||
-    (actor.kind === 'user' && row.authorUserId === actor.userId) ||
-    (actor.kind === 'anon' && row.anonHash === actor.anonHash);
+const isAuthor = (actor: Actor, row: Authored) =>
+  (actor.kind === 'user' && row.authorUserId === actor.userId) ||
+  (actor.kind === 'anon' && row.anonHash === actor.anonHash);
+
+/** Whether the actor may see a pending or rejected submission: its author, or a moderator. */
+const canSee = (actor: Actor, row: Authored) => isModerator(actor) || isAuthor(actor, row);
+
+/** A change counts as met for its dependents once it is live. */
+const isLive = (status: string) => status === 'published' || status === 'approved';
+
+const notEditable = (op: string, what: 'fields' | 'data') =>
+  badRequest('not_editable', `A ${op} change has no ${what} to edit`);
+
+/** The field shape a create or update payload must match: a create's full shape, or its partial for an update. */
+const shapeFor = (op: 'create' | 'update', kind: EntityKind) =>
+  op === 'create' ? FieldsFor[kind] : kind === 'work' ? WorkFieldsBase.partial() : FieldsFor[kind].partial();
+
+/** A validated change and the row it will be stored as. */
+interface Planned {
+  input: ChangeInput;
+  row: NewChange;
+}
+
+/** The stored inverse of a live change. */
+function inverseOf(change: ChangeRow): Inverse {
+  // Every live change was stored with its inverse; a missing one is a bug, not a user error.
+  return InverseSchema.parse(change.inverse);
+}
+
+/** The relation a change acts on once applied: the one a relate created, else the one it names. */
+const relationAfter = (change: ChangeRow, inverse: Inverse) =>
+  inverse.op === 'remove_relation' ? inverse.relationId : change.relationId;
+
+/** Rebuilds a rejected change as a new submission's input, with the author's edits merged in. */
+function resubmission(change: ChangeRow, edits: ResubmitInput): ChangeInput {
+  if (!change.payload) throw conflict('redacted', 'This change was removed and can’t be resubmitted');
+  if (edits.fields && change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
+  if (edits.data && change.op !== 'relate') throw notEditable(change.op, 'data');
+  let candidate: unknown;
+  switch (change.op) {
+    case 'create':
+      candidate = {
+        op: 'create',
+        kind: change.kind,
+        ref: 'resubmitted',
+        fields: { ...fieldsOf(change.payload), ...edits.fields },
+      };
+      break;
+    case 'update':
+      candidate = {
+        op: 'update',
+        kind: change.kind,
+        entityId: change.entityId,
+        fields: { ...fieldsOf(change.payload), ...edits.fields },
+      };
+      break;
+    case 'relate': {
+      const p = RelatePayload.parse(change.payload);
+      candidate = {
+        op: 'relate',
+        type: p.type,
+        from: { id: p.from },
+        ...(p.to ? { to: { id: p.to } } : {}),
+        data: { ...p.data, ...edits.data },
+      };
+      break;
+    }
+    case 'unrelate':
+      candidate = { op: 'unrelate', ...UnrelatePayload.parse(change.payload) };
+      break;
+    case 'merge':
+      candidate = { op: 'merge', kind: change.kind, ...MergePayload.parse(change.payload) };
+      break;
+  }
+  const parsed = ChangeInput.safeParse(candidate);
+  if (!parsed.success) {
+    throw badRequest(
+      'invalid_fields',
+      'The resubmitted change is invalid',
+      parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })),
+    );
+  }
+  return parsed.data;
+}
+
+export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
+  const repo = changesRepository(db);
 
   async function lookupEntity(actor: Actor, id: string): Promise<Resolved> {
     const entity = await repo.findEntity(id);
@@ -77,169 +173,245 @@ export function createChangesService(db: Db) {
     throw badRequest('unknown_entity', `No entity ${id}`);
   }
 
+  /** Validates changes and turns them into rows: refs resolved, `base` captured, `depends_on` worked out. */
+  async function plan(actor: Actor, items: { change: ChangeInput; reservedId?: string }[]): Promise<Planned[]> {
+    const refs = new Map<string, Resolved>();
+    const planned: Planned[] = [];
+
+    const resolve = async (index: number, ref: EntityRef): Promise<Resolved> => {
+      if ('id' in ref) return lookupEntity(actor, ref.id);
+      const found = refs.get(ref.ref);
+      if (!found) {
+        throw badRequest('unknown_ref', `Change ${index + 1} uses ref "${ref.ref}", which no earlier create declares`);
+      }
+      return found;
+    };
+    const expectKind = (index: number, entity: Resolved, kind: EntityKind) => {
+      if (entity.kind !== kind) {
+        throw badRequest('kind_mismatch', `Change ${index + 1}: ${entity.id} is a ${entity.kind}, not a ${kind}`);
+      }
+    };
+    const depends = (...entities: (Resolved | null)[]) => [
+      ...new Set(entities.flatMap((e) => (e?.dependsOn ? [e.dependsOn] : []))),
+    ];
+
+    for (const [index, item] of items.entries()) {
+      planned.push({
+        input: item.change,
+        row: await toRow(item.change, index, index + 1, randomUUID(), item.reservedId),
+      });
+    }
+    return planned;
+
+    async function toRow(
+      change: ChangeInput,
+      index: number,
+      seq: number,
+      id: string,
+      reservedId?: string,
+    ): Promise<NewChange> {
+      switch (change.op) {
+        case 'create': {
+          if (refs.has(change.ref)) throw badRequest('duplicate_ref', `Ref "${change.ref}" is declared twice`);
+          const parsed = FieldsFor[change.kind].safeParse(change.fields);
+          if (!parsed.success) throw invalidFields(index, parsed.error);
+          const payload: Record<string, unknown> = parsed.data;
+          // A resubmitted create keeps the id its first submission reserved.
+          const entityId = reservedId ?? randomUUID();
+          const mediaType = payload.mediaType;
+          refs.set(change.ref, {
+            id: entityId,
+            kind: change.kind,
+            mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
+            dependsOn: id,
+          });
+          return { id, seq, op: 'create', kind: change.kind, entityId, payload, dependsOn: [] };
+        }
+        case 'update': {
+          const target = await lookupEntity(actor, change.entityId);
+          expectKind(index, target, change.kind);
+          // `.partial()` of the create shape; a work's cross-field rules are checked when it is applied.
+          const shape = change.kind === 'work' ? WorkFieldsBase.partial() : FieldsFor[change.kind].partial();
+          const parsed = shape.safeParse(change.fields);
+          if (!parsed.success) throw invalidFields(index, parsed.error);
+          const payload: Record<string, unknown> = parsed.data;
+          const keys = Object.keys(payload);
+          if (keys.length === 0) {
+            throw badRequest('invalid_fields', `Change ${index + 1} changes no fields`);
+          }
+          // A reserved entity has no row yet, so there is nothing to record as its base.
+          const base = target.dependsOn ? null : await repo.currentFields(change.kind, target.id, keys);
+          return {
+            id,
+            seq,
+            op: 'update',
+            kind: change.kind,
+            entityId: target.id,
+            payload,
+            base,
+            dependsOn: depends(target),
+          };
+        }
+        case 'relate': {
+          const rule = RELATION_RULES[change.type];
+          const from = await resolve(index, change.from);
+          expectKind(index, from, rule.from);
+          let to: Resolved | null = null;
+          if (rule.to) {
+            if (!change.to) throw badRequest('invalid_relation', `Change ${index + 1}: ${change.type} needs "to"`);
+            to = await resolve(index, change.to);
+            expectKind(index, to, rule.to);
+          } else if (change.to) {
+            throw badRequest('invalid_relation', `Change ${index + 1}: ${change.type} takes no "to"`);
+          }
+          const given = Object.keys(change.data);
+          const extra = given.filter((k) => !rule.allowed.includes(k));
+          const missing = rule.required.filter((k) => !given.includes(k));
+          if (extra.length || missing.length) {
+            throw badRequest(
+              'invalid_relation',
+              `Change ${index + 1}: ${change.type} data ${missing.length ? `needs ${missing.join(', ')}` : `can't have ${extra.join(', ')}`}`,
+            );
+          }
+          if (change.type === 'work_creator') {
+            if (!from.mediaType)
+              throw badRequest('invalid_relation', `Change ${index + 1}: the work has no media type`);
+            if (!CreatorRole[from.mediaType].safeParse(change.data.role).success) {
+              throw badRequest(
+                'invalid_role',
+                `Change ${index + 1}: "${change.data.role}" is not a role for a ${from.mediaType} work`,
+                { allowed: CreatorRole[from.mediaType].options },
+              );
+            }
+          }
+          return {
+            id,
+            seq,
+            op: 'relate',
+            kind: from.kind,
+            entityId: from.id,
+            payload: { type: change.type, from: from.id, to: to?.id ?? null, data: change.data },
+            dependsOn: depends(from, to),
+          };
+        }
+        case 'unrelate': {
+          const relation = await repo.findActiveRelation(change.relationId);
+          if (!relation) throw badRequest('unknown_relation', `No active relation ${change.relationId}`);
+          return {
+            id,
+            seq,
+            op: 'unrelate',
+            kind: relation.fromKind,
+            entityId: relation.fromId,
+            relationId: change.relationId,
+            payload: { relationId: change.relationId },
+            dependsOn: [],
+          };
+        }
+        case 'merge': {
+          if (change.from === change.into) throw badRequest('invalid_merge', 'An entity can’t merge into itself');
+          const from = await lookupEntity(actor, change.from);
+          const into = await lookupEntity(actor, change.into);
+          expectKind(index, from, change.kind);
+          expectKind(index, into, change.kind);
+          return {
+            id,
+            seq,
+            op: 'merge',
+            kind: change.kind,
+            entityId: from.id,
+            payload: { from: from.id, into: into.id },
+            dependsOn: depends(from, into),
+          };
+        }
+      }
+    }
+  }
+
+  /**
+   * Stores a submission and asks the review policy about each change in order. A `publish`
+   * decision applies the change now, unless something it depends on isn't live yet.
+   */
+  async function store(tx: Tx, actor: Actor, owner: Owner, note: string | undefined, items: Planned[]) {
+    const r = changesRepository(tx);
+    const created = await r.insertSubmission(
+      owner,
+      note,
+      items.map((i) => i.row),
+    );
+    const live = new Set<string>();
+    for (const { input, row } of items) {
+      if ((await policy({ change: input, actor })) !== 'publish') continue;
+      const waiting = row.dependsOn.filter((d) => !live.has(d));
+      const deps = await r.lockStatuses(waiting);
+      if (deps.length !== waiting.length || !deps.every((d) => isLive(d.status))) continue;
+      await applyNow(tx, row.id, 'published');
+      live.add(row.id);
+    }
+    return {
+      id: created.id,
+      changes: created.changes.map((c) => (live.has(c.id) ? { ...c, status: 'published' as const } : c)),
+    };
+  }
+
+  /** Applies a locked change and records its inverse; `extra` is merged into the change row. */
+  async function applyNow(tx: Tx, id: string, status: 'published' | 'approved', extra: Partial<ChangeRow> = {}) {
+    const r = changesRepository(tx);
+    const locked = await r.lockChange(id);
+    if (!locked) throw new Error(`change ${id} vanished`);
+    const change = { ...locked, ...extra };
+    const inverse = await applyChange(tx, change);
+    await r.updateChange(id, {
+      ...extra,
+      status,
+      inverse,
+      relationId: relationAfter(change, inverse),
+      appliedAt: new Date(),
+    });
+  }
+
+  /** Edit-and-approve: the moderator's fields merged in, the contributor's original kept as `submitted`. */
+  function edited(change: ChangeRow, fields: Record<string, unknown>) {
+    if (change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
+    const original = fieldsOf(change.payload);
+    const parsed = shapeFor(change.op, change.kind).safeParse({ ...original, ...fields });
+    if (!parsed.success) {
+      throw badRequest(
+        'invalid_fields',
+        'The edited fields are invalid',
+        parsed.error.issues.map((i) => ({ path: ['fields', ...i.path].join('.'), message: i.message })),
+      );
+    }
+    const payload: Record<string, unknown> = { ...parsed.data, submitted: original };
+    return payload;
+  }
+
+  /** Locks a change for review: moderators only (others 404), and not already reviewed. */
+  async function lockForReview(tx: Tx, actor: Actor, id: string) {
+    if (actor.kind !== 'user' || !isModerator(actor)) throw notFound();
+    const change = await changesRepository(tx).lockChange(id);
+    if (!change) throw notFound();
+    if (change.status === 'approved' || change.status === 'rejected') {
+      throw conflict('already_reviewed', `This change was already ${change.status}`);
+    }
+    return { change, reviewed: { reviewedBy: actor.userId, reviewedAt: new Date() } };
+  }
+
   return {
     async createSubmission(actor: Actor, input: SubmissionInput) {
       const owner = ownerOf(actor);
       if (!owner) throw identityRequired();
-
-      const refs = new Map<string, Resolved>();
-      const rows: NewChange[] = [];
-
-      const resolve = async (index: number, ref: EntityRef): Promise<Resolved> => {
-        if ('id' in ref) return lookupEntity(actor, ref.id);
-        const found = refs.get(ref.ref);
-        if (!found) {
-          throw badRequest(
-            'unknown_ref',
-            `Change ${index + 1} uses ref "${ref.ref}", which no earlier create declares`,
-          );
-        }
-        return found;
-      };
-      const expectKind = (index: number, entity: Resolved, kind: EntityKind) => {
-        if (entity.kind !== kind) {
-          throw badRequest('kind_mismatch', `Change ${index + 1}: ${entity.id} is a ${entity.kind}, not a ${kind}`);
-        }
-      };
-      const depends = (...entities: (Resolved | null)[]) => [
-        ...new Set(entities.flatMap((e) => (e?.dependsOn ? [e.dependsOn] : []))),
-      ];
-
-      for (const [index, change] of input.changes.entries()) {
-        const seq = index + 1;
-        const id = randomUUID();
-        rows.push(await toRow(change, index, seq, id));
-      }
-
-      async function toRow(change: ChangeInput, index: number, seq: number, id: string): Promise<NewChange> {
-        switch (change.op) {
-          case 'create': {
-            if (refs.has(change.ref)) throw badRequest('duplicate_ref', `Ref "${change.ref}" is declared twice`);
-            const parsed = FieldsFor[change.kind].safeParse(change.fields);
-            if (!parsed.success) throw invalidFields(index, parsed.error);
-            const payload: Record<string, unknown> = parsed.data;
-            const entityId = randomUUID();
-            const mediaType = payload.mediaType;
-            refs.set(change.ref, {
-              id: entityId,
-              kind: change.kind,
-              mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
-              dependsOn: id,
-            });
-            return { id, seq, op: 'create', kind: change.kind, entityId, payload, dependsOn: [] };
-          }
-          case 'update': {
-            const target = await lookupEntity(actor, change.entityId);
-            expectKind(index, target, change.kind);
-            // `.partial()` of the create shape; a work's cross-field rules are checked when it is applied.
-            const shape = change.kind === 'work' ? WorkFieldsBase.partial() : FieldsFor[change.kind].partial();
-            const parsed = shape.safeParse(change.fields);
-            if (!parsed.success) throw invalidFields(index, parsed.error);
-            const payload: Record<string, unknown> = parsed.data;
-            const keys = Object.keys(payload);
-            if (keys.length === 0) {
-              throw badRequest('invalid_fields', `Change ${index + 1} changes no fields`);
-            }
-            // A reserved entity has no row yet, so there is nothing to record as its base.
-            const base = target.dependsOn ? null : await repo.currentFields(change.kind, target.id, keys);
-            return {
-              id,
-              seq,
-              op: 'update',
-              kind: change.kind,
-              entityId: target.id,
-              payload,
-              base,
-              dependsOn: depends(target),
-            };
-          }
-          case 'relate': {
-            const rule = RELATION_RULES[change.type];
-            const from = await resolve(index, change.from);
-            expectKind(index, from, rule.from);
-            let to: Resolved | null = null;
-            if (rule.to) {
-              if (!change.to) throw badRequest('invalid_relation', `Change ${index + 1}: ${change.type} needs "to"`);
-              to = await resolve(index, change.to);
-              expectKind(index, to, rule.to);
-            } else if (change.to) {
-              throw badRequest('invalid_relation', `Change ${index + 1}: ${change.type} takes no "to"`);
-            }
-            const given = Object.keys(change.data);
-            const extra = given.filter((k) => !rule.allowed.includes(k));
-            const missing = rule.required.filter((k) => !given.includes(k));
-            if (extra.length || missing.length) {
-              throw badRequest(
-                'invalid_relation',
-                `Change ${index + 1}: ${change.type} data ${missing.length ? `needs ${missing.join(', ')}` : `can't have ${extra.join(', ')}`}`,
-              );
-            }
-            if (change.type === 'work_creator') {
-              if (!from.mediaType)
-                throw badRequest('invalid_relation', `Change ${index + 1}: the work has no media type`);
-              if (!CreatorRole[from.mediaType].safeParse(change.data.role).success) {
-                throw badRequest(
-                  'invalid_role',
-                  `Change ${index + 1}: "${change.data.role}" is not a role for a ${from.mediaType} work`,
-                  { allowed: CreatorRole[from.mediaType].options },
-                );
-              }
-            }
-            return {
-              id,
-              seq,
-              op: 'relate',
-              kind: from.kind,
-              entityId: from.id,
-              payload: { type: change.type, from: from.id, to: to?.id ?? null, data: change.data },
-              dependsOn: depends(from, to),
-            };
-          }
-          case 'unrelate': {
-            const relation = await repo.findActiveRelation(change.relationId);
-            if (!relation) throw badRequest('unknown_relation', `No active relation ${change.relationId}`);
-            return {
-              id,
-              seq,
-              op: 'unrelate',
-              kind: relation.fromKind,
-              entityId: relation.fromId,
-              relationId: change.relationId,
-              payload: { relationId: change.relationId },
-              dependsOn: [],
-            };
-          }
-          case 'merge': {
-            if (change.from === change.into) throw badRequest('invalid_merge', 'An entity can’t merge into itself');
-            const from = await lookupEntity(actor, change.from);
-            const into = await lookupEntity(actor, change.into);
-            expectKind(index, from, change.kind);
-            expectKind(index, into, change.kind);
-            return {
-              id,
-              seq,
-              op: 'merge',
-              kind: change.kind,
-              entityId: from.id,
-              payload: { from: from.id, into: into.id },
-              dependsOn: depends(from, into),
-            };
-          }
-        }
-      }
-
-      return db.transaction((tx) => changesRepository(tx).insertSubmission(owner, input.note, rows));
+      const items = await plan(
+        actor,
+        input.changes.map((change) => ({ change })),
+      );
+      return db.transaction((tx) => store(tx, actor, owner, input.note, items));
     },
 
     /** Visible to its author and to moderators; everyone else gets a 404. */
     async getSubmission(actor: Actor, id: string) {
       const found = await repo.getSubmission(id);
-      if (
-        !found ||
-        !canSee(actor, { authorUserId: found.submission.authorUserId, anonHash: found.submission.anonHash })
-      ) {
-        throw notFound();
-      }
+      if (!found || !canSee(actor, found.submission)) throw notFound();
       return found;
     },
 
@@ -248,6 +420,83 @@ export function createChangesService(db: Db) {
       if (!owner) throw identityRequired();
       const subs = await repo.listSubmissions(owner, decodeCursor(query.cursor), query.limit);
       return toPage(subs, query.limit, (s) => ({ createdAt: s.createdAt, id: s.id }));
+    },
+
+    /** Pending and published changes, oldest first. Moderators only; anyone else gets a 404. */
+    async queue(actor: Actor, query: { cursor?: string; limit: number }) {
+      if (!isModerator(actor)) throw notFound();
+      const rows = await repo.queue(decodeCursor(query.cursor), query.limit);
+      return toPage(rows, query.limit, (r) => ({ createdAt: r.change.createdAt, id: r.change.id }));
+    },
+
+    /** Applies a pending change (optionally edited first), or confirms a published one. */
+    async approve(actor: Actor, id: string, input: ApproveInput) {
+      return db.transaction(async (tx) => {
+        const { change, reviewed } = await lockForReview(tx, actor, id);
+        const edit = input.fields && Object.keys(input.fields).length ? input.fields : null;
+        if (change.status === 'published') {
+          if (edit)
+            throw conflict('already_published', 'This change is already live; submit a new change to correct it');
+          await changesRepository(tx).updateChange(id, { ...reviewed, status: 'approved' });
+          return { id, status: 'approved' as const };
+        }
+        const deps = await changesRepository(tx).lockStatuses(change.dependsOn);
+        const unmet = change.dependsOn.filter((d) => !deps.some((x) => x.id === d && isLive(x.status)));
+        if (unmet.length) {
+          throw conflict('dependency_pending', 'Approve the changes this one depends on first', { changeIds: unmet });
+        }
+        await applyNow(tx, id, 'approved', { ...reviewed, ...(edit ? { payload: edited(change, edit) } : {}) });
+        return { id, status: 'approved' as const };
+      });
+    },
+
+    /**
+     * Rejects a change, undoing it if it was live, and rejects the pending changes that depend on
+     * it. The change and its payload are kept so the author can fix and resubmit.
+     */
+    async reject(actor: Actor, id: string, reason: string) {
+      return db.transaction(async (tx) => {
+        const r = changesRepository(tx);
+        const { change, reviewed } = await lockForReview(tx, actor, id);
+        if (change.status === 'published') {
+          await assertUndoable(tx, change);
+          await applyInverse(tx, inverseOf(change), change.id);
+        }
+        await r.updateChange(id, { ...reviewed, status: 'rejected', reason });
+        let frontier = [id];
+        while (frontier.length) {
+          const next: string[] = [];
+          for (const dep of frontier) {
+            next.push(
+              ...(await r.rejectPendingDependents(dep, { ...reviewed, reason: `Depends on rejected change ${dep}` })),
+            );
+          }
+          frontier = next;
+        }
+        return { id, status: 'rejected' as const };
+      });
+    },
+
+    /** The rejected change's author sends it again, as a new change in a new submission. */
+    async resubmit(actor: Actor, id: string, edits: ResubmitInput) {
+      const owner = ownerOf(actor);
+      const found = await repo.getChangeWithAuthor(id);
+      if (!owner || !found || !isAuthor(actor, found)) throw notFound();
+      const { change } = found;
+      if (change.status !== 'rejected') throw conflict('not_rejected', 'Only a rejected change can be resubmitted');
+      const input = resubmission(change, edits);
+      const [planned] = await plan(actor, [
+        { change: input, reservedId: change.op === 'create' ? (change.entityId ?? undefined) : undefined },
+      ]);
+      if (!planned) throw new Error('plan returned no row');
+      // Locking the rejected change makes a concurrent second resubmit wait, then see the first.
+      return db.transaction(async (tx) => {
+        await changesRepository(tx).lockChange(id);
+        if (await changesRepository(tx).findResubmission(id)) {
+          throw conflict('already_resubmitted', 'This change was already resubmitted');
+        }
+        return store(tx, actor, owner, undefined, [{ input, row: { ...planned.row, resubmitOf: id } }]);
+      });
     },
   };
 }

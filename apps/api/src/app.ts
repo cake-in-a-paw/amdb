@@ -1,5 +1,8 @@
 import { createRoute } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
+import { catalogRoutes } from './features/catalog/routes';
+import { createCatalogService } from './features/catalog/service';
+import { holdAll, type ReviewPolicy } from './features/changes/review-policy';
 import { changesRoutes } from './features/changes/routes';
 import { createChangesService } from './features/changes/service';
 import { resolveActor } from './features/users/middleware';
@@ -18,6 +21,8 @@ export interface AppDeps {
   authHandler?: (request: Request) => Promise<Response>;
   /** Origin of the web app, for CORS with credentials. */
   webOrigin?: string;
+  /** Decides whether a new change waits for a moderator or goes live now. Defaults to `holdAll`. */
+  reviewPolicy?: ReviewPolicy;
 }
 
 const healthRoute = createRoute({
@@ -51,7 +56,8 @@ export function createApp(deps: AppDeps) {
   const users = createUsersService(deps.db, deps.getSession);
   app.use('/api/*', resolveActor(users));
   app.route('/', usersRoutes(users));
-  app.route('/', changesRoutes(createChangesService(deps.db)));
+  app.route('/', changesRoutes(createChangesService(deps.db, deps.reviewPolicy ?? holdAll)));
+  app.route('/', catalogRoutes(createCatalogService(deps.db)));
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 
