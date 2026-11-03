@@ -8,6 +8,20 @@
       "when": 1793046681978,
       "tag": "0000_extensions",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793729137564,
+      "tag": "0001_wise_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793729144935,
+      "tag": "0002_relation_checks",
+      "breakpoints": true
     }
   ]
 }

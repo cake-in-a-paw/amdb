@@ -1,0 +1,50 @@
+import { z } from 'zod';
+
+export const EntityKind = z.enum(['work', 'creator', 'series', 'property', 'tag']);
+export type EntityKind = z.infer<typeof EntityKind>;
+
+export const MediaType = z.enum(['film_tv', 'book']);
+export type MediaType = z.infer<typeof MediaType>;
+
+/** film_tv only; null for a book. */
+export const Subtype = z.enum(['movie', 'series', 'anime_series', 'anime_film']);
+export type Subtype = z.infer<typeof Subtype>;
+
+export const Lifecycle = z.enum(['released', 'upcoming', 'airing', 'unknown']);
+export type Lifecycle = z.infer<typeof Lifecycle>;
+
+export const CreatorKind = z.enum(['person', 'organization']);
+export type CreatorKind = z.infer<typeof CreatorKind>;
+
+export const CreatorRole = {
+  film_tv: z.enum(['director', 'writer', 'creator', 'producer', 'studio', 'composer']),
+  book: z.enum(['author', 'illustrator', 'translator', 'editor']),
+};
+
+export const RelationType = z.enum([
+  'work_creator',
+  'series_work',
+  'property_work',
+  'work_link',
+  'work_tag',
+  'external_id',
+]);
+export type RelationType = z.infer<typeof RelationType>;
+
+export const WorkLinkType = z.enum(['adapted_from', 'sequel_of', 'remake_of', 'spin_off_of']);
+export type WorkLinkType = z.infer<typeof WorkLinkType>;
+
+export const TagKind = z.enum(['genre', 'theme', 'content_warning']);
+export type TagKind = z.infer<typeof TagKind>;
+
+export const IdScheme = z.enum(['wikidata', 'openlibrary', 'isbn13', 'imdb']);
+export type IdScheme = z.infer<typeof IdScheme>;
+
+export const ChangeOp = z.enum(['create', 'update', 'relate', 'unrelate', 'merge']);
+export type ChangeOp = z.infer<typeof ChangeOp>;
+
+export const ChangeStatus = z.enum(['pending', 'published', 'approved', 'rejected']);
+export type ChangeStatus = z.infer<typeof ChangeStatus>;
+
+export const Role = z.enum(['contributor', 'moderator', 'admin']);
+export type Role = z.infer<typeof Role>;
