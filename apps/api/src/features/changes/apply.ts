@@ -606,30 +606,45 @@ export async function applyRemoval(tx: Tx, entityId: string): Promise<void> {
 /**
  * Removes copies of a redacted change's content held by other changes, so a later revert can't
  * bring it back: for an update or create, the redacted fields in the `inverse` and `base` of
- * other changes on the entity that recorded this change as their source; for a relate, any
+ * every other change on the entity that recorded this change as their source or holds the same value; for a relate, any
  * unrelate inverse that would restore its relation (left unrestorable: null) and the merge
  * inverses that would restore it as a dropped duplicate.
  */
 export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
   if ((change.op === 'create' || change.op === 'update') && change.entityId) {
-    const keys = Object.keys(fieldsOf(change.payload));
+    const redacted = fieldsOf(change.payload);
+    const keys = Object.keys(redacted);
+    // Every other change on the entity, whatever its op or status (reverts included): any of them
+    // may hold the value in `base` or `inverse`.
     const others = await tx
       .select()
       .from(changes)
-      .where(and(eq(changes.entityId, change.entityId), ne(changes.id, change.id), eq(changes.op, 'update')));
+      .where(and(eq(changes.entityId, change.entityId), ne(changes.id, change.id)));
+    const without = <T extends Record<string, unknown>>(o: T, drop: string[]) =>
+      Object.fromEntries(Object.entries(o).filter(([k]) => !drop.includes(k)));
     for (const other of others) {
       const inverse = InverseSchema.safeParse(other.inverse);
       const own = inverse.success && inverse.data.op === 'set_fields' ? inverse.data : null;
-      const drop = keys.filter((k) => (own ? own.fieldSources[k] === change.id : other.status === 'pending'));
-      if (!drop.length) continue;
-      const without = <T extends Record<string, unknown>>(o: T) =>
-        Object.fromEntries(Object.entries(o).filter(([k]) => !drop.includes(k)));
+      // A copy is the redacted value itself, or anything recorded as sourced to the redacted change.
+      const dropInverse = keys.filter(
+        (k) =>
+          own &&
+          (own.fieldSources[k] === change.id || (k in own.fields && isDeepStrictEqual(own.fields[k], redacted[k]))),
+      );
+      const dropBase = keys.filter(
+        (k) =>
+          other.base &&
+          (dropInverse.includes(k) ||
+            other.status === 'pending' ||
+            (k in other.base && isDeepStrictEqual(other.base[k], redacted[k]))),
+      );
+      if (!dropInverse.length && !dropBase.length) continue;
       await tx
         .update(changes)
         .set({
-          base: other.base ? without(other.base) : other.base,
+          base: other.base ? without(other.base, dropBase) : other.base,
           inverse: own
-            ? { ...own, fields: without(own.fields), fieldSources: without(own.fieldSources) }
+            ? { ...own, fields: without(own.fields, dropInverse), fieldSources: without(own.fieldSources, dropInverse) }
             : other.inverse,
         })
         .where(eq(changes.id, other.id));

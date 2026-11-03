@@ -279,3 +279,52 @@ it('a redacted merge keeps its ids and stays in the winner’s history', async (
     await t.close();
   }
 });
+
+it('a rejected update that was based on redacted content no longer shows it', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [film('Arrival')]);
+    const id = made.changes[0]!.entityId!;
+    const upd = (d: string) => [{ op: 'update', kind: 'work', entityId: id, fields: { description: d } }];
+    const a = await publish(author, mod, upd('secret'));
+    const b = await submit(author, upd('other'));
+    expect((await mod.post(`/api/changes/${b.changes[0]!.id}/reject`, { reason: 'no' })).status).toBe(200);
+    const before = await (await author.get(`/api/submissions/${b.id}`)).text();
+    expect(before).toContain('secret');
+
+    // A's value is overwritten, so it is no longer current.
+    await publish(author, mod, upd('fine'));
+    expect((await redact(admin, a.changes[0]!.id, { reason: 'Legal' })).status).toBe(200);
+    for (const who of [author, mod]) {
+      expect(await (await who.get(`/api/submissions/${b.id}`)).text()).not.toContain('secret');
+    }
+  } finally {
+    await t.close();
+  }
+});
+
+it('redacting a relate makes an unrelate of it unrevertable', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      film('Arrival'),
+      creator('Denis'),
+      { op: 'relate', type: 'work_creator', from: { ref: 'w' }, to: { ref: 'c' }, data: { role: 'director' } },
+    ]);
+    const relationId = (
+      (await (await mod.get(`/api/submissions/${made.id}`)).json()) as {
+        changes: { op: string; relationId: string }[];
+      }
+    ).changes.find((c) => c.op === 'relate')!.relationId;
+    const un = await publish(author, mod, [{ op: 'unrelate', relationId }]);
+
+    // The relate is no longer current (the unrelate removed it), so no flag is needed.
+    const res = await redact(admin, made.changes[2]!.id, { reason: 'Legal' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const revert = await mod.post(`/api/changes/${un.changes[0]!.id}/revert`);
+    expect(revert.status).toBe(409);
+    expect(await code(revert)).toBe('redacted');
+  } finally {
+    await t.close();
+  }
+});
