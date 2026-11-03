@@ -1,4 +1,6 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import type { Context } from 'hono';
+import type { AppEnv } from '../../platform/http/app-env';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
 import { clientIp, rateLimit } from '../../platform/http/rate-limit';
 import {
@@ -193,17 +195,21 @@ export interface ChangesRoutesOptions {
 export function changesRoutes(changes: ChangesService, { trustedProxyHops }: ChangesRoutesOptions) {
   const app = createApi();
 
-  // Anonymous submissions, per client address. Anonymous tokens are free to mint, so they name no
-  // one; requests without a trustworthy address share one bucket.
+  // Anonymous submissions, per anonymous token and per client address. Tokens are free to mint,
+  // so the address is the limit that holds; requests without a trustworthy one share a bucket.
+  const anonPost = (bucket: (c: Context<AppEnv>) => string) => (c: Context<AppEnv>) =>
+    c.req.method === 'POST' && c.var.actor.kind === 'anon' ? bucket(c) : null;
   app.use(
     '/api/submissions',
     rateLimit({
       limit: ANON_LIMIT,
       windowMs: ANON_WINDOW_MS,
-      key: (c) =>
-        c.req.method === 'POST' && c.var.actor.kind === 'anon'
-          ? `ip:${clientIp(c, trustedProxyHops) ?? 'unknown'}`
-          : null,
+      key: anonPost((c) => (c.var.actor.kind === 'anon' ? `hash:${c.var.actor.anonHash}` : 'hash:none')),
+    }),
+    rateLimit({
+      limit: ANON_LIMIT,
+      windowMs: ANON_WINDOW_MS,
+      key: anonPost((c) => `ip:${clientIp(c, trustedProxyHops) ?? 'unknown'}`),
     }),
   );
 

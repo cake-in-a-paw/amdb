@@ -244,6 +244,16 @@ it('the 21st anonymous submission in an hour from one client is 429 with Retry-A
   }
 });
 
+it('one anonymous token is limited across addresses too', async () => {
+  const t = await setupTest();
+  try {
+    for (let i = 0; i < 20; i++) expect((await anonPost(t, token('a'), `198.51.100.${i}`)).status).toBe(201);
+    await expectLimited(await anonPost(t, token('a'), '198.51.100.99'));
+  } finally {
+    await t.close();
+  }
+});
+
 it('a fresh anonymous token per request doesn’t escape the limit', async () => {
   const t = await setupTest();
   try {
@@ -260,8 +270,8 @@ it('the limit keys on the address the trusted proxy appended, not on entries the
   try {
     // Behind one appending proxy, everything left of the last entry is client-controlled.
     for (let i = 0; i < 20; i++) expect((await anonPost(t, token('a'), `10.0.0.${i}, 203.0.113.9`)).status).toBe(201);
-    await expectLimited(await anonPost(t, token('a'), '10.0.0.99, 203.0.113.9'));
-    expect((await anonPost(t, token('a'), '10.0.0.1, 203.0.113.10')).status).toBe(201);
+    await expectLimited(await anonPost(t, token('b'), '10.0.0.99, 203.0.113.9'));
+    expect((await anonPost(t, token('c'), '10.0.0.1, 203.0.113.10')).status).toBe(201);
   } finally {
     await t.close();
   }
@@ -271,10 +281,12 @@ it('with two trusted proxy hops, the second entry from the right is the client',
   const t = await setupTest({ trustedProxyHops: 2 });
   try {
     for (let i = 0; i < 20; i++) {
-      expect((await anonPost(t, token('a'), `10.0.0.${i}, 203.0.113.9, 192.0.2.${i}`)).status).toBe(201);
+      expect(
+        (await anonPost(t, token(String.fromCharCode(97 + i)), `10.0.0.${i}, 203.0.113.9, 192.0.2.${i}`)).status,
+      ).toBe(201);
     }
-    await expectLimited(await anonPost(t, token('a'), '10.0.0.99, 203.0.113.9, 192.0.2.99'));
-    expect((await anonPost(t, token('a'), '203.0.113.10, 192.0.2.1')).status).toBe(201);
+    await expectLimited(await anonPost(t, token('z'), '10.0.0.99, 203.0.113.9, 192.0.2.99'));
+    expect((await anonPost(t, token('y'), '203.0.113.10, 192.0.2.1')).status).toBe(201);
   } finally {
     await t.close();
   }
