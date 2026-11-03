@@ -1,4 +1,4 @@
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { entities } from './schema';
 import type { DbOrTx } from './types';
 
@@ -13,4 +13,15 @@ export async function resolveWinner(db: DbOrTx, id: string): Promise<string> {
     seen.add(current);
     current = row.into;
   }
+}
+
+/** `id` and every entity merged into it, transitively: the ids whose changes are its history. */
+export async function mergeFamily(db: DbOrTx, id: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: entities.id })
+    .from(entities)
+    .where(
+      sql`${entities.id} in (with recursive family(id) as (select ${id}::uuid union select e.id from entities e join family f on e.merged_into_id = f.id) select id from family)`,
+    );
+  return [...new Set([id, ...rows.map((r) => r.id)])];
 }

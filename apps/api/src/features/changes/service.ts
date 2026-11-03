@@ -20,6 +20,7 @@ import {
   applyInverse,
   applyRelationRemoval,
   applyRemoval,
+  eraseRedacted,
   scrubRedacted,
   assertUndoable,
   currentContent,
@@ -680,6 +681,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           removed.relationId = current?.relationId ?? null;
         }
         const pending = change.status === 'pending';
+        await eraseRedacted(tx, change);
         await scrubRedacted(tx, change);
         await r.updateChange(id, {
           // A merge keeps `from` and `into`: ids aren't content, and history finds the merge by them.

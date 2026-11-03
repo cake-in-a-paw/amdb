@@ -59,6 +59,14 @@ export const SubmissionCreatedSchema = z.object({
   ),
 });
 
+/**
+ * What a redaction leaves in another change's `base` where it held the redacted value: it never
+ * equals a real value, so approving that change still answers `stale_change`. The API never shows
+ * it; `redactedBaseFields` lists those keys instead.
+ */
+export const RedactedValue = z.strictObject({ $redacted: z.literal(true) });
+export const REDACTED_VALUE: z.infer<typeof RedactedValue> = { $redacted: true };
+
 /** A change as its author and moderators see it. */
 export const ChangeSchema = z.object({
   id: z.uuid(),
@@ -74,7 +82,10 @@ export const ChangeSchema = z.object({
   redactionReason: z.string().nullable(),
   /** Null once redacted. After edit-and-approve, `payload.submitted` holds what the contributor sent. */
   payload: z.record(z.string(), z.unknown()).nullable(),
+  /** The values the change was based on, without the ones a redaction erased. */
   base: z.record(z.string(), z.unknown()).nullable(),
+  /** Keys of `base` whose recorded value was erased by a redaction (the change still can't apply over a newer value). */
+  redactedBaseFields: z.array(z.string()),
   dependsOn: z.array(z.uuid()),
 });
 

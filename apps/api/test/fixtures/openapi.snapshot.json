@@ -645,6 +645,12 @@
                               "nullable": true
                             }
                           },
+                          "redactedBaseFields": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
                           "dependsOn": {
                             "type": "array",
                             "items": {
@@ -666,6 +672,7 @@
                           "redactionReason",
                           "payload",
                           "base",
+                          "redactedBaseFields",
                           "dependsOn"
                         ]
                       }
@@ -985,6 +992,12 @@
                                   "nullable": true
                                 }
                               },
+                              "redactedBaseFields": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
                               "dependsOn": {
                                 "type": "array",
                                 "items": {
@@ -1014,6 +1027,7 @@
                               "redactionReason",
                               "payload",
                               "base",
+                              "redactedBaseFields",
                               "dependsOn",
                               "submissionId",
                               "createdAt"

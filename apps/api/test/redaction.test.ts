@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { expect, it } from 'vitest';
-import { works } from '../src/platform/db/schema';
+import { changes, creators, relations, works } from '../src/platform/db/schema';
 import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
@@ -324,6 +324,175 @@ it('redacting a relate makes an unrelate of it unrevertable', async () => {
     const revert = await mod.post(`/api/changes/${un.changes[0]!.id}/revert`);
     expect(revert.status).toBe(409);
     expect(await code(revert)).toBe('redacted');
+  } finally {
+    await t.close();
+  }
+});
+
+/** Two creators, an update to the loser held pending, the merge applied, then the update approved: it lands on the winner. */
+async function updateThroughMergedId(s: Awaited<ReturnType<typeof setup>>) {
+  const { author, mod } = s;
+  const mk = async (name: string) => (await publish(author, mod, [creator(name)])).changes[0]!.entityId!;
+  const winner = await mk('Alpha');
+  const loser = await mk('Alpha (dup)');
+  const upd = await submit(author, [
+    { op: 'update', kind: 'creator', entityId: loser, fields: { description: 'SECRET' } },
+  ]);
+  await publish(author, mod, [{ op: 'merge', kind: 'creator', from: loser, into: winner }]);
+  const approved = await mod.post(`/api/changes/${upd.changes[0]!.id}/approve`);
+  expect(approved.status, await approved.clone().text()).toBe(200);
+  return { winner, loser, upd };
+}
+
+it('redacting an update applied through a merged id treats the winner’s content as current', async () => {
+  const s = await setup();
+  const { t, admin, anon, redact } = s;
+  try {
+    const { winner, upd } = await updateThroughMergedId(s);
+    expect(await (await anon.get(`/api/entities/${winner}`)).text()).toContain('SECRET');
+
+    const bare = await redact(admin, upd.changes[0]!.id, { reason: 'Legal' });
+    expect(bare.status).toBe(409);
+    expect(await bare.json()).toMatchObject({
+      error: { code: 'content_is_current', details: { entityId: winner } },
+    });
+    const res = await redact(admin, upd.changes[0]!.id, { reason: 'Legal', removeEntity: true });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await res.json()).toEqual({ id: upd.changes[0]!.id, entityId: winner, relationId: null });
+    expect((await anon.get(`/api/entities/${winner}`)).status).toBe(410);
+    const rows = await t.db.select().from(creators).where(eq(creators.entityId, winner));
+    expect(JSON.stringify(rows)).not.toContain('SECRET');
+  } finally {
+    await t.close();
+  }
+});
+
+it('redacting an overwritten update applied through a merged id scrubs the winner’s later changes', async () => {
+  const s = await setup();
+  const { t, author, mod, admin, anon, redact } = s;
+  try {
+    const { winner, upd } = await updateThroughMergedId(s);
+    const fine = await publish(author, mod, [
+      { op: 'update', kind: 'creator', entityId: winner, fields: { description: 'fine' } },
+    ]);
+    const res = await redact(admin, upd.changes[0]!.id, { reason: 'Legal' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const revert = await mod.post(`/api/changes/${fine.changes[0]!.id}/revert`);
+    expect(revert.status, await revert.clone().text()).toBe(200);
+
+    const seen = [
+      await (await anon.get(`/api/entities/${winner}`)).text(),
+      await (await anon.get(`/api/entities/${winner}/history`)).text(),
+      await (await mod.get(`/api/submissions/${fine.id}`)).text(),
+      await (await mod.get(`/api/submissions/${upd.id}`)).text(),
+      await (await mod.get('/api/moderation/queue')).text(),
+    ];
+    for (const body of seen) expect(body).not.toContain('SECRET');
+    const all = await t.db.select().from(changes);
+    expect(JSON.stringify(all)).not.toContain('SECRET');
+  } finally {
+    await t.close();
+  }
+});
+
+it('a pending update based on redacted content still answers stale_change, and shows its base as redacted', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [film('Arrival')]);
+    const id = made.changes[0]!.entityId!;
+    const upd = (d: string) => [{ op: 'update', kind: 'work', entityId: id, fields: { description: d } }];
+    const a = await publish(author, mod, upd('secret'));
+    // Submitted while 'secret' was current: its base records it.
+    const pending = await submit(author, upd('mine'));
+    // An unrelated pending change whose base doesn't hold the redacted value.
+    const title = await submit(author, [{ op: 'update', kind: 'work', entityId: id, fields: { title: 'Arrival!' } }]);
+    await publish(author, mod, upd('fine'));
+    expect((await redact(admin, a.changes[0]!.id, { reason: 'Legal' })).status).toBe(200);
+
+    const body = await (await author.get(`/api/submissions/${pending.id}`)).text();
+    expect(body).not.toContain('secret');
+    expect(body).not.toContain('$redacted');
+    expect((JSON.parse(body) as { changes: unknown[] }).changes[0]).toMatchObject({
+      base: {},
+      redactedBaseFields: ['description'],
+    });
+    const queue = await (await mod.get('/api/moderation/queue')).text();
+    expect(queue).not.toContain('$redacted');
+
+    // The stale check survives: approving it would overwrite 'fine' without knowing.
+    const approve = await mod.post(`/api/changes/${pending.changes[0]!.id}/approve`);
+    expect(approve.status).toBe(409);
+    expect(await code(approve)).toBe('stale_change');
+    // The unrelated one is untouched.
+    expect((await mod.post(`/api/changes/${title.changes[0]!.id}/approve`)).status).toBe(200);
+  } finally {
+    await t.close();
+  }
+});
+
+it('redacting a create whose entity was reverted erases the entity’s text', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [film('Zyxwvut Rising')]);
+    const id = made.changes[0]!.entityId!;
+    expect((await mod.post(`/api/changes/${made.changes[0]!.id}/revert`)).status).toBe(200);
+    const res = await redact(admin, made.changes[0]!.id, { reason: 'Legal' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const [row] = await t.db.select().from(works).where(eq(works.entityId, id));
+    expect(JSON.stringify(row)).not.toContain('Zyxwvut');
+  } finally {
+    await t.close();
+  }
+});
+
+it('redacting a rejected create leaves the entity its resubmission made live alone', async () => {
+  const { t, author, mod, admin, anon, redact } = await setup();
+  try {
+    const made = await submit(author, [film('Zyxwvut Rising')]);
+    const id = made.changes[0]!.entityId!;
+    expect((await mod.post(`/api/changes/${made.changes[0]!.id}/reject`, { reason: 'typo' })).status).toBe(200);
+    const again = await author.post(`/api/changes/${made.changes[0]!.id}/resubmit`, { fields: { title: 'Arrival' } });
+    expect(again.status, await again.clone().text()).toBe(201);
+    const resub = (await again.json()) as { changes: { id: string }[] };
+    expect((await mod.post(`/api/changes/${resub.changes[0]!.id}/approve`)).status).toBe(200);
+
+    expect((await redact(admin, made.changes[0]!.id, { reason: 'Legal' })).status).toBe(200);
+    const entity = (await (await anon.get(`/api/entities/${id}`)).json()) as { fields: { title: string } };
+    expect(entity.fields.title).toBe('Arrival');
+  } finally {
+    await t.close();
+  }
+});
+
+it('redacting a relate erases its role and value from the relation row', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      film('Arrival'),
+      creator('Denis'),
+      { op: 'relate', type: 'work_creator', from: { ref: 'w' }, to: { ref: 'c' }, data: { role: 'composer' } },
+      { op: 'relate', type: 'external_id', from: { ref: 'w' }, data: { scheme: 'wikidata', value: 'Q-SECRET' } },
+    ]);
+    const detail = (await (await mod.get(`/api/submissions/${made.id}`)).json()) as {
+      changes: { id: string; op: string; relationId: string }[];
+    };
+    const relates = detail.changes.filter((c) => c.op === 'relate');
+    // One no longer current (unrelated first), one current (removed with the redaction).
+    await publish(author, mod, [{ op: 'unrelate', relationId: relates[0]!.relationId }]);
+    expect((await redact(admin, relates[0]!.id, { reason: 'Legal' })).status).toBe(200);
+    expect((await redact(admin, relates[1]!.id, { reason: 'Legal', removeEntity: true })).status).toBe(200);
+    const rows = await t.db
+      .select()
+      .from(relations)
+      .where(
+        inArray(
+          relations.id,
+          relates.map((r) => r.relationId),
+        ),
+      );
+    expect(rows).toHaveLength(2);
+    expect(JSON.stringify(rows)).not.toContain('SECRET');
+    expect(JSON.stringify(rows)).not.toContain('composer');
   } finally {
     await t.close();
   }

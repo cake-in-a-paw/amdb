@@ -7,6 +7,7 @@ import {
   ApproveInput,
   ClaimedSchema,
   RedactedSchema,
+  RedactedValue,
   RedactInput,
   ChangeIdParam,
   HistoryParams,
@@ -27,6 +28,16 @@ import type { ChangesService } from './service';
 
 type ChangeRecord = Awaited<ReturnType<ChangesService['getSubmission']>>['changes'][number];
 
+/** `base` split into the values still held and the keys a redaction erased. */
+function baseView(base: Record<string, unknown> | null) {
+  const entries = Object.entries(base ?? {});
+  const erased = entries.filter(([, v]) => RedactedValue.safeParse(v).success);
+  return {
+    base: base && Object.fromEntries(entries.filter(([, v]) => !RedactedValue.safeParse(v).success)),
+    redactedBaseFields: erased.map(([k]) => k),
+  };
+}
+
 /** A change row as the API shows it to its author and to moderators. */
 const changeView = (r: ChangeRecord) => ({
   id: r.id,
@@ -40,7 +51,7 @@ const changeView = (r: ChangeRecord) => ({
   redacted: r.redactedAt !== null,
   redactionReason: r.redactionReason,
   payload: r.payload,
-  base: r.base,
+  ...baseView(r.base),
   dependsOn: r.dependsOn,
 });
 

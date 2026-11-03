@@ -5,11 +5,11 @@ import { z } from '@hono/zod-openapi';
 import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
-import { resolveWinner } from '../../platform/db/merge';
+import { mergeFamily, resolveWinner } from '../../platform/db/merge';
 import { badRequest, conflict } from '../../platform/http/errors';
 import { normalizeTitle } from '../catalog/normalize';
 import type { ChangeRow } from './repository';
-import { MergePayload, RelatePayload, UnrelatePayload } from './schemas';
+import { MergePayload, REDACTED_VALUE, RedactedValue, RelatePayload, UnrelatePayload } from './schemas';
 
 /**
  * The one place catalog tables are written (constitution VIII). Each applied change returns the
@@ -516,6 +516,19 @@ export interface CurrentContent {
 }
 
 /**
+ * The entity whose row holds a create's or update's fields: a create's reserved id; for an update,
+ * the entity it was applied to (its `set_fields` inverse), which differs from the id it named when
+ * that id was merged away before it applied. An update never applied names its winner.
+ */
+async function contentEntityOf(tx: Tx, change: ChangeRow): Promise<string> {
+  const id = targetOf(change);
+  if (change.op !== 'update') return id;
+  const inverse = InverseSchema.safeParse(change.inverse);
+  if (inverse.success && inverse.data.op === 'set_fields') return inverse.data.entityId;
+  return resolveWinner(tx, id);
+}
+
+/**
  * The live content of an applied change, or null when its effects are gone. A create is current
  * while its entity is neither retracted nor removed; an update while any field's source is the
  * change; a relate while its relation is active; a merge while the loser is still merged into
@@ -525,7 +538,7 @@ export async function currentContent(tx: Tx, change: ChangeRow): Promise<Current
   switch (change.op) {
     case 'create':
     case 'update': {
-      const entity = await lockEntity(tx, targetOf(change));
+      const entity = await lockEntity(tx, await contentEntityOf(tx, change));
       if (!entity) return null;
       if (change.op === 'update') {
         const keys = Object.keys(fieldsOf(change.payload));
@@ -554,48 +567,53 @@ export async function currentContent(tx: Tx, change: ChangeRow): Promise<Current
 }
 
 /**
- * Removes an entity from public view (legal or abuse removal) and erases its free text: the kind
- * row keeps valid placeholders (NOT NULL columns, `*_norm` consistent, a tag's slug unique), and
- * the entity's history stays.
+ * Removes an entity from public view (legal or abuse removal) and erases its free text; the
+ * entity's history stays.
  */
 export async function applyRemoval(tx: Tx, entityId: string): Promise<void> {
   const now = new Date();
-  const [entity] = await tx
-    .update(entities)
-    .set({ removedAt: now, updatedAt: now })
-    .where(eq(entities.id, entityId))
-    .returning({ kind: entities.kind });
-  const placeholder = '[removed]';
-  const norm = normalizeTitle(placeholder);
+  await tx.update(entities).set({ removedAt: now, updatedAt: now }).where(eq(entities.id, entityId));
+  await eraseText(tx, entityId);
+}
+
+const PLACEHOLDER = '[removed]';
+
+/**
+ * Erases an entity's free text, leaving valid placeholders in its kind row (NOT NULL columns,
+ * `*_norm` consistent, a tag's slug unique).
+ */
+async function eraseText(tx: Tx, entityId: string): Promise<void> {
+  const [entity] = await tx.select({ kind: entities.kind }).from(entities).where(eq(entities.id, entityId));
+  const norm = normalizeTitle(PLACEHOLDER);
   switch (entity?.kind) {
     case 'work':
       await tx
         .update(works)
-        .set({ title: placeholder, titleNorm: norm, originalTitle: null, description: null, attributes: {} })
+        .set({ title: PLACEHOLDER, titleNorm: norm, originalTitle: null, description: null, attributes: {} })
         .where(eq(works.entityId, entityId));
       return;
     case 'creator':
       await tx
         .update(creators)
-        .set({ name: placeholder, nameNorm: norm, description: null })
+        .set({ name: PLACEHOLDER, nameNorm: norm, description: null })
         .where(eq(creators.entityId, entityId));
       return;
     case 'series':
       await tx
         .update(series)
-        .set({ title: placeholder, titleNorm: norm, description: null })
+        .set({ title: PLACEHOLDER, titleNorm: norm, description: null })
         .where(eq(series.entityId, entityId));
       return;
     case 'property':
       await tx
         .update(properties)
-        .set({ title: placeholder, titleNorm: norm, description: null })
+        .set({ title: PLACEHOLDER, titleNorm: norm, description: null })
         .where(eq(properties.entityId, entityId));
       return;
     case 'tag':
       await tx
         .update(tags)
-        .set({ name: placeholder, nameNorm: norm, slug: `removed-${entityId}` })
+        .set({ name: PLACEHOLDER, nameNorm: norm, slug: `removed-${entityId}` })
         .where(eq(tags.entityId, entityId));
       return;
     case undefined:
@@ -604,22 +622,61 @@ export async function applyRemoval(tx: Tx, entityId: string): Promise<void> {
 }
 
 /**
+ * Erases what a redacted change wrote that is no longer live and so wasn't taken down with it: a
+ * create's entity text once the entity is retracted or removed (it stays retracted, so a
+ * resubmission can still bring it back), and a relate's role and value once its relation is
+ * retired (placeholders keep `relations_type_columns` satisfied). An entity a later create made
+ * live again holds that create's content, and is left alone.
+ */
+export async function eraseRedacted(tx: Tx, change: ChangeRow): Promise<void> {
+  if (change.op === 'create' && change.entityId) {
+    const [entity] = await tx
+      .select()
+      .from(entities)
+      .where(
+        and(eq(entities.id, change.entityId), or(isNotNull(entities.removedAt), isNotNull(entities.retractedByChange))),
+      )
+      .for('update');
+    if (entity) await eraseText(tx, entity.id);
+  }
+  if (change.op === 'relate' && change.relationId) {
+    const [row] = await tx
+      .select()
+      .from(relations)
+      .where(and(eq(relations.id, change.relationId), isNotNull(relations.removedByChange)))
+      .for('update');
+    if (row) {
+      await tx
+        .update(relations)
+        .set({
+          role: row.role === null ? null : PLACEHOLDER,
+          value: row.value === null ? null : `removed-${row.id}`,
+        })
+        .where(eq(relations.id, row.id));
+    }
+  }
+}
+
+/**
  * Removes copies of a redacted change's content held by other changes, so a later revert can't
- * bring it back: for an update or create, the redacted fields in the `inverse` and `base` of
- * every other change on the entity that recorded this change as their source or holds the same value; for a relate, any
- * unrelate inverse that would restore its relation (left unrestorable: null) and the merge
- * inverses that would restore it as a dropped duplicate.
+ * bring it back. For an update or create: every other change on the entity it landed on (and on
+ * the entities merged into that one) loses the redacted fields from its `set_fields` inverse
+ * where they hold the redacted value or are sourced to the redacted change, and its `base` keeps
+ * those keys as `REDACTED_VALUE`, so the base still never matches and the change stays stale. For a
+ * relate: any unrelate inverse that would restore its relation (left unrestorable: null) and the
+ * merge inverses that would restore it as a dropped duplicate.
  */
 export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
   if ((change.op === 'create' || change.op === 'update') && change.entityId) {
     const redacted = fieldsOf(change.payload);
     const keys = Object.keys(redacted);
-    // Every other change on the entity, whatever its op or status (reverts included): any of them
-    // may hold the value in `base` or `inverse`.
+    const family = new Set([change.entityId, ...(await mergeFamily(tx, await contentEntityOf(tx, change)))]);
+    // Every other change on those entities, whatever its op or status (reverts included): any of
+    // them may hold the value in `base` or `inverse`.
     const others = await tx
       .select()
       .from(changes)
-      .where(and(eq(changes.entityId, change.entityId), ne(changes.id, change.id)));
+      .where(and(inArray(changes.entityId, [...family]), ne(changes.id, change.id)));
     const without = <T extends Record<string, unknown>>(o: T, drop: string[]) =>
       Object.fromEntries(Object.entries(o).filter(([k]) => !drop.includes(k)));
     for (const other of others) {
@@ -631,18 +688,19 @@ export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
           own &&
           (own.fieldSources[k] === change.id || (k in own.fields && isDeepStrictEqual(own.fields[k], redacted[k]))),
       );
-      const dropBase = keys.filter(
+      const base = other.base;
+      const eraseBase = keys.filter(
         (k) =>
-          other.base &&
-          (dropInverse.includes(k) ||
-            other.status === 'pending' ||
-            (k in other.base && isDeepStrictEqual(other.base[k], redacted[k]))),
+          base &&
+          k in base &&
+          !RedactedValue.safeParse(base[k]).success &&
+          (dropInverse.includes(k) || isDeepStrictEqual(base[k], redacted[k])),
       );
-      if (!dropInverse.length && !dropBase.length) continue;
+      if (!dropInverse.length && !eraseBase.length) continue;
       await tx
         .update(changes)
         .set({
-          base: other.base ? without(other.base, dropBase) : other.base,
+          base: base ? { ...base, ...Object.fromEntries(eraseBase.map((k) => [k, REDACTED_VALUE])) } : base,
           inverse: own
             ? { ...own, fields: without(own.fields, dropInverse), fieldSources: without(own.fieldSources, dropInverse) }
             : other.inverse,
