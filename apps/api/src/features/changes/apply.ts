@@ -121,7 +121,7 @@ async function writeRow(
     }
     case 'tag': {
       const f = parseFields(FieldsFor.tag, input);
-      const values = { kind: f.kind, name: f.name, slug: f.slug };
+      const values = { kind: f.kind, name: f.name, nameNorm: normalizeTitle(f.name), slug: f.slug };
       if (mode === 'insert') await tx.insert(tags).values({ entityId: id, ...values });
       else await tx.update(tags).set(values).where(eq(tags.entityId, id));
       return;

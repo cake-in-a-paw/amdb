@@ -98,8 +98,7 @@ export function catalogRepository(db: DbOrTx) {
               sql`${creators.nameNorm} like ${pattern}`,
               sql`${series.titleNorm} like ${pattern}`,
               sql`${properties.titleNorm} like ${pattern}`,
-              // Tags keep no normalized name; lowercasing is the closest match.
-              sql`lower(${tags.name}) like ${pattern}`,
+              sql`${tags.nameNorm} like ${pattern}`,
             ),
             after ? sql`(${titleExpr}, ${entities.id}) > (${after.title}, ${after.id}::uuid)` : undefined,
           ),
@@ -132,7 +131,7 @@ export function catalogRepository(db: DbOrTx) {
               sql`${creators.nameNorm} like ${pattern}`,
               sql`${series.titleNorm} like ${pattern}`,
               sql`${properties.titleNorm} like ${pattern}`,
-              sql`lower(${tags.name}) like ${pattern}`,
+              sql`${tags.nameNorm} like ${pattern}`,
             ),
           ),
         )
@@ -154,7 +153,7 @@ export function catalogRepository(db: DbOrTx) {
             filter.mediaType ? sql`${changes.payload}->>'mediaType' = ${filter.mediaType}` : undefined,
           ),
         )
-        .orderBy(desc(changes.createdAt))
+        .orderBy(desc(changes.createdAt), desc(changes.id))
         .limit(limit);
     },
   };

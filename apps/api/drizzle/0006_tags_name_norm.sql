@@ -1,0 +1,1 @@
+ALTER TABLE "tags" ADD COLUMN "name_norm" text NOT NULL;

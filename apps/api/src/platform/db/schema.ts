@@ -212,6 +212,7 @@ export const tags = pgTable('tags', {
     .references(() => entities.id),
   kind: text('kind').$type<TagKind>().notNull(),
   name: text('name').notNull(),
+  nameNorm: text('name_norm').notNull(),
   slug: text('slug').notNull().unique(),
 });
 

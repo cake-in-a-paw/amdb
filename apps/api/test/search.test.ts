@@ -172,3 +172,24 @@ it('a mediaType with a kind other than work is a 400', async () => {
     await t.close();
   }
 });
+
+it('an accented tag is found by "amelie" as an existing entity and as a pending create', async () => {
+  const { t, author, mod, anon, search } = await setup();
+  try {
+    await publish(author, mod, [
+      { op: 'create', kind: 'tag', ref: 't', fields: { kind: 'genre', name: 'Amélie', slug: 'amelie-live' } },
+    ]);
+    await submit(author, [
+      { op: 'create', kind: 'tag', ref: 't2', fields: { kind: 'genre', name: 'Amélie Noir', slug: 'amelie-noir' } },
+    ]);
+    expect((await search('q=amelie&kind=tag')).items.map((i) => i.title)).toEqual(['Amélie']);
+    const body = (await (await anon.get('/api/duplicates?kind=tag&title=amelie')).json()) as {
+      existing: Summary[];
+      pending: { title: string }[];
+    };
+    expect(body.existing.map((e) => e.title)).toEqual(['Amélie']);
+    expect(body.pending.map((p) => p.title)).toEqual(['Amélie Noir']);
+  } finally {
+    await t.close();
+  }
+});
