@@ -179,6 +179,11 @@ export function changesRepository(db: DbOrTx) {
      * it is an end of), newest first; fetches `limit` + 1.
      */
     async history(entityId: string, after: HistoryKey | null, limit: number) {
+      // The entity and everything merged into it, transitively: their history is its history.
+      const family = (cast: 'uuid' | 'text') =>
+        sql`(with recursive family(id) as (select ${entityId}::uuid union select e.id from entities e join family f on e.merged_into_id = f.id) select id::${sql.raw(cast)} from family)`;
+      const ids = family('uuid');
+      const idsText = family('text');
       return db
         .select({ change: changes, authorUserId: submissions.authorUserId })
         .from(changes)
@@ -187,11 +192,15 @@ export function changesRepository(db: DbOrTx) {
           and(
             inArray(changes.status, ['approved', 'published']),
             or(
-              eq(changes.entityId, entityId),
-              // A merge into this entity, and the revert of one.
-              and(eq(changes.op, 'merge'), sql`${changes.payload}->>'into' = ${entityId}`),
-              sql`exists (select 1 from ${changes} m where m.op = 'merge' and m.payload->>'into' = ${entityId} and m.id::text = ${changes.payload}->>'revertOf')`,
-              sql`${changes.relationId} in (select ${relations.id} from ${relations} where ${relations.fromId} = ${entityId} or ${relations.toId} = ${entityId})`,
+              sql`${changes.entityId} in ${ids}`,
+              // A merge into this entity or one merged into it (`into` may have resolved further
+              // when the merge applied), and the revert of one.
+              and(
+                eq(changes.op, 'merge'),
+                or(sql`${changes.payload}->>'into' in ${idsText}`, sql`${changes.inverse}->>'into' in ${idsText}`),
+              ),
+              sql`exists (select 1 from ${changes} m where m.op = 'merge' and (m.payload->>'into' in ${idsText} or m.inverse->>'into' in ${idsText}) and m.id::text = ${changes.payload}->>'revertOf')`,
+              sql`${changes.relationId} in (select ${relations.id} from ${relations} where ${relations.fromId} in ${ids} or ${relations.toId} in ${ids})`,
             ),
             after
               ? sql`(${changes.appliedAt}, ${changes.seq}, ${changes.id}) < (${after.appliedAt}::timestamptz, ${after.seq}::int, ${after.id}::uuid)`

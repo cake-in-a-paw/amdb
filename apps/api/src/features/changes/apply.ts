@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { type EntityKind, FieldsFor } from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
-import { and, arrayContains, eq, inArray, isNull, ne, or } from 'drizzle-orm';
+import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
 import { resolveWinner } from '../../platform/db/merge';
@@ -159,10 +159,18 @@ async function lockEntity(tx: Tx, id: string) {
   return row ?? null;
 }
 
+/**
+ * The live entity `id` resolves to after merges, locked. Locking can race a merge of the entity
+ * away, so it resolves again until the locked row is not merged.
+ */
 async function requireEntity(tx: Tx, id: string) {
-  const entity = await lockEntity(tx, id);
-  if (!entity) throw conflict('dependency_pending', `Entity ${id} doesn't exist yet`);
-  return entity;
+  let target = id;
+  for (;;) {
+    target = await resolveWinner(tx, target);
+    const entity = await lockEntity(tx, target);
+    if (!entity) throw conflict('dependency_pending', `Entity ${target} doesn't exist yet`);
+    if (!entity.mergedIntoId) return entity;
+  }
 }
 
 /** The change's target entity, after merges. */
@@ -196,8 +204,8 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       return { op: 'retract_entity', entityId: id };
     }
     case 'update': {
-      const id = await resolveWinner(tx, targetOf(change));
-      const entity = await requireEntity(tx, id);
+      const entity = await requireEntity(tx, targetOf(change));
+      const id = entity.id;
       const current = await kindRow(tx, change.kind, id);
       const base = change.base;
       if (base) {
@@ -227,10 +235,8 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
     }
     case 'relate': {
       const p = RelatePayload.parse(change.payload);
-      const from = await resolveWinner(tx, p.from);
-      await requireEntity(tx, from);
-      const to = p.to ? await resolveWinner(tx, p.to) : null;
-      if (to) await requireEntity(tx, to);
+      const from = (await requireEntity(tx, p.from)).id;
+      const to = p.to ? (await requireEntity(tx, p.to)).id : null;
       const relationId = randomUUID();
       await tx.insert(relations).values({
         id: relationId,
@@ -274,7 +280,9 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
         .where(touching(fromId))
         .orderBy(relations.createdAt, relations.id)
         .for('update');
-      const seen = new Set((await tx.select().from(relations).where(touching(intoId))).map(relationKey));
+      const winnerRels = await tx.select().from(relations).where(touching(intoId)).for('update');
+      // Deliberately ignores `position`: the same credit at another position is still a duplicate.
+      const seen = new Set(winnerRels.map(relationKey));
       const moved: string[] = [];
       const movedAsTo: string[] = [];
       const removed: string[] = [];
@@ -311,7 +319,7 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
   }
 }
 
-/** Two relations are duplicates when they agree on everything but position and identity. */
+/** Two relations are duplicates when they agree on everything but position and identity (see the merge). */
 const relationKey = (r: typeof relations.$inferSelect) =>
   JSON.stringify([r.type, r.fromId, r.toId, r.role, r.linkType, r.scheme, r.value]);
 
@@ -361,8 +369,7 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       return;
     }
     case 'update': {
-      const id = await resolveWinner(tx, targetOf(change));
-      const entity = await requireEntity(tx, id);
+      const entity = await requireEntity(tx, targetOf(change));
       const changed = Object.keys(fieldsOf(change.payload)).filter((k) => entity.fieldSources[k] !== change.id);
       if (changed.length) {
         throw conflict('stale_change', `${changed.join(', ')} changed since this change went live`, {
@@ -409,6 +416,21 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       ) {
         throw stale('Relations this merge dropped have changed since');
       }
+      // Restoring a relation to an end that has since been removed or retracted would leave it dangling.
+      const others = dropped.map((r) => (r.fromId === inverse.from ? r.toId : r.fromId));
+      const gone = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(
+          and(
+            inArray(
+              entities.id,
+              others.filter((x): x is string => !!x),
+            ),
+            or(isNotNull(entities.removedAt), isNotNull(entities.retractedByChange)),
+          ),
+        );
+      if (gone.length) throw stale('A relation this merge dropped now points at a removed entity');
       return;
     }
   }

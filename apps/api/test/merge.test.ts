@@ -82,7 +82,7 @@ it('after merging two creators, the loser’s id redirects with 308 and the winn
       (await (await anon.get(`/api/entities/${winner}/history`)).json()) as { items: { changeId: string }[] }
     ).items;
     expect(items.map((i) => i.changeId)).toContain(change!.id);
-    // Unknown ids are still 404; a merged-into-a-merged id resolves through the chain.
+    // Unknown ids are still 404.
     expect((await get('00000000-0000-4000-8000-000000000000')).status).toBe(404);
   } finally {
     await t.close();
@@ -136,6 +136,46 @@ it('reverting a merge restores both entities and their relations', async () => {
       items: { revertOf: string | null }[];
     };
     expect(hist.items.some((i) => i.revertOf === merged.changes[0]!.id)).toBe(true);
+  } finally {
+    await t.close();
+  }
+});
+
+it('the winner’s history includes the loser’s own changes and updates that named the loser', async () => {
+  const { t, author, mod, anon, twoCreators } = await setup();
+  try {
+    const { winner, loser } = await twoCreators();
+    const pending = await submit(author, [
+      { op: 'update', kind: 'creator', entityId: loser, fields: { description: 'x' } },
+    ]);
+    await publish(author, mod, [merge('creator', loser, winner)]);
+    expect((await mod.post(`/api/changes/${pending.changes[0]!.id}/approve`)).status).toBe(200);
+    const items = (
+      (await (await anon.get(`/api/entities/${winner}/history`)).json()) as {
+        items: { changeId: string; op: string; payload?: Record<string, unknown> }[];
+      }
+    ).items;
+    expect(items.some((i) => i.changeId === pending.changes[0]!.id)).toBe(true);
+    expect(items.some((i) => i.op === 'create' && i.payload?.name === 'D. Villeneuve')).toBe(true);
+  } finally {
+    await t.close();
+  }
+});
+
+it('an update and a relate naming a loser id are accepted and apply to the winner', async () => {
+  const { t, author, mod, entity, twoCreators } = await setup();
+  try {
+    const { winner, loser } = await twoCreators();
+    await publish(author, mod, [merge('creator', loser, winner)]);
+    await publish(author, mod, [{ op: 'update', kind: 'creator', entityId: loser, fields: { description: 'y' } }]);
+    expect((await entity(winner)).fields.description).toBe('y');
+    const w = await publish(author, mod, [film('Enemy'), directed({ ref: 'w' }, { id: loser })]);
+    const enemy = w.changes[0]!.entityId!;
+    expect((await entity(winner)).relations.works!.map((r) => r.work.id)).toContain(enemy);
+    // A merge naming the loser as `from` resolves to the winner: merging it into the winner is a self-merge.
+    const res = await author.post('/api/submissions', { cc0: true, changes: [merge('creator', loser, winner)] });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('self_merge');
   } finally {
     await t.close();
   }

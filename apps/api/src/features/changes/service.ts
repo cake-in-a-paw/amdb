@@ -169,7 +169,9 @@ function resubmission(change: ChangeRow, edits: ResubmitInput): ChangeInput {
 export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   const repo = changesRepository(db);
 
-  async function lookupEntity(actor: Actor, id: string): Promise<Resolved> {
+  /** A loser id is still a valid name for its winner (ids are permanent): the result carries the winner. */
+  async function lookupEntity(actor: Actor, named: string): Promise<Resolved> {
+    const id = await resolveWinner(db, named);
     const entity = await repo.findEntity(id);
     if (entity) return { id, kind: entity.kind, mediaType: entity.mediaType, dependsOn: null };
     const pending = await repo.findPendingCreate(id);
@@ -324,11 +326,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           };
         }
         case 'merge': {
-          // Merging into an entity that was itself merged goes to its winner.
-          const intoId = await resolveWinner(db, change.into);
-          if (change.from === intoId) throw badRequest('self_merge', 'An entity can’t merge into itself');
+          // Either side may name a merged entity: both go to their winners.
           const from = await lookupEntity(actor, change.from);
-          const into = await lookupEntity(actor, intoId);
+          const into = await lookupEntity(actor, change.into);
+          if (from.id === into.id) throw badRequest('self_merge', 'An entity can’t merge into itself');
           expectKind(index, from, change.kind);
           expectKind(index, into, change.kind);
           return {
