@@ -311,3 +311,45 @@ spelling, shortcuts, ADRs) and governance (amendments by ADR, semver) carry over
 - Whether v1 ships the corroboration rule (§6.1).
 - Search implementation (rmd uses Postgres `tsvector`).
 - Implementation order and the slicing into plans.
+
+## Production Annotations
+
+Shortcuts taken in plan 1 that would be wrong at scale (constitution, Standards). Each names what
+fixes it.
+
+**Rate limiting and abuse**
+
+- The anonymous-submission limiter (`apps/api/src/platform/http/rate-limit.ts`) keeps its windows
+  in process memory: limits reset on deploy and are per instance, so N replicas allow N times
+  the limit. Better Auth's limiter (sign-in codes) is in memory too. Fix: a shared store
+  (Postgres or Redis) before running more than one instance.
+- The limiter keys on the client address in `X-Forwarded-For`, trusting the last
+  `TRUSTED_PROXY_HOPS` entries (default 1, Railway's edge). If the proxy chain changes and the
+  setting doesn't, the limit keys on the wrong entry (too low: spoofable; too high: every client
+  shares a bucket). Requests without a trustworthy address share one bucket. Better Auth reads
+  the address its own way; check it matches before relying on its limits.
+- No bot protection for anonymous submissions yet (§11): a limit per address is the only guard.
+
+**Queries without the index they need**
+
+- Search for non-work kinds and both duplicate-check queries (existing entities, and pending
+  creates' `title_norm`) match a leading-wildcard `like '%…%'`, which no btree index serves. Fix:
+  `pg_trgm` GIN indexes on the `*_norm` columns.
+- Search orders by a `coalesce(...)` of the kinds' title columns, which no index covers.
+- Missing indexes: `changes.entity_id`, a GIN index on `changes.depends_on`, `changes.relation_id`,
+  `changes.resubmit_of`, an expression index on `changes.payload->>'revertOf'`,
+  `submissions.author_user_id` and `submissions.anon_hash`. Every lookup on them is a scan.
+- Redaction's scrub (`scrubRedacted`) scans every change on the entity's merge family and, for a
+  relate, every merge change. The history query's recursive merge-family CTE runs per request.
+- `resolveWinner` issues one query per merge hop.
+- A merge locks every active relation of both entities; a heavily linked entity makes merges slow
+  and contended.
+
+**Schema and operations**
+
+- Migrations 0005 and 0006 have no backfill, and 0006 adds `tags.name_norm` `NOT NULL` without a
+  default, so it fails on a populated table. Nothing is deployed yet: squash or add backfills
+  before the first deploy (plan 2).
+- `ADMIN_EMAILS` grants admin only when an account is created; adding an address later does
+  nothing for an existing account.
+- The last admin can demote themselves; recovery then needs a database edit.

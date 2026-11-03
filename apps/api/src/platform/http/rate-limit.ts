@@ -19,8 +19,8 @@ export function clientIp(c: Context<AppEnv>, trustedHops: number): string | null
 
 /**
  * An in-memory fixed-window limiter. `key` names the bucket for a request, or returns null to
- * leave the request alone. State lives in this process (see Production Annotations in the AMDB
- * design spec, docs/superpowers/specs/2026-11-02-amdb-design.md).
+ * leave the request alone. State lives in this process: see "Production Annotations" in
+ * docs/superpowers/specs/2026-11-02-amdb-design.md.
  */
 export function rateLimit({
   key,
