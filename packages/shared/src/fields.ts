@@ -29,11 +29,12 @@ export const WorkFieldsBase = z.object({
   releaseYear: z.number().int().min(1).max(9999).optional(),
   releaseMonth: z.number().int().min(1).max(12).optional(),
   releaseDay: z.number().int().min(1).max(31).optional(),
-  lifecycle: Lifecycle.default('unknown'),
+  lifecycle: Lifecycle,
   attributes: z.union([FilmTvAttributes, BookAttributes]).optional(),
 });
 
-export const WorkFields = WorkFieldsBase.superRefine((w, ctx) => {
+/** The `create` shape: lifecycle defaults here only, so the partial update shape never injects it. */
+export const WorkFields = WorkFieldsBase.extend({ lifecycle: Lifecycle.default('unknown') }).superRefine((w, ctx) => {
   const issue = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message });
   if ((w.mediaType === 'film_tv') !== (w.subtype !== null)) {
     issue('subtype', 'subtype is required for film_tv and not allowed for a book');

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreatorFields, FieldsFor, TagFields, WorkFields } from '../src';
+import { CreatorFields, FieldsFor, TagFields, WorkFields, WorkFieldsBase } from '../src';
 
 const movie = { mediaType: 'film_tv', subtype: 'movie', title: ' Heat ' } as const;
 
@@ -28,6 +28,12 @@ describe('WorkFields', () => {
   it('rejects empty and over-long titles', () => {
     expect(WorkFields.safeParse({ ...movie, title: '   ' }).success).toBe(false);
     expect(WorkFields.safeParse({ ...movie, title: 'x'.repeat(501) }).success).toBe(false);
+  });
+});
+
+describe('update shape', () => {
+  it('does not inject defaults into a partial patch', () => {
+    expect(WorkFieldsBase.partial().parse({ title: 'x' })).toEqual({ title: 'x' });
   });
 });
 
