@@ -11,14 +11,15 @@ import type { z } from '@hono/zod-openapi';
 import type { Db, Tx } from '../../platform/db/types';
 import type { Actor } from '../../platform/http/app-env';
 import { badRequest, conflict, notFound } from '../../platform/http/errors';
-import { decodeCursor, toPage } from '../../platform/http/pagination';
+import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { isModerator } from '../users/identity';
 import { applyChange, applyInverse, assertUndoable, fieldsOf, type Inverse, InverseSchema } from './apply';
-import { type ChangeRow, changesRepository, type NewChange, type Owner } from './repository';
+import { type ChangeRow, changesRepository, type NewChange, type Owner, type QueueKey } from './repository';
 import { holdAll, type ReviewPolicy } from './review-policy';
 import {
   type ApproveInput,
   ChangeInput,
+  QueueCursor,
   type EntityRef,
   MergePayload,
   RelatePayload,
@@ -374,6 +375,13 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   function edited(change: ChangeRow, fields: Record<string, unknown>) {
     if (change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
     const original = fieldsOf(change.payload);
+    // A moderator corrects what was submitted; adding fields is a change of its own.
+    const outOfScope = Object.keys(fields).filter((k) => !(k in original));
+    if (outOfScope.length) {
+      throw badRequest('edit_out_of_scope', 'An edit may only change fields the change submitted', {
+        fields: outOfScope,
+      });
+    }
     const parsed = shapeFor(change.op, change.kind).safeParse({ ...original, ...fields });
     if (!parsed.success) {
       throw badRequest(
@@ -425,8 +433,15 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
     /** Pending and published changes, oldest first. Moderators only; anyone else gets a 404. */
     async queue(actor: Actor, query: { cursor?: string; limit: number }) {
       if (!isModerator(actor)) throw notFound();
-      const rows = await repo.queue(decodeCursor(query.cursor), query.limit);
-      return toPage(rows, query.limit, (r) => ({ createdAt: r.change.createdAt, id: r.change.id }));
+      const rows = await repo.queue(decodeKeyCursor(query.cursor, QueueCursor), query.limit);
+      const items = rows.slice(0, query.limit);
+      const last = items.at(-1);
+      const key = (c: ChangeRow): QueueKey => ({
+        createdAt: c.createdAt.toISOString(),
+        submissionId: c.submissionId,
+        seq: c.seq,
+      });
+      return { items, nextCursor: rows.length > query.limit && last ? encodeKeyCursor(key(last.change)) : null };
     },
 
     /** Applies a pending change (optionally edited first), or confirms a published one. */
@@ -463,14 +478,15 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           await applyInverse(tx, inverseOf(change), change.id);
         }
         await r.updateChange(id, { ...reviewed, status: 'rejected', reason });
-        let frontier = [id];
+        const because = (dep: string) => ({ ...reviewed, reason: `Depends on rejected change ${dep}` });
+        // A rejected create also takes down pending changes made against its entity after it went
+        // live: they name the entity but, submitted once it existed, have no `depends_on` entry.
+        const targeting =
+          change.op === 'create' && change.entityId ? await r.rejectPendingTargeting(change.entityId, because(id)) : [];
+        let frontier = [id, ...targeting];
         while (frontier.length) {
           const next: string[] = [];
-          for (const dep of frontier) {
-            next.push(
-              ...(await r.rejectPendingDependents(dep, { ...reviewed, reason: `Depends on rejected change ${dep}` })),
-            );
-          }
+          for (const dep of frontier) next.push(...(await r.rejectPendingDependents(dep, because(dep))));
           frontier = next;
         }
         return { id, status: 'rejected' as const };

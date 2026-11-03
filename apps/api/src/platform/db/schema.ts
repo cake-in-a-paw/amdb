@@ -131,6 +131,8 @@ export const entities = pgTable('entities', {
   kind: text('kind').$type<EntityKind>().notNull(),
   mergedIntoId: uuid('merged_into_id').references((): AnyPgColumn => entities.id),
   removedAt: ts('removed_at'),
+  /** Set when the create that made this entity is rejected or reverted: a tombstone, read as unknown. */
+  retractedByChange: uuid('retracted_by_change').references((): AnyPgColumn => changes.id),
   /** Maps a field name to the id of the change that last set it. */
   fieldSources: jsonb('field_sources').$type<Record<string, string>>().notNull().default({}),
   createdAt: ts('created_at').notNull().defaultNow(),

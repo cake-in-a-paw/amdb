@@ -16,8 +16,8 @@ import { RelatePayload, UnrelatePayload } from './schemas';
  */
 
 export const InverseSchema = z.discriminatedUnion('op', [
-  /** Inverse of a create. */
-  z.object({ op: z.literal('delete_entity'), entityId: z.uuid() }),
+  /** Inverse of a create: tombstones the entity, keeping its rows as history. */
+  z.object({ op: z.literal('retract_entity'), entityId: z.uuid() }),
   /** Inverse of an update: the previous values and the changes that had set them. */
   z.object({
     op: z.literal('set_fields'),
@@ -149,12 +149,12 @@ async function winner(tx: Tx, id: string): Promise<string> {
   }
 }
 
-/** The live entity `id`, locked for the rest of the transaction. */
+/** The live entity `id` (not removed or retracted), locked for the rest of the transaction. */
 async function lockEntity(tx: Tx, id: string) {
   const [row] = await tx
     .select()
     .from(entities)
-    .where(and(eq(entities.id, id), isNull(entities.removedAt)))
+    .where(and(eq(entities.id, id), isNull(entities.removedAt), isNull(entities.retractedByChange)))
     .for('update');
   return row ?? null;
 }
@@ -179,15 +179,23 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
   switch (change.op) {
     case 'create': {
       const id = targetOf(change);
-      const [existing] = await tx.select({ id: entities.id }).from(entities).where(eq(entities.id, id));
-      if (existing) throw conflict('already_exists', `Entity ${id} already exists`);
-      await tx.insert(entities).values({
-        id,
-        kind: change.kind,
-        fieldSources: Object.fromEntries(Object.keys(fields).map((k) => [k, change.id])),
-      });
-      await writeRow(tx, change.kind, id, fields, 'insert');
-      return { op: 'delete_entity', entityId: id };
+      const fieldSources = Object.fromEntries(Object.keys(fields).map((k) => [k, change.id]));
+      const [existing] = await tx.select().from(entities).where(eq(entities.id, id)).for('update');
+      if (!existing) {
+        await tx.insert(entities).values({ id, kind: change.kind, fieldSources });
+        await writeRow(tx, change.kind, id, fields, 'insert');
+      } else if (existing.retractedByChange && existing.kind === change.kind) {
+        // A retracted entity comes back (a resubmitted create keeps its reserved id): lift the
+        // tombstone and write this create's fields over the old ones.
+        await tx
+          .update(entities)
+          .set({ retractedByChange: null, fieldSources, updatedAt: new Date() })
+          .where(eq(entities.id, id));
+        await writeRow(tx, change.kind, id, fields, 'update');
+      } else {
+        throw conflict('already_exists', `Entity ${id} already exists`);
+      }
+      return { op: 'retract_entity', entityId: id };
     }
     case 'update': {
       const id = await winner(tx, targetOf(change));
@@ -264,6 +272,8 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
   switch (change.op) {
     case 'create': {
       const id = targetOf(change);
+      // Lock first, so a change applied concurrently against the entity is either seen below or waits.
+      if (!(await lockEntity(tx, id))) throw conflict('stale_change', `Entity ${id} is no longer live`);
       const dependents = await tx
         .select({ id: changes.id })
         .from(changes)
@@ -313,13 +323,16 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
 /** Undoes an applied change. `byChangeId` is the change doing the undoing, recorded where a row is retired. */
 export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string): Promise<void> {
   switch (inverse.op) {
-    case 'delete_entity': {
-      // The one hard delete of current state: allowed only while nothing references the entity.
+    case 'retract_entity': {
+      // Lock first, so a relate applied concurrently is either counted below or waits and then
+      // finds the entity gone.
       const id = inverse.entityId;
+      const entity = await lockEntity(tx, id);
+      if (!entity) throw conflict('stale_change', `Entity ${id} is no longer live`);
       const referencing = await tx
         .select({ id: relations.id })
         .from(relations)
-        .where(or(eq(relations.fromId, id), eq(relations.toId, id)));
+        .where(and(or(eq(relations.fromId, id), eq(relations.toId, id)), isNull(relations.removedByChange)));
       const mergedIn = await tx.select({ id: entities.id }).from(entities).where(eq(entities.mergedIntoId, id));
       if (referencing.length || mergedIn.length) {
         throw conflict('has_dependents', 'Other records still reference this entity', {
@@ -327,11 +340,10 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
           entityIds: mergedIn.map((e) => e.id),
         });
       }
-      const entity = await lockEntity(tx, id);
-      if (!entity) throw conflict('stale_change', `Entity ${id} no longer exists`);
-      const table = KIND_TABLES[entity.kind];
-      await tx.delete(table).where(eq(table.entityId, id));
-      await tx.delete(entities).where(eq(entities.id, id));
+      await tx
+        .update(entities)
+        .set({ retractedByChange: byChangeId, updatedAt: new Date() })
+        .where(eq(entities.id, id));
       return;
     }
     case 'set_fields': {

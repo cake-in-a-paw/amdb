@@ -16,14 +16,15 @@ export function createCatalogService(db: Db) {
     /** Current state of a live entity. A reserved id whose create isn't live yet is unknown: 404. */
     async getEntity(id: string): Promise<EntityView> {
       const entity = await repo.findEntity(id);
-      // Merged and removed entities get their own answers in later tasks; until then they are not found.
-      if (!entity || entity.removedAt || entity.mergedIntoId) throw notFound();
+      // A retracted entity is unknown. Merged and removed ones get their own answers in later tasks;
+      // until then they are not found either.
+      if (!entity || entity.removedAt || entity.retractedByChange || entity.mergedIntoId) throw notFound();
       const row = await repo.kindRow(entity.kind, id);
       if (!row) throw new Error(`entity ${id} has no ${entity.kind} row`);
       const fields = Object.fromEntries(Object.entries(row).filter(([k]) => !DERIVED.has(k)));
 
-      const rels = await repo.activeRelations(id);
-      const others = rels.flatMap((r) => [r.fromId, r.toId]).filter((x): x is string => !!x && x !== id);
+      const active = await repo.activeRelations(id);
+      const others = active.flatMap((r) => [r.fromId, r.toId]).filter((x): x is string => !!x && x !== id);
       const summaries = new Map(
         (await repo.summaries([...new Set(others)])).map((s): [string, Summary] => [
           s.id,
@@ -36,6 +37,9 @@ export function createCatalogService(db: Db) {
           },
         ]),
       );
+      // Only relations to listed entities are shown; `summaries` holds exactly those.
+      const isShown = (x: string | null) => x === null || x === id || summaries.has(x);
+      const rels = active.filter((r) => isShown(r.fromId) && isShown(r.toId));
       const summary = (otherId: string | null) => {
         const s = otherId ? summaries.get(otherId) : undefined;
         if (!s) throw new Error(`relation endpoint ${otherId} has no summary`);

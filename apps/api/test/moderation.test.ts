@@ -247,3 +247,45 @@ it('an update that would leave the work invalid is 409 invalid_fields at approva
     await t.close();
   }
 });
+
+it('edit-and-approve may only change fields the change submitted: anything else is 400 edit_out_of_scope', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const created = await submit(author, [work]);
+    const res = await mod.post(`/api/changes/${created.changes[0]!.id}/approve`, {
+      fields: { title: 'Arrival', description: 'Linguist meets heptapods' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'edit_out_of_scope', details: { fields: ['description'] } },
+    });
+    // Nothing was applied; the change is still pending.
+    expect((await t.as({ kind: 'none' }).get(`/api/entities/${created.changes[0]!.entityId}`)).status).toBe(404);
+    const detail = (await (await author.get(`/api/submissions/${created.id}`)).json()) as Detail;
+    expect(detail.changes[0]?.status).toBe('pending');
+  } finally {
+    await t.close();
+  }
+});
+
+it('the queue keeps a submission’s changes in order across pages', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const created = await submit(author, [work, creator, link]);
+    const first = (await (await mod.get('/api/moderation/queue?limit=2')).json()) as {
+      items: QueueItem[];
+      nextCursor: string | null;
+    };
+    expect(first.items.map((i) => i.change.id)).toEqual(created.changes.slice(0, 2).map((c) => c.id));
+    expect(first.nextCursor).toBeTruthy();
+    const second = (await (await mod.get(`/api/moderation/queue?limit=2&cursor=${first.nextCursor}`)).json()) as {
+      items: QueueItem[];
+      nextCursor: string | null;
+    };
+    expect(second.items.map((i) => i.change.id)).toEqual([created.changes[2]!.id]);
+    expect(second.nextCursor).toBeNull();
+    expect((await mod.get('/api/moderation/queue?cursor=nope')).status).toBe(400);
+  } finally {
+    await t.close();
+  }
+});

@@ -40,10 +40,20 @@ export function cursorBefore(ts: PgColumn | SQL, id: PgColumn, cursor: Cursor | 
   return sql`(${ts}, ${id}) < (${cursor.createdAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
 }
 
-/** Rows strictly newer than the cursor, for (ts ASC, id ASC) ordering. */
-export function cursorAfter(ts: PgColumn | SQL, id: PgColumn, cursor: Cursor | null): SQL | undefined {
-  if (!cursor) return undefined;
-  return sql`(${ts}, ${id}) > (${cursor.createdAt.toISOString()}::timestamptz, ${cursor.id}::uuid)`;
+/** An opaque cursor over any sort key, for lists not ordered by (time, id). */
+export function encodeKeyCursor(key: unknown): string {
+  return Buffer.from(JSON.stringify(key)).toString('base64url');
+}
+
+export function decodeKeyCursor<T>(raw: string | undefined, schema: z.ZodType<T>): T | null {
+  if (!raw) return null;
+  try {
+    const parsed = schema.safeParse(JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')));
+    if (parsed.success) return parsed.data;
+  } catch {
+    // fall through
+  }
+  throw badRequest('invalid_cursor', 'Invalid cursor');
 }
 
 /** Callers fetch limit + 1 rows; the extra row only signals that another page exists. */

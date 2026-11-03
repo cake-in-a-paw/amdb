@@ -125,6 +125,9 @@ export const ChangeIdParam = z.object({ id: z.uuid() });
 
 export const QueueQuery = z.object(PageQuery);
 
+/** The decoded queue cursor: the last item's (createdAt, submissionId, seq). */
+export const QueueCursor = z.object({ createdAt: z.iso.datetime(), submissionId: z.uuid(), seq: z.number().int() });
+
 export const QueueSchema = z.object({
   items: z.array(
     z.object({

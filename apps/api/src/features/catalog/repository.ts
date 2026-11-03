@@ -3,6 +3,13 @@ import { and, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import { creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 
+/**
+ * The entities the public sees in lists, relation groups, search and duplicates: not removed,
+ * retracted (its create was rejected or reverted) or merged away. The one place that rule lives.
+ */
+export const listed = () =>
+  and(isNull(entities.removedAt), isNull(entities.retractedByChange), isNull(entities.mergedIntoId));
+
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
 
 /** Reads current catalog state. Writes happen only in features/changes/apply.ts. */
@@ -28,7 +35,7 @@ export function catalogRepository(db: DbOrTx) {
         .orderBy(relations.createdAt, relations.id);
     },
 
-    /** Display fields for entities: a title (a creator's or tag's name), and for works the media type and year. */
+    /** Display fields for the listed ones among `ids`: a title (a creator's or tag's name), and for works the media type and year. */
     async summaries(ids: string[]) {
       if (!ids.length) return [];
       return db
@@ -45,7 +52,7 @@ export function catalogRepository(db: DbOrTx) {
         .leftJoin(series, eq(series.entityId, entities.id))
         .leftJoin(properties, eq(properties.entityId, entities.id))
         .leftJoin(tags, eq(tags.entityId, entities.id))
-        .where(inArray(entities.id, ids));
+        .where(and(inArray(entities.id, ids), listed()));
     },
   };
 }

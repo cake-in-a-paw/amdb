@@ -1,0 +1,2 @@
+ALTER TABLE "entities" ADD COLUMN "retracted_by_change" uuid;--> statement-breakpoint
+ALTER TABLE "entities" ADD CONSTRAINT "entities_retracted_by_change_changes_id_fk" FOREIGN KEY ("retracted_by_change") REFERENCES "public"."changes"("id") ON DELETE no action ON UPDATE no action;

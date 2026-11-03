@@ -29,6 +29,13 @@
       "when": 1793729783828,
       "tag": "0003_users_name_optional",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793731390352,
+      "tag": "0004_entity_retraction",
+      "breakpoints": true
     }
   ]
 }

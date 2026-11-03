@@ -1,5 +1,5 @@
 import type { ChangeOp, EntityKind, MediaType } from '@amdb/shared';
-import { and, arrayContains, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
 import {
   changes,
   creators,
@@ -12,10 +12,17 @@ import {
   works,
 } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
-import { type Cursor, cursorAfter, cursorBefore } from '../../platform/http/pagination';
+import { type Cursor, cursorBefore } from '../../platform/http/pagination';
 
 export type ChangeRow = typeof changes.$inferSelect;
 export type ChangePatch = Partial<Omit<ChangeRow, 'id' | 'submissionId' | 'seq' | 'createdAt'>>;
+
+/** The moderation queue's sort key: oldest submission first, then its changes in order. */
+export interface QueueKey {
+  createdAt: string;
+  submissionId: string;
+  seq: number;
+}
 
 export type Owner = { userId: string } | { anonHash: string };
 
@@ -39,13 +46,20 @@ const ownerCondition = (owner: Owner) =>
 
 export function changesRepository(db: DbOrTx) {
   return {
-    /** A live entity (not removed or merged away) and, for a work, its media type. */
+    /** A live entity (not removed, retracted or merged away) and, for a work, its media type. */
     async findEntity(id: string): Promise<{ kind: EntityKind; mediaType: MediaType | null } | null> {
       const [row] = await db
         .select({ kind: entities.kind, mediaType: works.mediaType })
         .from(entities)
         .leftJoin(works, eq(works.entityId, entities.id))
-        .where(and(eq(entities.id, id), isNull(entities.removedAt), isNull(entities.mergedIntoId)));
+        .where(
+          and(
+            eq(entities.id, id),
+            isNull(entities.removedAt),
+            isNull(entities.retractedByChange),
+            isNull(entities.mergedIntoId),
+          ),
+        );
       return row ? { kind: row.kind, mediaType: row.mediaType } : null;
     },
 
@@ -151,17 +165,43 @@ export function changesRepository(db: DbOrTx) {
       return row ?? null;
     },
 
-    /** Pending and published changes, oldest first; fetches `limit` + 1. */
-    async queue(cursor: Cursor | null, limit: number) {
+    /** Pending and published changes, oldest first and in submission order; fetches `limit` + 1. */
+    async queue(after: QueueKey | null, limit: number) {
       return db
         .select({ change: changes, authorUserId: submissions.authorUserId })
         .from(changes)
         .innerJoin(submissions, eq(submissions.id, changes.submissionId))
         .where(
-          and(inArray(changes.status, ['pending', 'published']), cursorAfter(changes.createdAt, changes.id, cursor)),
+          and(
+            inArray(changes.status, ['pending', 'published']),
+            after
+              ? sql`(${changes.createdAt}, ${changes.submissionId}, ${changes.seq}) > (${after.createdAt}::timestamptz, ${after.submissionId}::uuid, ${after.seq}::int)`
+              : undefined,
+          ),
         )
-        .orderBy(asc(changes.createdAt), asc(changes.id))
+        .orderBy(asc(changes.createdAt), asc(changes.submissionId), asc(changes.seq))
         .limit(limit + 1);
+    },
+
+    /**
+     * Rejects the still-pending changes that act on entity `entityId` (as their target, or as a
+     * relate's other end); returns their ids.
+     */
+    async rejectPendingTargeting(entityId: string, patch: ChangePatch) {
+      const rows = await db
+        .update(changes)
+        .set({ ...patch, status: 'rejected' })
+        .where(
+          and(
+            eq(changes.status, 'pending'),
+            or(
+              eq(changes.entityId, entityId),
+              and(eq(changes.op, 'relate'), sql`${changes.payload}->>'to' = ${entityId}`),
+            ),
+          ),
+        )
+        .returning({ id: changes.id });
+      return rows.map((r) => r.id);
     },
 
     async getSubmission(id: string) {
