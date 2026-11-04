@@ -75,12 +75,17 @@ test('a rejected create opens with its reason and its fields filled in; submitti
 
   await t.user.clear(title);
   await t.user.type(title, 'Arrival (2016)');
+  const shown = t.router.options.context.queryClient.getQueryState(['change', r.changeId])?.dataUpdatedAt ?? 0;
   await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
 
   // Back in My submissions, the new change is waiting.
   const list = await screen.findByRole('list', { name: 'Your submissions' });
   expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
   expect(await sent()).toEqual([{ fields: { title: 'Arrival (2016)' } }]);
+  // The change was read again after the resubmit, not left as the page first saw it.
+  expect(t.router.options.context.queryClient.getQueryState(['change', r.changeId])?.dataUpdatedAt).toBeGreaterThan(
+    shown,
+  );
 
   // What the API stored: the rejected fields with the new title laid over them.
   const mine = (await (await r.author.get('/api/me/submissions')).json()) as { items: { id: string }[] };
@@ -183,4 +188,36 @@ test('a rejected link has no fields to edit and can be sent again as it was', as
   await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
   const list = await screen.findByRole('list', { name: 'Your submissions' });
   await waitFor(() => expect(within(list).getAllByText('Waiting for review')).toHaveLength(1));
+});
+
+test("a resubmit draft saved before the entry changed keeps only the contributor's edit", async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  const r = await rejected(t.api, t.session.userId ?? '', [
+    { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2002 } },
+  ]);
+  const route = { to: '/changes/$id/resubmit', params: { id: r.changeId } } as const;
+  await t.router.navigate(route);
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+  await waitFor(() => expect(localStorage.getItem(`amdb.draft.resubmit.${r.changeId}`)).not.toBeNull());
+  await t.router.navigate({ to: '/' });
+  // Someone else sets the description meanwhile.
+  const moderator = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  const other = t.api.as({ kind: 'user', userId: await t.api.createUser() });
+  const made = await other.post('/api/submissions', {
+    cc0: true,
+    changes: [{ op: 'update', kind: 'work', entityId: id, fields: { description: 'Changed by someone else.' } }],
+  });
+  const changeId = ((await made.json()) as Created).changes[0]?.id;
+  expect((await moderator.post(`/api/changes/${changeId}/approve`)).status).toBe(200);
+  t.router.options.context.queryClient.removeQueries({ queryKey: ['entity'] });
+  const sent = watchResubmits(t);
+
+  await t.router.navigate(route);
+
+  expect(await screen.findByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
+  expect(screen.getByLabelText(/^Description/)).toHaveValue('Changed by someone else.');
+  await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
+  await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
 });

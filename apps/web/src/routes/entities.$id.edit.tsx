@@ -11,7 +11,8 @@ import { useDraft } from '@/lib/drafts';
 import { describeSubmitError } from '@/lib/errors';
 import { entityQueryOptions, type EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
-import { isEntryForm, validateForm, type EntryForm as EntryFormValue, type FormErrors } from '@/lib/submission';
+import { isEditDraft, rebase, type EditDraft } from '@/lib/rebase';
+import { validateForm, type EntryForm as EntryFormValue, type FormErrors } from '@/lib/submission';
 
 export const Route = createFileRoute('/entities/$id/edit')({ component: Edit });
 
@@ -24,17 +25,46 @@ function Edit() {
   return <EditForm entity={entity} />;
 }
 
+const fieldNames: Record<string, string> = {
+  mediaType: 'media type',
+  subtype: 'type',
+  title: 'title',
+  name: 'name',
+  originalTitle: 'original title',
+  description: 'description',
+  lifecycle: 'release status',
+  releaseYear: 'release year',
+  releaseMonth: 'release month',
+  releaseDay: 'release day',
+  runtimeMin: 'runtime',
+  episodes: 'episodes',
+  pageCount: 'page count',
+  originalLanguage: 'original language',
+  kind: 'kind',
+  slug: 'slug',
+};
+
 function EditForm({ entity }: { entity: EntityView }) {
   const { api } = Route.useRouteContext();
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
-  const initial = useMemo(() => formFromEntity(entity), [entity]);
-  // The draft is the form as edited so far; a saved one for another kind of entry is not this form.
-  const [form, setForm, clearDraft] = useDraft<EntryFormValue>(
+  const current = useMemo(() => formFromEntity(entity), [entity]);
+  // The draft keeps the form as it was when the contributor started (`base`) beside the form as
+  // they changed it. On load their edits are laid over the entry as it is now, so what they
+  // never touched follows the entry and only what they changed is sent.
+  const conflicts = useRef<string[]>([]);
+  const [draft, setDraft, clearDraft] = useDraft<EditDraft>(
     `edit.${entity.id}`,
-    initial,
-    (v): v is EntryFormValue => isEntryForm(v) && v.kind === entity.kind,
+    { base: current, form: current },
+    (v): v is EditDraft => isEditDraft(v, entity.kind),
+    (saved) => {
+      const rebased = rebase(saved.base, saved.form, current);
+      conflicts.current = rebased.conflicts;
+      return { base: current, form: rebased.form };
+    },
   );
+  const form = draft.form;
+  const setForm = (next: EntryFormValue) => setDraft({ base: draft.base, form: next });
   const [cc0, setCc0] = useState(false);
   const [checked, setChecked] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
@@ -76,6 +106,12 @@ function EditForm({ entity }: { entity: EntityView }) {
         A moderator reviews every change before it appears. Only what you change is sent. Your draft is saved in this
         browser as you type.
       </p>
+      {conflicts.current.length > 0 && (
+        <p role="status" className="mt-4 rounded-md border border-border bg-card p-3">
+          This entry changed since you started editing. Your values are kept; check{' '}
+          {conflicts.current.map((key) => fieldNames[key] ?? key).join(', ')}.
+        </p>
+      )}
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
         <EntryForm value={form} onChange={setForm} errors={errors} entityId={entity.id} lockKind lockMediaType />
         <NoteField id="edit-note" value={form.note} onChange={(next) => setForm({ ...form, note: next })} />

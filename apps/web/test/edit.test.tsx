@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { renderApp, seed, type TestApi } from './harness';
+import { actors, publish, renderApp, seed, type TestApi } from './harness';
 
 const CC0 = 'I release this contribution into the public domain (CC0)';
 
@@ -244,4 +244,120 @@ test("a merged id opens the winner's edit form", async () => {
 
   expect(await screen.findByLabelText('Title')).toHaveValue("Howl's Castle");
   await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.series.howlsSeries}/edit`));
+});
+
+/** Starts an edit of Spirited Away (so a draft is saved), leaves, lets `meanwhile` change the entry through the API, and reopens the form. */
+async function reopenAfter(
+  t: Awaited<ReturnType<typeof renderApp<Awaited<ReturnType<typeof seed>>>>>,
+  edit: () => Promise<void>,
+  meanwhile: (other: Awaited<ReturnType<typeof actors>>) => Promise<void>,
+) {
+  const id = t.seeded.works.spiritedAway;
+  const route = { to: '/entities/$id/edit', params: { id } } as const;
+  await t.router.navigate(route);
+  await edit();
+  await waitFor(() => expect(stored(`edit.${id}`)).not.toBeNull());
+  await t.router.navigate({ to: '/' });
+  await meanwhile(await actors(t.api));
+  // A fresh load of the entry, as after a reload.
+  t.router.options.context.queryClient.removeQueries({ queryKey: ['entity'] });
+  await t.router.navigate(route);
+}
+
+const familyTag = [
+  { op: 'create', kind: 'tag', ref: 'family', fields: { kind: 'genre', name: 'Family', slug: 'family' } },
+  { op: 'relate', type: 'work_tag', from: { id: '' }, to: { ref: 'family' }, data: {} },
+];
+
+test('a draft saved before someone else changed the entry sends only what the contributor changed', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await reopenAfter(
+    t,
+    async () => {
+      await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+    },
+    async ({ contributor, moderator }) => {
+      await publish(contributor, moderator, [
+        { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2003 } },
+      ]);
+      await publish(
+        contributor,
+        moderator,
+        familyTag.map((c) => ('from' in c ? { ...c, from: { id } } : c)),
+      );
+    },
+  );
+  const posts = watchSubmissions(t);
+
+  // The form follows the entry for what the contributor never touched, and keeps their edit.
+  expect(await screen.findByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
+  expect(screen.getByLabelText('Release year')).toHaveValue(2003);
+  expect(within(screen.getByRole('list', { name: 'Tags' })).getByText('Family')).toBeInTheDocument();
+  expect(screen.queryByText(/changed since you started editing/)).not.toBeInTheDocument();
+
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: id, fields: { originalTitle: 'Sen to Chihiro' } },
+  ]);
+});
+
+test('when both changed the same field the contributor is told, and their value is the one sent', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await reopenAfter(
+    t,
+    async () => {
+      const year = await screen.findByLabelText('Release year');
+      await t.user.clear(year);
+      await t.user.type(year, '2002');
+    },
+    async ({ contributor, moderator }) => {
+      await publish(contributor, moderator, [
+        { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2003 } },
+      ]);
+    },
+  );
+  const posts = watchSubmissions(t);
+
+  expect(await screen.findByText(/changed since you started editing.*release year/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Release year')).toHaveValue(2002);
+
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2002 } },
+  ]);
+});
+
+test('a relation the contributor removed and someone else removed too sends no unrelate', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await reopenAfter(
+    t,
+    async () => {
+      await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+    },
+    async ({ contributor, moderator }) => {
+      const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
+        relations: { tags: { relationId: string }[] };
+      };
+      await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.tags[0]?.relationId }]);
+    },
+  );
+  const posts = watchSubmissions(t);
+
+  await screen.findByLabelText('Title');
+  expect(within(screen.getByRole('list', { name: 'Tags' })).queryByText('Fantasy')).not.toBeInTheDocument();
+  await t.user.click(screen.getByLabelText(CC0));
+  expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled();
+  await t.user.type(screen.getByLabelText(/^Original title/), 'Sen to Chihiro');
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: id, fields: { originalTitle: 'Sen to Chihiro' } },
+  ]);
 });

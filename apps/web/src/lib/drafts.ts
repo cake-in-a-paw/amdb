@@ -48,15 +48,15 @@ const isPlainObject = (v: unknown): v is Record<string, unknown> =>
  * `initial`, so a draft saved before a new key existed still has it. With no draft, `initial`
  * itself comes back, so a caller can tell (by identity) that nothing was restored.
  */
-function load<T>(k: string, initial: T, valid?: (value: unknown) => value is T): T {
+function load<T>(k: string, initial: T, valid?: (value: unknown) => value is T, migrate?: (draft: T) => T): T {
   const raw = readRaw(k);
   if (raw === null) return initial;
   try {
     const parsed: unknown = JSON.parse(raw);
     const draft = isPlainObject(initial) && isPlainObject(parsed) ? { ...initial, ...parsed } : parsed;
     // Without a check, trust it: a draft is only ever written by this hook from a T.
-    if (valid) return valid(draft) ? draft : initial;
-    return draft as T;
+    if (valid && !valid(draft)) return initial;
+    return migrate ? migrate(draft as T) : (draft as T);
   } catch {
     return initial;
   }
@@ -67,15 +67,17 @@ function load<T>(k: string, initial: T, valid?: (value: unknown) => value is T):
  * after the last change and on unmount or `pagehide`, so nothing typed is lost. If storage throws,
  * the draft lives in memory for this tab. `clear` forgets it (call it only once the work is safe,
  * i.e. after a 201) and returns the state to `initial`. With `valid`, a saved draft that fails it
- * (JSON `null`, a shape from another version) is ignored and `initial` is used.
+ * (JSON `null`, a shape from another version) is ignored and `initial` is used. A draft that is
+ * restored goes through `migrate` first (for bringing it up to date with what it was based on).
  */
 export function useDraft<T>(
   key: string,
   initial: T,
   valid?: (value: unknown) => value is T,
+  migrate?: (draft: T) => T,
 ): [T, (next: T) => void, () => void] {
   const k = storageKey(key);
-  const [value, setValue] = useState(() => load(k, initial, valid));
+  const [value, setValue] = useState(() => load(k, initial, valid, migrate));
   const initialRef = useRef(initial);
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);

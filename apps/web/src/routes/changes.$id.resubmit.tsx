@@ -10,11 +10,11 @@ import { diffFields } from '@/lib/diff';
 import { useDraft } from '@/lib/drafts';
 import { entityQueryOptions } from '@/lib/entity';
 import { describeResubmitError } from '@/lib/errors';
+import { isEditDraft, rebase, type EditDraft } from '@/lib/rebase';
 import { changeQueryOptions, type ChangeDetail } from '@/lib/rejected-change';
 import { linkClass } from '@/lib/styles';
 import {
   emptyForm,
-  isEntryForm,
   toFields,
   toInputs,
   validateForm,
@@ -113,11 +113,21 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
   const queryClient = useQueryClient();
   const kind = change.kind;
   const initial: EntryFormValue = { ...emptyForm(), kind, fields: toInputs(kind, base ?? {}) };
-  const [form, setForm, clearDraft] = useDraft<EntryFormValue>(
+  // As when editing an entry: the draft keeps the form it started from beside the edited one, and
+  // on load the edits are laid over what the change would set now.
+  const conflicts = useRef<string[]>([]);
+  const [draft, setDraft, clearDraft] = useDraft<EditDraft>(
     `resubmit.${change.id}`,
-    initial,
-    (v): v is EntryFormValue => isEntryForm(v) && v.kind === kind,
+    { base: initial, form: initial },
+    (v): v is EditDraft => isEditDraft(v, kind),
+    (saved) => {
+      const rebased = rebase(saved.base, saved.form, initial);
+      conflicts.current = rebased.conflicts;
+      return { base: initial, form: rebased.form };
+    },
   );
+  const form = draft.form;
+  const setForm = (next: EntryFormValue) => setDraft({ base: draft.base, form: next });
   const [checked, setChecked] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [focusError, setFocusError] = useState(0);
@@ -141,6 +151,8 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
       clearDraft();
       await queryClient.invalidateQueries({ queryKey: ['my-submissions'] });
       await queryClient.invalidateQueries({ queryKey: ['submission'] });
+      // The change is no longer rejected-and-open: coming back must not offer a second resubmit.
+      await queryClient.invalidateQueries({ queryKey: ['change'] });
       await navigate({ to: '/me/submissions' });
     },
   });
@@ -156,30 +168,37 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
   }
 
   return (
-    <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
-      {base ? (
-        <EntryForm
-          value={form}
-          onChange={setForm}
-          errors={errors}
-          entityId={change.entityId ?? undefined}
-          lockKind
-          lockMediaType={change.op === 'update'}
-          relations={false}
-        />
-      ) : (
-        <p>This change has no fields to edit here. You can send it to the moderators again as it was.</p>
-      )}
-      {send.isError && (
-        <p role="alert" className="text-destructive">
-          {describeResubmitError(send.error)}
+    <>
+      {conflicts.current.length > 0 && (
+        <p role="status" className="mt-4 rounded-md border border-border bg-card p-3">
+          This entry changed since you started editing. Your values are kept; check {conflicts.current.join(', ')}.
         </p>
       )}
-      <div>
-        <Button type="submit" disabled={send.isPending}>
-          {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
-        </Button>
-      </div>
-    </form>
+      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
+        {base ? (
+          <EntryForm
+            value={form}
+            onChange={setForm}
+            errors={errors}
+            entityId={change.entityId ?? undefined}
+            lockKind
+            lockMediaType={change.op === 'update'}
+            relations={false}
+          />
+        ) : (
+          <p>This change has no fields to edit here. You can send it to the moderators again as it was.</p>
+        )}
+        {send.isError && (
+          <p role="alert" className="text-destructive">
+            {describeResubmitError(send.error)}
+          </p>
+        )}
+        <div>
+          <Button type="submit" disabled={send.isPending}>
+            {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
+          </Button>
+        </div>
+      </form>
+    </>
   );
 }

@@ -2,7 +2,7 @@ import type { EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
 import { emptyForm, relationChanges, toFields, type ChangeInput, type EntryForm } from '@/lib/submission';
 
-function same(a: unknown, b: unknown): boolean {
+export function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false;
   const left = a as Record<string, unknown>;
