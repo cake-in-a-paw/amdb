@@ -1,6 +1,7 @@
 import { QueryClient, type DefaultOptions } from '@tanstack/react-query';
 import { createRouter, type RouterHistory } from '@tanstack/react-router';
 import type { ApiClient } from '@amdb/shared/api';
+import { RouteError } from './components/route-error';
 import { ApiError } from './lib/api';
 import type { AuthClient } from './lib/auth';
 import { routeTree } from './routeTree.gen';
@@ -25,6 +26,8 @@ export function createAppRouter(opts: {
     routeTree,
     history: opts.history,
     context: { api: opts.api, auth: opts.auth, queryClient },
+    // Plain words and a Reload button, never the router's developer screen.
+    defaultErrorComponent: RouteError,
   });
 }
 

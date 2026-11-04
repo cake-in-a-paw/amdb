@@ -1,5 +1,5 @@
 import { screen, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { renderApp, seed } from './harness';
 
 test('the home page shows the site name, a search box and works from the catalog', async () => {
@@ -70,4 +70,23 @@ test('the footer says the data is CC0', async () => {
   const footer = screen.getByRole('contentinfo');
   expect(within(footer).getByText(/All data CC0/)).toBeInTheDocument();
   expect(within(footer).getByText(/dumps coming soon/i)).toBeInTheDocument();
+});
+
+test('a page that fails to render says so in plain words, with a Reload button', async () => {
+  const t = await renderApp('/', { seed });
+  const real = t.api.app.request.bind(t.api.app);
+  // An answer the page can't render, standing in for any crash (a stale chunk after a redeploy).
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    String(input instanceof Request ? input.url : input).includes('/api/entities/')
+      ? Response.json({ id: t.seeded.works.spiritedAway })
+      : real(input, init),
+  );
+  vi.spyOn(console, 'error').mockImplementation(() => {});
+
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.works.spiritedAway } });
+
+  expect(await screen.findByText('Something went wrong loading this page.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Reload' })).toBeInTheDocument();
+  // The shell stays, so the way home is still there.
+  expect(screen.getByRole('link', { name: 'AMDB home' })).toBeInTheDocument();
 });
