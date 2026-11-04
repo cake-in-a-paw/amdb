@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getRouteApi, Link } from '@tanstack/react-router';
+import { getRouteApi, Link, useRouterState } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { ChevronDownIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { meQueryKey, meQueryOptions } from '@/lib/auth';
+import { meQueryKey, meQueryOptions } from '@/lib/me';
 
 const rootRoute = getRouteApi('__root__');
 
@@ -21,8 +21,8 @@ const navLink =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-medium text-foreground hover:bg-secondary';
 
 /*
- * Browse, Contribute, Search, Sign in, Account, My submissions and Moderation are plain links
- * until their routes exist (Tasks 6 to 10); a typed <Link> to a route that isn't there fails tsc.
+ * Browse, Contribute, Search and Moderation are plain links until their routes exist (Tasks 7 to
+ * 10); a typed <Link> to a route that isn't there fails tsc.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -85,6 +85,9 @@ function Session() {
   const { api, auth } = rootRoute.useRouteContext();
   const queryClient = useQueryClient();
   const me = useQuery(meQueryOptions(api));
+  // Sign-in returns to the page the person was on; the home page and sign-in itself need no `next`.
+  const here = useRouterState({ select: (s) => s.location.href });
+  const search = here === '/' || here.startsWith('/sign-in') ? {} : { next: here };
   const signOut = useMutation({
     mutationFn: async () => {
       const { error } = await auth.signOut();
@@ -99,9 +102,9 @@ function Session() {
   // A failed lookup still leaves a way in; sign-in reports its own errors.
   if (!me.data) {
     return (
-      <a href="/sign-in" className={navLink}>
+      <Link to="/sign-in" search={search} className={navLink}>
         Sign in
-      </a>
+      </Link>
     );
   }
 
@@ -123,10 +126,10 @@ function Session() {
         <DropdownMenuContent align="end" className="w-56">
           <DropdownMenuLabel className="truncate">{me.data.handle ?? me.data.email}</DropdownMenuLabel>
           <DropdownMenuItem asChild>
-            <a href="/me/submissions">My submissions</a>
+            <Link to="/me/submissions">My submissions</Link>
           </DropdownMenuItem>
           <DropdownMenuItem asChild>
-            <a href="/account">Account settings</a>
+            <Link to="/account">Account settings</Link>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem disabled={signOut.isPending} onSelect={() => signOut.mutate()}>

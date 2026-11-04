@@ -40,6 +40,26 @@ test('a contributor gets an account menu, and signing out ends the session in th
   expect(screen.queryByRole('button', { name: 'Account' })).not.toBeInTheDocument();
 });
 
+test('a failed sign-out says so and leaves the person signed in', async () => {
+  const { user, auth } = await renderApp('/', { as: 'contributor' });
+  auth.failing.add('signOut');
+
+  await user.click(await screen.findByRole('button', { name: 'Account' }));
+  await user.click(await screen.findByRole('menuitem', { name: 'Sign out' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't sign out. Try again.");
+  expect(screen.getByRole('button', { name: 'Account' })).toBeInTheDocument();
+});
+
+test('the account menu links to the account and submissions pages', async () => {
+  const { user } = await renderApp('/', { as: 'contributor' });
+
+  await user.click(await screen.findByRole('button', { name: 'Account' }));
+
+  expect(await screen.findByRole('menuitem', { name: 'My submissions' })).toHaveAttribute('href', '/me/submissions');
+  expect(screen.getByRole('menuitem', { name: 'Account settings' })).toHaveAttribute('href', '/account');
+});
+
 test.each(['moderator', 'admin'] as const)('a %s sees the Moderation link', async (as) => {
   await renderApp('/', { as });
 

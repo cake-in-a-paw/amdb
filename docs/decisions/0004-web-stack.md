@@ -33,6 +33,7 @@ rmd unless noted):
 | `tw-animate-css` (dev) | 1.4.0 | the enter and exit animations shadcn's menus use |
 | `lucide-react` | 1.62.0 | icons |
 | `better-auth` | 1.7.13 | the sign-out (and, from Task 6, sign-in) client, the same version as the API's server |
+| `@better-auth/passkey` | 1.7.13 | the passkey plugin of the browser client (save and use a passkey), the same version as the API's |
 | `@fontsource-variable/source-serif-4` | 5.3.1 | self-hosted Source Serif 4 with its optical-size axis, for titles (new) |
 | `@fontsource-variable/public-sans` | 5.3.0 | self-hosted Public Sans for interface text (new) |
 | `typescript` (dev) | 5.9.3 | typecheck, the same version as the API |

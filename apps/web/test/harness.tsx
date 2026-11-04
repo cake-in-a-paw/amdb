@@ -4,6 +4,7 @@ import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, onTestFinished } from 'vitest';
+import { anonHeaders } from '@/lib/api';
 import type { AuthClient } from '@/lib/auth';
 import { createAppRouter } from '@/router';
 
@@ -20,14 +21,66 @@ export interface Session {
   userId: string | null;
 }
 
-/** A Better Auth stand-in that acts on the shared session; pass your own to assert on calls. */
-export function stubAuth(session: Session): AuthClient {
-  return {
+/** A Better Auth stand-in that acts on the shared session, with knobs to drive each flow. */
+export interface StubAuth extends AuthClient {
+  /** Every call, in order, with its arguments. */
+  calls: { method: string; args: unknown }[];
+  /** The user a successful email-code or passkey sign-in signs in as; set it before signing in. */
+  signInAs: string | null;
+  /** What `listUserPasskeys` returns. */
+  passkeys: unknown[];
+  /** Methods (`signOut`, `sendVerificationOtp`, `emailOtp`, `addPasskey`) that answer with an error. */
+  failing: Set<string>;
+}
+
+export function stubAuth(session: Session): StubAuth {
+  const calls: StubAuth['calls'] = [];
+  const stub: StubAuth = {
+    calls,
+    signInAs: null,
+    passkeys: [],
+    failing: new Set(),
+    signIn: {
+      social: async (args) => {
+        calls.push({ method: 'social', args });
+        return { data: null, error: null };
+      },
+      emailOtp: async (args) => {
+        calls.push({ method: 'emailOtp', args });
+        if (stub.failing.has('emailOtp') || args.otp !== '123456') {
+          return { error: { status: 400, error: { code: 'INVALID_OTP' } } };
+        }
+        session.userId = stub.signInAs;
+        return { data: {}, error: null };
+      },
+      passkey: async () => {
+        calls.push({ method: 'passkey', args: undefined });
+        if (!stub.signInAs) return { error: { status: 400 } };
+        session.userId = stub.signInAs;
+        return { data: {}, error: null };
+      },
+    },
+    emailOtp: {
+      sendVerificationOtp: async (args) => {
+        calls.push({ method: 'sendVerificationOtp', args });
+        return stub.failing.has('sendVerificationOtp') ? { error: { status: 500 } } : { data: {}, error: null };
+      },
+    },
+    passkey: {
+      addPasskey: async () => {
+        calls.push({ method: 'addPasskey', args: undefined });
+        return stub.failing.has('addPasskey') ? { error: { status: 400 } } : { data: {}, error: null };
+      },
+      listUserPasskeys: async () => ({ data: stub.passkeys, error: null }),
+    },
     signOut: async () => {
+      calls.push({ method: 'signOut', args: undefined });
+      if (stub.failing.has('signOut')) return { error: { message: 'down', status: 500 } };
       session.userId = null;
       return { data: { success: true }, error: null };
     },
   };
+  return stub;
 }
 
 /**
@@ -47,14 +100,18 @@ export async function renderApp<Seeded = undefined>(
   // Typed as Seeded: with no `seed`, Seeded defaults to undefined, which is what this holds.
   const seeded = (opts.seed ? await opts.seed(api) : undefined) as Seeded;
 
+  const auth = stubAuth(session);
   const router = createAppRouter({
     api: createApiClient({
       baseUrl: 'http://amdb.test',
       // Hono's `request` takes a Request, a URL or a bare path, and resolves a relative one.
       fetch: async (input, init) => api.app.request(input, init),
-      headers: (): Record<string, string> => (session.userId ? { 'x-test-user': session.userId } : {}),
+      headers: (): Record<string, string> => ({
+        ...(session.userId ? { 'x-test-user': session.userId } : {}),
+        ...anonHeaders(() => session.userId !== null),
+      }),
     }),
-    auth: stubAuth(session),
+    auth,
     history: createMemoryHistory({ initialEntries: [path] }),
     queryDefaults: { queries: { retry: false }, mutations: { retry: false } },
   });
@@ -68,7 +125,7 @@ export async function renderApp<Seeded = undefined>(
   });
   // The root route loads before anything renders; wait so callers can query the shell at once.
   await router.load();
-  return { user, router, api, db: api.db, session, seeded, view };
+  return { user, router, auth, api, db: api.db, session, seeded, view };
 }
 
 /**

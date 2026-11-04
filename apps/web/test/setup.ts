@@ -2,7 +2,11 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, configure } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
-afterEach(cleanup);
+// The anonymous token lives in localStorage; no test may see another's.
+afterEach(() => {
+  cleanup();
+  localStorage.clear();
+});
 
 // Each test boots PGlite and runs the migrations before its first render, and the first render in
 // a file cold-loads the route tree; under a parallel full run that can pass Testing Library's 1s

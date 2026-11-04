@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, test } from 'vitest';
 import { Button } from '@/components/ui/button';
 import { renderApp, seed, type SignedInAs } from './harness';
@@ -57,6 +57,41 @@ describe('accessibility floor in the shell and home page', () => {
       items.forEach(expectFloor);
     },
   );
+});
+
+describe('accessibility floor on the sign-in, account and submissions pages', () => {
+  /** Fields are named by a <label>, not text content, so check the computed name. */
+  function expectPageFloor(root: HTMLElement) {
+    for (const control of within(root).queryAllByRole('textbox')) {
+      expect(control).toHaveAccessibleName();
+      expect(control).toHaveClass('min-h-11');
+    }
+    for (const control of [...within(root).queryAllByRole('button'), ...within(root).queryAllByRole('link')]) {
+      expectFloor(control);
+      expect(control).toHaveClass('min-w-11');
+    }
+  }
+
+  test('sign-in: both steps', async () => {
+    const { user } = await renderApp('/sign-in');
+    await screen.findByRole('button', { name: 'Continue with Google' });
+    expectPageFloor(screen.getByRole('main'));
+
+    await user.type(screen.getByLabelText('Email'), 'ada@example.test');
+    await user.click(screen.getByRole('button', { name: 'Continue with email' }));
+    await screen.findByLabelText('Code');
+    expectPageFloor(screen.getByRole('main'));
+  });
+
+  test('account and my submissions', async () => {
+    const t = await renderApp('/account', { as: 'contributor' });
+    await screen.findByLabelText('Handle');
+    expectPageFloor(screen.getByRole('main'));
+
+    await t.router.navigate({ to: '/me/submissions' });
+    await screen.findByText('You haven’t submitted anything yet.');
+    expectPageFloor(screen.getByRole('main'));
+  });
 });
 
 describe('accessibility floor in the shadcn button', () => {

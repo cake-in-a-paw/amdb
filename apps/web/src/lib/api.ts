@@ -1,7 +1,20 @@
 import { createApiClient } from '@amdb/shared/api';
+import { getAnonToken } from './anon';
 
-/** The app's client. Routes get it through router context (`context.api`) so tests can inject their own. */
-export const api = createApiClient();
+/**
+ * The anonymous identity header: sent only while signed out, so a signed-in request never carries
+ * a token that could be mistaken for its caller. (The claim call is the one exception; it names
+ * the token explicitly.)
+ */
+export function anonHeaders(isSignedIn: () => boolean): Record<string, string> {
+  return isSignedIn() ? {} : { 'x-amdb-anon': getAnonToken() };
+}
+
+/**
+ * The app's client, for main.tsx. Routes get it through router context (`context.api`) so tests
+ * can inject their own. `isSignedIn` is asked on every request.
+ */
+export const createWebApi = (isSignedIn: () => boolean) => createApiClient({ headers: () => anonHeaders(isSignedIn) });
 
 /** A non-2xx answer from the API, carrying its `{ error: { code, message, details? } }` body. */
 export class ApiError extends Error {

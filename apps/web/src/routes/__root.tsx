@@ -1,6 +1,7 @@
 import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { createRootRouteWithContext, Outlet } from '@tanstack/react-router';
 import type { ApiClient } from '@amdb/shared/api';
+import { AnonClaim } from '@/components/anon-claim';
 import { AppShell } from '@/components/app-shell';
 import type { AuthClient } from '@/lib/auth';
 
@@ -18,6 +19,7 @@ function Root() {
   const { queryClient } = Route.useRouteContext();
   return (
     <QueryClientProvider client={queryClient}>
+      <AnonClaim />
       <AppShell>
         <Outlet />
       </AppShell>

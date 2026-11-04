@@ -1,0 +1,193 @@
+import { screen, waitFor, within } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
+import { getAnonToken, peekAnonToken } from '@/lib/anon';
+import { renderApp } from './harness';
+
+const film = (title: string) => ({
+  op: 'create',
+  kind: 'work',
+  ref: 'w',
+  fields: { mediaType: 'film_tv', subtype: 'movie', title },
+});
+
+/** Submits as the browser's anonymous visitor, with the token the app itself would send. */
+async function submitAnonymously(t: Awaited<ReturnType<typeof renderApp>>, title = 'Arrival') {
+  const res = await t.api.app.request('/api/submissions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-amdb-anon': getAnonToken() },
+    body: JSON.stringify({ cc0: true, note: 'from the couch', changes: [film(title)] }),
+  });
+  expect(res.status, await res.clone().text()).toBe(201);
+  return (await res.json()) as { id: string; changes: { id: string }[] };
+}
+
+/** The client hands Hono a Request; a bare path or URL is also allowed by `app.request`. */
+const urlOf = (input: Request | string | URL) => (input instanceof Request ? input.url : String(input));
+
+/** Watches the in-process API; the returned function lists the claim calls so far. */
+function watchClaims(t: Awaited<ReturnType<typeof renderApp>>) {
+  const spy = vi.spyOn(t.api.app, 'request');
+  return () => spy.mock.calls.filter(([input]) => urlOf(input).includes('/api/me/claim-anonymous'));
+}
+
+async function signInByEmail(t: Awaited<ReturnType<typeof renderApp>>) {
+  t.auth.signInAs = await t.api.createUser();
+  await t.router.navigate({ to: '/sign-in' });
+  await t.user.type(await screen.findByLabelText('Email'), 'ada@example.test');
+  await t.user.click(screen.getByRole('button', { name: 'Continue with email' }));
+  await t.user.type(await screen.findByLabelText('Code'), '123456');
+  await waitFor(() => expect(t.router.state.location.pathname).toBe('/'));
+}
+
+test('an anonymous visitor sees their submission by token, in words', async () => {
+  const t = await renderApp('/');
+  await submitAnonymously(t);
+
+  await t.router.navigate({ to: '/me/submissions' });
+
+  const list = await screen.findByRole('list', { name: 'Your submissions' });
+  expect(within(list).getByText('Waiting for review')).toBeInTheDocument();
+  expect(within(list).getByText('from the couch')).toBeInTheDocument();
+});
+
+test('signing in claims the anonymous submissions exactly once and rotates the token', async () => {
+  const t = await renderApp('/');
+  const claims = watchClaims(t);
+  const submission = await submitAnonymously(t);
+  const token = peekAnonToken();
+
+  await signInByEmail(t);
+
+  await waitFor(() => expect(peekAnonToken()).not.toBe(token));
+  expect(claims()).toHaveLength(1);
+  const [sent] = claims()[0] ?? [];
+  expect(sent instanceof Request && sent.headers.get('x-amdb-anon')).toBe(token);
+  await t.router.navigate({ to: '/me/submissions' });
+  const list = await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
+  expect(submission.id).toBeTruthy();
+  // The new account owns it: the old token no longer sees it.
+  const old = await t.api.as({ kind: 'anon', token: token! }).get(`/api/submissions/${submission.id}`);
+  expect(old.status).toBe(404);
+  // Later requests while signed in do not claim again.
+  await t.router.invalidate();
+  expect(claims()).toHaveLength(1);
+});
+
+test('a token already marked claimed (a reload mid-claim) is not claimed again', async () => {
+  const t = await renderApp('/');
+  const claims = watchClaims(t);
+  await submitAnonymously(t);
+  localStorage.setItem('amdb.anon.claimed', getAnonToken());
+
+  await signInByEmail(t);
+  await screen.findByRole('button', { name: 'Account' });
+
+  expect(claims()).toHaveLength(0);
+});
+
+test('no claim when the browser never had a token', async () => {
+  const t = await renderApp('/');
+  const claims = watchClaims(t);
+  localStorage.clear();
+
+  await signInByEmail(t);
+  await screen.findByRole('button', { name: 'Account' });
+
+  expect(claims()).toHaveLength(0);
+});
+
+test('a storage failure does not break sign-in', async () => {
+  const t = await renderApp('/');
+  vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError');
+  });
+  vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError');
+  });
+  vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+    throw new DOMException('blocked', 'SecurityError');
+  });
+
+  await signInByEmail(t);
+
+  expect(await screen.findByRole('button', { name: 'Account' })).toBeInTheDocument();
+  vi.restoreAllMocks();
+});
+
+test('a failed claim is tried again on the next load', async () => {
+  const t = await renderApp('/');
+  await submitAnonymously(t);
+  const token = peekAnonToken();
+  const request = t.api.app.request.bind(t.api.app);
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    urlOf(input).includes('claim-anonymous') ? new Response('{}', { status: 500 }) : request(input, init),
+  );
+
+  await signInByEmail(t);
+  await screen.findByRole('button', { name: 'Account' });
+
+  await waitFor(() => expect(localStorage.getItem('amdb.anon.claimed')).toBeNull());
+  expect(peekAnonToken()).toBe(token);
+});
+
+test('a rejected change shows its reason and a Fix and resubmit link', async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  const created = await t.api
+    .as({ kind: 'user', userId: t.session.userId! })
+    .post('/api/submissions', { cc0: true, changes: [film('Arival')] });
+  const submission = (await created.json()) as { changes: { id: string }[] };
+  const changeId = submission.changes[0]!.id;
+  const mod = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  expect((await mod.post(`/api/changes/${changeId}/reject`, { reason: 'Title is misspelled' })).status).toBe(200);
+
+  await t.router.navigate({ to: '/me/submissions' });
+
+  const list = await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await within(list).findByText(/Title is misspelled/)).toBeInTheDocument();
+  expect(within(list).getByText('Rejected')).toBeInTheDocument();
+  expect(within(list).getByRole('link', { name: 'Fix and resubmit' })).toHaveAttribute(
+    'href',
+    `/changes/${changeId}/resubmit`,
+  );
+});
+
+test('published and approved changes read plainly', async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  const me = t.api.as({ kind: 'user', userId: t.session.userId! });
+  const created = await me.post('/api/submissions', { cc0: true, changes: [film('Arrival')] });
+  const body = (await created.json()) as { changes: { id: string; status: string }[] };
+  if (body.changes[0]!.status === 'pending') {
+    const mod = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+    expect((await mod.post(`/api/changes/${body.changes[0]!.id}/approve`)).status).toBe(200);
+  }
+
+  await t.router.navigate({ to: '/me/submissions' });
+
+  const list = await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await within(list).findByText(/^(Published|Approved)/)).toBeInTheDocument();
+});
+
+test('with nothing submitted, the page invites a first contribution', async () => {
+  await renderApp('/me/submissions', { as: 'contributor' });
+
+  expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+});
+
+test('a failed load says so and can retry', async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  const request = t.api.app.request.bind(t.api.app);
+  let failing = true;
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    failing && urlOf(input).includes('/api/me/submissions')
+      ? new Response('{}', { status: 500 })
+      : request(input, init),
+  );
+
+  await t.router.navigate({ to: '/me/submissions' });
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your submissions.");
+  failing = false;
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+
+  expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+});
