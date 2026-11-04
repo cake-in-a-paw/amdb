@@ -126,13 +126,15 @@ dotted leader, running from an entry's title to its details ("Spirited Away ··
   | `--ink` | `#1b2230` | `#e2e5ea` | text; the focus ring |
   | `--ink-muted` | `#565f70` | `#9aa3b2` | details and secondary text |
   | `--rule` | `#d3d8df` | `#2c3442` | hairlines only, never text |
+  | `--field-edge` | `#7c8494` | `#6a7385` | the visible edge of text fields, selects and text areas |
   | `--tint` | `#e7eaef` | `#232a36` | hover and selected backgrounds |
   | `--binding` | `#1f5a4c` | `#86c3ad` | links and primary actions: book-binding cloth green |
   | `--danger` | `#a4262c` | `#f08a8a` | errors |
 
   shadcn's variables map onto them: `background` paper, `foreground` ink, `card` and `popover`
   surface, `primary` binding (with paper text), `secondary` and `accent` tint,
-  `muted-foreground` ink-muted, `destructive` danger, `border` and `input` rule, `ring` ink.
+  `muted-foreground` ink-muted, `destructive` danger, `border` rule, `input` field-edge, `ring` ink.
+  The outline button keeps `border` in both themes rather than shadcn's dark `input` tint.
 - **Contrast** (WCAG, computed from the hex values):
 
   | Pair | Light | Dark |
@@ -141,9 +143,13 @@ dotted leader, running from an entry's title to its details ("Spirited Away ··
   | ink-muted on paper / surface | 5.89 / 6.43 | 7.19 / 6.49 |
   | binding on paper / surface (and paper on binding) | 7.33 / 8.00 | 9.07 / 8.19 |
   | danger on paper / surface | 6.66 / 7.26 | 7.58 / 6.85 |
+  | field-edge on paper / surface | 3.45 / 3.76 | 3.83 / 3.46 |
 
   Every text pair clears AA (4.5:1). The ink focus ring clears the 3:1 non-text minimum against
-  every background.
+  every background, and so does a field's edge (WCAG 1.4.11), against the page and against its
+  own surface fill; `--rule` (1.31 / 1.43 light, 1.46 / 1.32 dark) is too faint for that and
+  stays on decorative rules. Checkboxes and radios are native, drawn by the browser with
+  `accent-color: primary`, so their edge isn't a token.
 - **Focus and size.** One base-layer rule, `:focus-visible { outline: 2px solid var(--ring);
   outline-offset: 2px }`, and a 44px minimum on every control. `test/a11y-floor.test.tsx` checks
   both, rendering the shell as an anonymous visitor, a contributor and a moderator.
