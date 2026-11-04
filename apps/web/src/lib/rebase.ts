@@ -127,8 +127,11 @@ export function useEditDraft(
     () => (same(draft.base, current) ? null : rebase(draft.base, draft.form, current)),
     [draft, current],
   );
+  // Set by `clear` (after a 201): the reset draft is based on the entry as first loaded, and
+  // rebasing it must not write it back to storage. Typing again unsets it.
+  const cleared = useRef(false);
   useEffect(() => {
-    if (!rebased) return;
+    if (!rebased || cleared.current) return;
     setDraft({ base: current, form: rebased.form });
     if (rebased.conflicts.length > 0) setConflicts((was) => [...new Set([...was, ...rebased.conflicts])]);
   }, [rebased, current, setDraft]);
@@ -136,8 +139,14 @@ export function useEditDraft(
   return {
     form: rebased ? rebased.form : draft.form,
     // The form shown is always based on `current`, so an edit to it is too.
-    setForm: (next) => setDraft({ base: current, form: next }),
-    clear,
+    setForm: (next) => {
+      cleared.current = false;
+      setDraft({ base: current, form: next });
+    },
+    clear: () => {
+      cleared.current = true;
+      clear();
+    },
     conflicts,
   };
 }

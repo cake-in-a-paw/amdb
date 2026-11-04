@@ -246,6 +246,9 @@ test("a background refetch while a rejected edit is open sends only the contribu
   await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
   await screen.findByRole('list', { name: 'Your submissions' });
   expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
+  // The 201 clears the draft for good: nothing is written back after it.
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(localStorage.getItem(`amdb.draft.resubmit.${r.changeId}`)).toBeNull();
 });
 
 test('the resubmit conflict notice names fields in words', async () => {

@@ -386,6 +386,10 @@ test("a background refetch while the form is open sends only the contributor's e
   expect((await posts())[0]?.changes).toEqual([
     { op: 'update', kind: 'work', entityId: id, fields: { originalTitle: 'Sen to Chihiro' } },
   ]);
+  // The 201 clears the draft for good: nothing is written back after it.
+  expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  expect(stored(`edit.${id}`)).toBeNull();
 });
 
 test('a background refetch that changes a field the contributor edited says so', async () => {
