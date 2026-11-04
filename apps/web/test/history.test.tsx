@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
+import { entityQueryKey, type EntityView } from '@/lib/entity';
 import { actors, publish, renderApp, type SignedInAs, type TestApi } from './harness';
 
 const update = (entityId: string, fields: Record<string, unknown>) => ({
@@ -106,12 +107,18 @@ test.each(['anonymous', 'contributor'] as const)('%s visitors do not see Revert'
 
 test('reverting adds a revert to the history and updates the entry', async () => {
   const { user, list, items, router, seeded } = await open('moderator');
+  const queryClient = router.options.context.queryClient;
+  const yearOf = () =>
+    (queryClient.getQueryData(entityQueryKey(seeded.id)) as EntityView | undefined)?.fields.releaseYear;
+  await waitFor(() => expect(yearOf()).toBe(2017));
 
   // The year edit, third from the top.
   await user.click(within(items[2]!).getByRole('button', { name: /^Revert/ }));
 
   expect(await within(list).findByText('Reverted an earlier change')).toBeInTheDocument();
   expect(list.children).toHaveLength(5);
+  // The entry's cached copy was invalidated and refetched while still on the history page.
+  await waitFor(() => expect(yearOf()).toBe(2016));
   await router.navigate({ to: '/entities/$id', params: { id: seeded.id } });
   expect(await screen.findByRole('heading', { level: 1, name: 'Arrival' })).toBeInTheDocument();
   await waitFor(() => expect(screen.getByText('2016')).toBeInTheDocument());
@@ -136,6 +143,7 @@ test('a revert the API refuses is explained in words', async () => {
 test('a failed history load says so and Try again loads it', async () => {
   const t = await renderApp('/', { seed: history });
   const real = t.api.app.request.bind(t.api.app);
+  // The only way to make an in-process API fail the way a dropped network does: reject at its request.
   const spy = vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     return url.includes('/history') ? Promise.reject(new TypeError('Failed to fetch')) : real(input, init);

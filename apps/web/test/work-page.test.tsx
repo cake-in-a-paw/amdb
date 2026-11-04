@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { renderApp, seed } from './harness';
+import { actors, publish, renderApp, seed } from './harness';
 
 async function page(pick: (s: Awaited<ReturnType<typeof seed>>) => string) {
   // The path needs ids that only exist after seeding, so start on the home page and navigate.
@@ -27,6 +27,33 @@ test('the release date shows at the precision given', async () => {
   expect(await screen.findByRole('heading', { level: 1, name: "Howl's Moving Castle" })).toBeInTheDocument();
   expect(screen.getByText('2004')).toBeInTheDocument();
   expect(screen.queryByText('July 2001')).not.toBeInTheDocument();
+});
+
+test('a full release date shows the day too', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        {
+          op: 'create',
+          kind: 'work',
+          ref: 'w',
+          fields: {
+            mediaType: 'book',
+            subtype: null,
+            title: 'Dated',
+            releaseYear: 1986,
+            releaseMonth: 4,
+            releaseDay: 5,
+          },
+        },
+      ]);
+      return made.changes[0]?.entityId ?? '';
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded } });
+
+  expect(await screen.findByText('April 5, 1986')).toBeInTheDocument();
 });
 
 test('the description, tags and lifecycle show', async () => {

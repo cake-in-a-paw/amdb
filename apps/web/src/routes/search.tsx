@@ -39,7 +39,7 @@ function Search() {
         <p className="py-4 text-muted-foreground">Type a title or a name to search.</p>
       ) : results.isPending ? (
         <Loading what="results" />
-      ) : results.isError ? (
+      ) : results.isError && !results.data ? (
         <LoadError what="results" error={results.error} onRetry={() => void results.refetch()} />
       ) : (
         <Results q={q} items={results.data.pages.flatMap((page) => page.items)} />

@@ -94,6 +94,7 @@ test('while the entry loads, the page says so', async () => {
 test('a network error shows a retry button that works', async () => {
   const t = await renderApp('/', { seed });
   const real = t.api.app.request.bind(t.api.app);
+  // The only way to make an in-process API fail the way a dropped network does: reject at its request.
   const spy = vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
     const url = input instanceof Request ? input.url : String(input);
     return url.includes('/api/entities/') ? Promise.reject(new TypeError('Failed to fetch')) : real(input, init);

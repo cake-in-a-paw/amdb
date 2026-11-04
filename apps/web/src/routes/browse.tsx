@@ -86,7 +86,7 @@ function Browse() {
 
       {list.isPending ? (
         <Loading what="the list" />
-      ) : list.isError ? (
+      ) : list.isError && !list.data ? (
         <LoadError what="the list" error={list.error} onRetry={() => void list.refetch()} />
       ) : items.length === 0 ? (
         <EmptyList />

@@ -162,7 +162,8 @@ export function HistoryList({ entityId }: { entityId: string }) {
   });
 
   if (history.isPending) return <Loading what="the history" />;
-  if (history.isError)
+  // A failed "Load more" keeps the pages already loaded; only a failed first load replaces the list.
+  if (history.isError && !history.data)
     return <LoadError what="the history" error={history.error} onRetry={() => void history.refetch()} />;
   const items = history.data.pages.flatMap((page) => page.items);
   return (

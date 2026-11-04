@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Outlet, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Outlet, useMatch, useRouter } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { EntityHeader } from '@/components/entity-header';
 import { entryGone, LoadError, Loading, NotFound, Removed } from '@/components/entity-states';
@@ -16,6 +16,7 @@ function EntityLayout() {
   const { id } = Route.useParams();
   const { api, queryClient } = Route.useRouteContext();
   const router = useRouter();
+  const onHistory = useMatch({ from: '/entities/$id/history', shouldThrow: false }) !== undefined;
   const entity = useQuery(entityQueryOptions(api, id));
   // `fetch` followed the API's 308, so a different id in the answer means this one was merged.
   const winnerId = entity.data && entity.data.id !== id ? entity.data.id : null;
@@ -24,8 +25,13 @@ function EntityLayout() {
     if (!winnerId || !entity.data) return;
     queryClient.setQueryData(entityQueryKey(winnerId), entity.data);
     // Replace, not push: Back shouldn't land on the dead id and bounce forward again.
-    router.history.replace(router.state.location.pathname.replace(id, winnerId) + router.state.location.searchStr);
-  }, [winnerId, entity.data, id, queryClient, router]);
+    // A page under the entry (its history; Task 9 adds edit here) stays on that page for the winner.
+    void router.navigate({
+      to: onHistory ? '/entities/$id/history' : '/entities/$id',
+      params: { id: winnerId },
+      replace: true,
+    });
+  }, [winnerId, entity.data, onHistory, queryClient, router]);
 
   if (entity.isPending || winnerId) return <Loading what="this entry" />;
   if (entity.isError) {
