@@ -111,7 +111,9 @@ railway redeploy --service app
 
 Verify: `railway config plan` shows no changes to these variables (they are `preserve()`d), and
 the redeploy goes healthy. A missing variable fails boot with `Invalid environment:` and the
-variable's name in the deploy log.
+variable's name in the deploy log. The build log shows Node 24, the major CI runs: `.node-version`
+says `24` and `engines.node` in `package.json` says `24.x`. Any other major means the pin was
+ignored; stop and fix it before going on.
 
 ## 7. Write the DNS records
 

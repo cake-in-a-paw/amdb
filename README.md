@@ -18,7 +18,7 @@ recorded in `docs/decisions/`.
 
 ## Run the API locally
 
-Requires Node 22+ and pnpm 10 (`corepack enable`).
+Requires Node 24 and pnpm 10 (`corepack enable`).
 
 ```bash
 pnpm install
