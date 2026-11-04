@@ -142,17 +142,32 @@ it('rejecting a create rejects its pending link with the dependency reason; the 
     expect(detail.changes[0]?.payload).toMatchObject({ title: 'Arrival' });
 
     // Only the author may resubmit.
-    expect((await mod.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Arrival' } })).status).toBe(404);
-    expect((await t.as({ kind: 'anon', token: token('z') }).post(`/api/changes/${w!.id}/resubmit`)).status).toBe(404);
-    expect((await t.as({ kind: 'none' }).post(`/api/changes/${w!.id}/resubmit`)).status).toBe(404);
+    expect((await mod.post(`/api/changes/${w!.id}/resubmit`, { cc0: true, fields: { title: 'Arrival' } })).status).toBe(
+      404,
+    );
+    expect(
+      (await t.as({ kind: 'anon', token: token('z') }).post(`/api/changes/${w!.id}/resubmit`, { cc0: true })).status,
+    ).toBe(404);
+    expect((await t.as({ kind: 'none' }).post(`/api/changes/${w!.id}/resubmit`, { cc0: true })).status).toBe(404);
 
-    const again = await author.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Arrival (2016)' } });
+    // A resubmit can add content, so it carries the CC0 agreement like a submit.
+    expect((await author.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Arrival (2016)' } })).status).toBe(
+      400,
+    );
+    expect(
+      (await author.post(`/api/changes/${w!.id}/resubmit`, { cc0: false, fields: { title: 'Arrival (2016)' } })).status,
+    ).toBe(400);
+
+    const again = await author.post(`/api/changes/${w!.id}/resubmit`, {
+      cc0: true,
+      fields: { title: 'Arrival (2016)' },
+    });
     expect(again.status).toBe(201);
     const newWork = (await again.json()) as { changes: { id: string; entityId: string; status: string }[] };
     expect(newWork.changes[0]).toMatchObject({ entityId: w!.entityId, status: 'pending' });
-    expect((await author.post(`/api/changes/${w!.id}/resubmit`, {})).status).toBe(409);
+    expect((await author.post(`/api/changes/${w!.id}/resubmit`, { cc0: true })).status).toBe(409);
 
-    const linkAgain = await author.post(`/api/changes/${l!.id}/resubmit`, {});
+    const linkAgain = await author.post(`/api/changes/${l!.id}/resubmit`, { cc0: true });
     expect(linkAgain.status).toBe(201);
     const newLink = (await linkAgain.json()) as { id: string; changes: { id: string }[] };
     const linkDetail = (await (await author.get(`/api/submissions/${newLink.id}`)).json()) as {

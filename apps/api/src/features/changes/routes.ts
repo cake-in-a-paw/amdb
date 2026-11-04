@@ -24,7 +24,7 @@ import {
   SubmissionDetailSchema,
   SubmissionInput,
 } from './schemas';
-import { publicAuthor } from './author';
+import { reviewAuthor } from './author';
 import type { ChangesService } from './service';
 
 type ChangeRecord = Awaited<ReturnType<ChangesService['getSubmission']>>['changes'][number];
@@ -125,11 +125,11 @@ const resubmitRoute = createRoute({
   path: '/api/changes/{id}/resubmit',
   request: {
     params: ChangeIdParam,
-    body: { content: { 'application/json': { schema: ResubmitInput } }, required: false },
+    body: { content: { 'application/json': { schema: ResubmitInput } }, required: true },
   },
   responses: {
     201: json(SubmissionCreatedSchema, 'Created'),
-    400: json(ErrorSchema, 'Invalid change'),
+    400: json(ErrorSchema, 'Invalid change, or no CC0 agreement'),
     404: json(ErrorSchema, 'Not found'),
     409: json(
       ErrorSchema,
@@ -275,7 +275,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
           },
           submission: {
             id: change.submissionId,
-            author: publicAuthor(authorUserId, authorHandle),
+            author: reviewAuthor(authorUserId, authorHandle),
           },
           ageSeconds: Math.max(0, Math.floor((now - change.createdAt.getTime()) / 1000)),
         })),
@@ -286,7 +286,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
   });
 
   app.openapi(approveRoute, async (c) => {
-    const result = await changes.approve(c.var.actor, c.req.valid('param').id, c.req.valid('json') ?? {});
+    const result = await changes.approve(c.var.actor, c.req.valid('param').id, c.req.valid('json'));
     return c.json(result, 200);
   });
 
@@ -296,7 +296,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
   });
 
   app.openapi(resubmitRoute, async (c) => {
-    const created = await changes.resubmit(c.var.actor, c.req.valid('param').id, c.req.valid('json') ?? {});
+    const created = await changes.resubmit(c.var.actor, c.req.valid('param').id, c.req.valid('json'));
     return c.json(created, 201);
   });
 

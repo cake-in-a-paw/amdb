@@ -76,12 +76,18 @@ test('a rejected create opens with its reason and its fields filled in; submitti
   await t.user.clear(title);
   await t.user.type(title, 'Arrival (2016)');
   const shown = t.router.options.context.queryClient.getQueryState(['change', r.changeId])?.dataUpdatedAt ?? 0;
-  await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
+  // No second checkbox, but the button says what resubmitting agrees to.
+  const resubmit = screen.getByRole('button', { name: 'Resubmit for review' });
+  expect(resubmit).toHaveAccessibleDescription(
+    'Resubmitting releases your changes into the public domain (CC0), like your first submission.',
+  );
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+  await t.user.click(resubmit);
 
   // Back in My submissions, the new change is waiting.
   const list = await screen.findByRole('list', { name: 'Your submissions' });
   expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
-  expect(await sent()).toEqual([{ fields: { title: 'Arrival (2016)' } }]);
+  expect(await sent()).toEqual([{ cc0: true, fields: { title: 'Arrival (2016)' } }]);
   // The change was read again after the resubmit, not left as the page first saw it.
   expect(t.router.options.context.queryClient.getQueryState(['change', r.changeId])?.dataUpdatedAt).toBeGreaterThan(
     shown,
@@ -137,7 +143,7 @@ test('a rejected edit opens over the entry as it is now, and its media type is f
   const list = await screen.findByRole('list', { name: 'Your submissions' });
   expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
   // Only what differs from the rejected edit: the year stays as it was proposed.
-  expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
+  expect(await sent()).toEqual([{ cc0: true, fields: { originalTitle: 'Sen to Chihiro' } }]);
 });
 
 test('a change that is not rejected, or not yours, cannot be resubmitted', async () => {
@@ -156,7 +162,7 @@ test('a change that is not rejected, or not yours, cannot be resubmitted', async
 test('resubmitting twice says it was already resubmitted and keeps the form', async () => {
   const t = await renderApp('/', { as: 'contributor' });
   const r = await rejected(t.api, t.session.userId ?? '', [arrival]);
-  expect((await r.author.post(`/api/changes/${r.changeId}/resubmit`, {})).status).toBe(201);
+  expect((await r.author.post(`/api/changes/${r.changeId}/resubmit`, { cc0: true })).status).toBe(201);
 
   await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: r.changeId } });
   await t.user.click(await screen.findByRole('button', { name: 'Resubmit for review' }));
@@ -219,7 +225,7 @@ test("a resubmit draft saved before the entry changed keeps only the contributor
   expect(screen.getByLabelText(/^Description/)).toHaveValue('Changed by someone else.');
   await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
   await screen.findByRole('list', { name: 'Your submissions' });
-  expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
+  expect(await sent()).toEqual([{ cc0: true, fields: { originalTitle: 'Sen to Chihiro' } }]);
 });
 
 test("a background refetch while a rejected edit is open sends only the contributor's edit", async () => {
@@ -245,7 +251,7 @@ test("a background refetch while a rejected edit is open sends only the contribu
 
   await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
   await screen.findByRole('list', { name: 'Your submissions' });
-  expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
+  expect(await sent()).toEqual([{ cc0: true, fields: { originalTitle: 'Sen to Chihiro' } }]);
   // The 201 clears the draft for good: nothing is written back after it.
   await new Promise((resolve) => setTimeout(resolve, 600));
   expect(localStorage.getItem(`amdb.draft.resubmit.${r.changeId}`)).toBeNull();

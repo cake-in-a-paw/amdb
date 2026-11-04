@@ -46,7 +46,7 @@ async function setup() {
 }
 
 it('history lists approved changes newest first and omits pending and rejected ones', async () => {
-  const { t, authorId, author, mod, history } = await setup();
+  const { t, author, mod, history } = await setup();
   try {
     const created = await publish(author, mod, [work]);
     const id = created.changes[0]!.entityId!;
@@ -61,7 +61,7 @@ it('history lists approved changes newest first and omits pending and rejected o
       changeId: second.changes[0]!.id,
       op: 'update',
       payload: { title: 'Arrival (2016)' },
-      author: { userId: authorId, handle: null },
+      author: { handle: null },
       source: 'human',
       appliedAt: expect.any(String),
       revertOf: null,
@@ -120,7 +120,7 @@ it('history shows a redacted change as a stub with its reason', async () => {
       redacted: true,
       reason: 'abuse',
       // Spec §4.3: the stub keeps who and when.
-      author: { userId: expect.any(String), handle: null },
+      author: { handle: null },
       appliedAt: expect.any(String),
     });
   } finally {
@@ -278,7 +278,10 @@ it('reviving a retracted entity resets every column to the new create’s values
     expect((await mod.post(`/api/changes/${create!.id}/reject`, { reason: 'dup' })).status).toBe(200);
 
     // The API can only add to a resubmitted create's fields, so drop the optional ones in the row.
-    const again = await author.post(`/api/changes/${create!.id}/resubmit`, { fields: { title: 'Arrival (2016)' } });
+    const again = await author.post(`/api/changes/${create!.id}/resubmit`, {
+      cc0: true,
+      fields: { title: 'Arrival (2016)' },
+    });
     expect(again.status, await again.clone().text()).toBe(201);
     const resubmitted = ((await again.json()) as { changes: { id: string }[] }).changes[0]!.id;
     await t.db

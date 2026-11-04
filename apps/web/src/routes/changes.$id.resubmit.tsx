@@ -151,7 +151,8 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
       return unwrap(
         await api.POST('/api/changes/{id}/resubmit', {
           params: { path: { id: change.id } },
-          body: Object.keys(fields).length > 0 ? { fields } : {},
+          // The notice by the button is the agreement: a resubmit can add content (constitution II).
+          body: { cc0: true, ...(Object.keys(fields).length > 0 ? { fields } : {}) },
         }),
       );
     },
@@ -197,10 +198,21 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
             {describeResubmitError(send.error)}
           </p>
         )}
-        <div>
-          <Button type="submit" disabled={send.isPending}>
-            {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
-          </Button>
+        <div className="grid gap-2">
+          <p id="resubmit-cc0" className="text-sm text-muted-foreground">
+            Resubmitting releases your changes into the public domain (CC0), like your first submission.
+          </p>
+          <div className="flex flex-wrap items-center gap-x-4">
+            <Button type="submit" disabled={send.isPending} aria-describedby="resubmit-cc0">
+              {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
+            </Button>
+            <a
+              href="https://creativecommons.org/publicdomain/zero/1.0/"
+              className="inline-flex min-h-11 min-w-11 items-center text-sm text-primary underline underline-offset-4"
+            >
+              What CC0 means
+            </a>
+          </div>
         </div>
       </form>
     </>

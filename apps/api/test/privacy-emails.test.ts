@@ -68,7 +68,7 @@ it('no response to the public, a moderator or an admin carries a contributor’s
   }
 });
 
-it('public attribution is the handle or nothing: never an email or the OAuth profile name', async () => {
+it('public attribution is the handle or nothing: never an email, the OAuth profile name or the account id', async () => {
   const t = await setupTest();
   try {
     const authorId = await t.createUser({ email: 'real@example.com', name: 'Real Name' });
@@ -88,7 +88,9 @@ it('public attribution is the handle or nothing: never an email or the OAuth pro
     };
 
     const before = await historyOf();
-    expect(before.body.items[0]!.author).toEqual({ userId: authorId, handle: null });
+    // Without a handle, nothing public links one contributor's changes together.
+    expect(before.body.items[0]!.author).toEqual({ handle: null });
+    expect(before.text).not.toContain(authorId);
     const entity = await (await anon.get(`/api/entities/${workId}`)).text();
     for (const text of [before.text, entity]) {
       expect(text).not.toContain('Real Name');
@@ -97,7 +99,8 @@ it('public attribution is the handle or nothing: never an email or the OAuth pro
 
     expect((await author.patch('/api/me', { handle: 'ann' })).status).toBe(200);
     const after = await historyOf();
-    expect(after.body.items[0]!.author).toEqual({ userId: authorId, handle: 'ann' });
+    expect(after.body.items[0]!.author).toEqual({ handle: 'ann' });
+    expect(after.text).not.toContain(authorId);
     expect(after.text).not.toContain('Real Name');
     expect(after.text).not.toContain('real@example.com');
 

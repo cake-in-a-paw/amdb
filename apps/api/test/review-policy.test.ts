@@ -146,7 +146,7 @@ it('rejecting the link and then the create retracts the entity; both changes kee
     expect(detail.changes[2]?.payload).toMatchObject({ type: 'work_creator', data: { role: 'author' } });
 
     // The tombstone keeps the reserved id: resubmitting the create brings the entity back.
-    const again = await author.post(`/api/changes/${w!.id}/resubmit`, { fields: { title: 'Dune (1965)' } });
+    const again = await author.post(`/api/changes/${w!.id}/resubmit`, { cc0: true, fields: { title: 'Dune (1965)' } });
     expect(again.status, await again.clone().text()).toBe(201);
     const back = await t.as({ kind: 'none' }).get(`/api/entities/${w!.entityId}`);
     expect(back.status).toBe(200);

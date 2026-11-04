@@ -2,10 +2,10 @@
 
 Minor findings from plan 2's reviews that were deferred, kept here so they outlive the build log. Each line names the task whose review found it. Plan 1's deferred items are at the end of the plan 2 document.
 
-## Open questions for the owner
+## Owner decisions (2026-11-04)
 
-- Resubmitting a rejected change records no fresh CC0 agreement (the resubmit API takes no `cc0`). Decide whether resubmits must agree again.
-- Public history and queue authors carry a stable `userId`, so a contributor without a handle can still be linked across edits. Decide whether "contributor" should be unlinkable.
+- Resubmits carry the CC0 agreement: the resubmit API requires `cc0: true`, and the resubmit page shows a notice by its button instead of a second checkbox.
+- Public authors carry no account id: history shows `{ handle }` or `'anonymous'`, so a contributor without a handle can't be linked across edits. The moderation queue keeps `userId` so moderators can follow one contributor.
 
 ## Deferred minors
 

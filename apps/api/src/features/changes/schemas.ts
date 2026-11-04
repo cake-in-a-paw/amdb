@@ -154,8 +154,11 @@ export const QueueQuery = z.object(PageQuery);
 /** The decoded queue cursor: the last item's (createdAt, submissionId, seq). */
 export const QueueCursor = z.object({ createdAt: z.iso.datetime(), submissionId: z.uuid(), seq: z.number().int() });
 
-/** Who made a change, publicly: a handle if they chose one, else just their id. */
-export const AuthorSchema = z.union([
+/** Who made a change, publicly: a handle if they chose one, else nothing that identifies them. */
+export const AuthorSchema = z.union([z.literal('anonymous'), z.object({ handle: z.string().nullable() })]);
+
+/** Who made a change, as moderators see it: the account id as well. */
+export const ReviewAuthorSchema = z.union([
   z.literal('anonymous'),
   z.object({ userId: z.uuid(), handle: z.string().nullable() }),
 ]);
@@ -166,7 +169,7 @@ export const QueueSchema = z.object({
       change: ChangeSchema.extend({ submissionId: z.uuid(), createdAt: z.iso.datetime() }),
       submission: z.object({
         id: z.uuid(),
-        author: AuthorSchema,
+        author: ReviewAuthorSchema,
       }),
       ageSeconds: z.number().int(),
     }),
@@ -183,6 +186,8 @@ export type ApproveInput = z.infer<typeof ApproveInput>;
 export const RejectInput = z.object({ reason: z.string().trim().min(1).max(1000) });
 
 export const ResubmitInput = z.object({
+  /** A resubmit can add content, so it carries the CC0 agreement like a submit (constitution II). */
+  cc0: z.literal(true),
   /** Merged into a create's or update's fields. */
   fields: z.record(z.string(), z.unknown()).optional(),
   /** Merged into a relate's `data`. */

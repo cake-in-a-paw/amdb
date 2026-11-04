@@ -919,9 +919,11 @@ export interface paths {
                 };
                 cookie?: never;
             };
-            requestBody?: {
+            requestBody: {
                 content: {
                     "application/json": {
+                        /** @enum {boolean} */
+                        cc0: true;
                         fields?: {
                             [key: string]: unknown;
                         };
@@ -955,7 +957,7 @@ export interface paths {
                         };
                     };
                 };
-                /** @description Invalid change */
+                /** @description Invalid change, or no CC0 agreement */
                 400: {
                     headers: {
                         [name: string]: unknown;
@@ -1280,8 +1282,6 @@ export interface paths {
                                     [key: string]: unknown;
                                 };
                                 author: "anonymous" | {
-                                    /** Format: uuid */
-                                    userId: string;
                                     handle: string | null;
                                 };
                                 /** @enum {string} */
@@ -1299,8 +1299,6 @@ export interface paths {
                                 redacted: true;
                                 reason: string | null;
                                 author: "anonymous" | {
-                                    /** Format: uuid */
-                                    userId: string;
                                     handle: string | null;
                                 };
                                 /** Format: date-time */

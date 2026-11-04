@@ -46,7 +46,7 @@ it('a redacted change shows in history as redacted with its reason and no payloa
       op: 'update',
       redacted: true,
       reason: 'Contains personal data',
-      author: { userId: expect.any(String), handle: null },
+      author: { handle: null },
       appliedAt: expect.any(String),
     });
     expect(JSON.stringify(hist)).not.toContain('secret');
@@ -170,7 +170,7 @@ it('redacting a pending change rejects it and drops it from the queue', async ()
     expect(queue.items).toHaveLength(0);
     const approve = await mod.post(`/api/changes/${pending.changes[0]!.id}/approve`);
     expect(approve.status).toBe(409);
-    const resubmit = await author.post(`/api/changes/${pending.changes[0]!.id}/resubmit`);
+    const resubmit = await author.post(`/api/changes/${pending.changes[0]!.id}/resubmit`, { cc0: true });
     expect(resubmit.status).toBe(409);
     expect(await code(resubmit)).toBe('redacted');
   } finally {
@@ -453,7 +453,10 @@ it('redacting a rejected create leaves the entity its resubmission made live alo
     const made = await submit(author, [film('Zyxwvut Rising')]);
     const id = made.changes[0]!.entityId!;
     expect((await mod.post(`/api/changes/${made.changes[0]!.id}/reject`, { reason: 'typo' })).status).toBe(200);
-    const again = await author.post(`/api/changes/${made.changes[0]!.id}/resubmit`, { fields: { title: 'Arrival' } });
+    const again = await author.post(`/api/changes/${made.changes[0]!.id}/resubmit`, {
+      cc0: true,
+      fields: { title: 'Arrival' },
+    });
     expect(again.status, await again.clone().text()).toBe(201);
     const resub = (await again.json()) as { changes: { id: string }[] };
     expect((await mod.post(`/api/changes/${resub.changes[0]!.id}/approve`)).status).toBe(200);

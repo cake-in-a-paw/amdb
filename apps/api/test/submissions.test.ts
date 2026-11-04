@@ -346,7 +346,7 @@ it('anonymous resubmits draw on the same limit as anonymous submits', async () =
       t.app.request(`/api/changes/${first.changes[0]!.id}/resubmit`, {
         method: 'POST',
         headers: { 'x-amdb-anon': tok, 'content-type': 'application/json', 'x-forwarded-for': ip },
-        body: '{}',
+        body: JSON.stringify({ cc0: true }),
       });
     // The submit above is the 1st request; the first resubmit succeeds, later ones are 409 but still count.
     expect((await resubmit(token('a'), '198.51.100.1')).status).toBe(201);
