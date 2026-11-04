@@ -61,7 +61,7 @@ it('history lists approved changes newest first and omits pending and rejected o
       changeId: second.changes[0]!.id,
       op: 'update',
       payload: { title: 'Arrival (2016)' },
-      author: { userId: authorId },
+      author: { userId: authorId, handle: null },
       source: 'human',
       appliedAt: expect.any(String),
       revertOf: null,
@@ -120,7 +120,7 @@ it('history shows a redacted change as a stub with its reason', async () => {
       redacted: true,
       reason: 'abuse',
       // Spec §4.3: the stub keeps who and when.
-      author: { userId: expect.any(String) },
+      author: { userId: expect.any(String), handle: null },
       appliedAt: expect.any(String),
     });
   } finally {

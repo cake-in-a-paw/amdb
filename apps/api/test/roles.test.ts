@@ -68,3 +68,41 @@ it('an admin changing the role of a user that does not exist gets 404', async ()
     await t.close();
   }
 });
+
+it('the admin user lookup by email is admin only', async () => {
+  const t = await setupTest();
+  try {
+    const admin = t.as({ kind: 'user', userId: await t.createUser({ role: 'admin' }) });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const target = await t.createUser({ email: 'Target@Example.test' });
+    const denied = await mod.get('/api/admin/users?email=target@example.test');
+    expect(denied.status).toBe(404);
+    expect(await denied.json()).toEqual({ error: { code: 'not_found', message: 'Not found' } });
+    const found = await admin.get('/api/admin/users?email=target@example.test');
+    expect(found.status).toBe(200);
+    expect(await found.json()).toEqual({
+      items: [{ id: target, email: 'Target@Example.test', handle: null, role: 'contributor' }],
+    });
+    const none = await admin.get('/api/admin/users?email=nobody@example.test');
+    expect(await none.json()).toEqual({ items: [] });
+  } finally {
+    await t.close();
+  }
+});
+
+it('the last admin demoting themselves is 409 last_admin; with another admin it works', async () => {
+  const t = await setupTest();
+  try {
+    const adminId = await t.createUser({ role: 'admin' });
+    const admin = t.as({ kind: 'user', userId: adminId });
+    const res = await admin.post(`/api/admin/users/${adminId}/role`, { role: 'moderator' });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: { code: 'last_admin', message: expect.any(String) } });
+    expect(((await (await admin.get('/api/me')).json()) as { role: string }).role).toBe('admin');
+
+    await t.createUser({ role: 'admin' });
+    expect((await admin.post(`/api/admin/users/${adminId}/role`, { role: 'moderator' })).status).toBe(200);
+  } finally {
+    await t.close();
+  }
+});

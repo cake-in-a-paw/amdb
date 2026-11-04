@@ -24,6 +24,7 @@ import {
   SubmissionDetailSchema,
   SubmissionInput,
 } from './schemas';
+import { publicAuthor } from './author';
 import type { ChangesService } from './service';
 
 type ChangeRecord = Awaited<ReturnType<ChangesService['getSubmission']>>['changes'][number];
@@ -253,7 +254,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
     const now = Date.now();
     return c.json(
       {
-        items: page.items.map(({ change, authorUserId }) => ({
+        items: page.items.map(({ change, authorUserId, authorHandle }) => ({
           change: {
             ...changeView(change),
             submissionId: change.submissionId,
@@ -261,7 +262,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
           },
           submission: {
             id: change.submissionId,
-            author: authorUserId ? { userId: authorUserId } : ('anonymous' as const),
+            author: publicAuthor(authorUserId, authorHandle),
           },
           ageSeconds: Math.max(0, Math.floor((now - change.createdAt.getTime()) / 1000)),
         })),

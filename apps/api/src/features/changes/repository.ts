@@ -9,6 +9,7 @@ import {
   series,
   submissions,
   tags,
+  users,
   works,
 } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
@@ -214,9 +215,10 @@ export function changesRepository(db: DbOrTx) {
       const ids = family('uuid');
       const idsText = family('text');
       return db
-        .select({ change: changes, authorUserId: submissions.authorUserId })
+        .select({ change: changes, authorUserId: submissions.authorUserId, authorHandle: users.handle })
         .from(changes)
         .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .leftJoin(users, eq(users.id, submissions.authorUserId))
         .where(
           and(
             inArray(changes.status, ['approved', 'published']),
@@ -252,9 +254,10 @@ export function changesRepository(db: DbOrTx) {
     /** Pending and published changes, oldest first and in submission order; fetches `limit` + 1. */
     async queue(after: QueueKey | null, limit: number) {
       return db
-        .select({ change: changes, authorUserId: submissions.authorUserId })
+        .select({ change: changes, authorUserId: submissions.authorUserId, authorHandle: users.handle })
         .from(changes)
         .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .leftJoin(users, eq(users.id, submissions.authorUserId))
         .where(
           and(
             inArray(changes.status, ['pending', 'published']),

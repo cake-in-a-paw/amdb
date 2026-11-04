@@ -43,6 +43,8 @@ export const users = pgTable('users', {
   /** Null until the user gives one; an email-code sign-up has none. */
   name: text('name'),
   image: text('image'),
+  /** Opt-in public attribution; null shows as "contributor". Unique ignoring case (citext). */
+  handle: citext('handle').unique(),
   role: text('role').$type<Role>().notNull().default('contributor'),
   createdAt: ts('created_at').notNull().defaultNow(),
   updatedAt: ts('updated_at').notNull().defaultNow(),

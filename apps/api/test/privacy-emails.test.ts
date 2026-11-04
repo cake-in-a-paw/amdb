@@ -67,3 +67,51 @@ it('no response to the public, a moderator or an admin carries a contributor’s
     await t.close();
   }
 });
+
+it('public attribution is the handle or nothing: never an email or the OAuth profile name', async () => {
+  const t = await setupTest();
+  try {
+    const authorId = await t.createUser({ email: 'real@example.com', name: 'Real Name' });
+    const author = t.as({ kind: 'user', userId: authorId });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const anon = t.as({ kind: 'none' });
+
+    const made = await publish(author, mod, [
+      { op: 'create', kind: 'work', ref: 'w', fields: { mediaType: 'book', subtype: null, title: 'Dune' } },
+    ]);
+    const workId = made.changes[0]!.entityId!;
+    const historyOf = async () => {
+      const res = await anon.get(`/api/entities/${workId}/history`);
+      expect(res.status).toBe(200);
+      const text = await res.text();
+      return { text, body: JSON.parse(text) as { items: { author: unknown }[] } };
+    };
+
+    const before = await historyOf();
+    expect(before.body.items[0]!.author).toEqual({ userId: authorId, handle: null });
+    const entity = await (await anon.get(`/api/entities/${workId}`)).text();
+    for (const text of [before.text, entity]) {
+      expect(text).not.toContain('Real Name');
+      expect(text).not.toContain('real@example.com');
+    }
+
+    expect((await author.patch('/api/me', { handle: 'ann' })).status).toBe(200);
+    const after = await historyOf();
+    expect(after.body.items[0]!.author).toEqual({ userId: authorId, handle: 'ann' });
+    expect(after.text).not.toContain('Real Name');
+    expect(after.text).not.toContain('real@example.com');
+
+    const queued = await submit(author, [
+      { op: 'update', kind: 'work', entityId: workId, fields: { description: 'x' } },
+    ]);
+    const queue = (await (await mod.get('/api/moderation/queue')).json()) as {
+      items: { submission: { id: string; author: unknown } }[];
+    };
+    expect(queue.items.find((i) => i.submission.id === queued.id)?.submission.author).toEqual({
+      userId: authorId,
+      handle: 'ann',
+    });
+  } finally {
+    await t.close();
+  }
+});

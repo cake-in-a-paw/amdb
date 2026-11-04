@@ -46,7 +46,7 @@ it('a redacted change shows in history as redacted with its reason and no payloa
       op: 'update',
       redacted: true,
       reason: 'Contains personal data',
-      author: { userId: expect.any(String) },
+      author: { userId: expect.any(String), handle: null },
       appliedAt: expect.any(String),
     });
     expect(JSON.stringify(hist)).not.toContain('secret');

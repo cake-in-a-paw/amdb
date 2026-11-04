@@ -46,5 +46,12 @@ export type ChangeOp = z.infer<typeof ChangeOp>;
 export const ChangeStatus = z.enum(['pending', 'published', 'approved', 'rejected']);
 export type ChangeStatus = z.infer<typeof ChangeStatus>;
 
+/** A public handle: 3-30 letters, digits, underscores or hyphens. Stored lowercase; unique ignoring case. */
+export const Handle = z.string().regex(/^[A-Za-z0-9_-]{3,30}$/, 'Use 3–30 letters, digits, "_" or "-"');
+export type Handle = z.infer<typeof Handle>;
+
+/** Words a handle may not be, since public attribution already uses them. */
+export const RESERVED_HANDLES = ['anonymous', 'contributor', 'admin', 'moderator'] as const;
+
 export const Role = z.enum(['contributor', 'moderator', 'admin']);
 export type Role = z.infer<typeof Role>;

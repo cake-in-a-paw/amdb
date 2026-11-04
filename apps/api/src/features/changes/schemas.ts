@@ -142,13 +142,19 @@ export const QueueQuery = z.object(PageQuery);
 /** The decoded queue cursor: the last item's (createdAt, submissionId, seq). */
 export const QueueCursor = z.object({ createdAt: z.iso.datetime(), submissionId: z.uuid(), seq: z.number().int() });
 
+/** Who made a change, publicly: a handle if they chose one, else just their id. */
+export const AuthorSchema = z.union([
+  z.literal('anonymous'),
+  z.object({ userId: z.uuid(), handle: z.string().nullable() }),
+]);
+
 export const QueueSchema = z.object({
   items: z.array(
     z.object({
       change: ChangeSchema.extend({ submissionId: z.uuid(), createdAt: z.iso.datetime() }),
       submission: z.object({
         id: z.uuid(),
-        author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+        author: AuthorSchema,
       }),
       ageSeconds: z.number().int(),
     }),
@@ -205,7 +211,7 @@ export const HistoryItemSchema = z.union([
     op: ChangeOp,
     /** The change's fields; for a revert, `{ revertOf }`. */
     payload: z.record(z.string(), z.unknown()),
-    author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+    author: AuthorSchema,
     source: z.literal('human'),
     appliedAt: z.iso.datetime(),
     revertOf: z.uuid().nullable(),
@@ -216,7 +222,7 @@ export const HistoryItemSchema = z.union([
     op: ChangeOp,
     redacted: z.literal(true),
     reason: z.string().nullable(),
-    author: z.union([z.literal('anonymous'), z.object({ userId: z.uuid() })]),
+    author: AuthorSchema,
     appliedAt: z.iso.datetime(),
   }),
 ]);

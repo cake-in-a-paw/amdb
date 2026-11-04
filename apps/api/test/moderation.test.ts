@@ -16,7 +16,7 @@ const token = (c: string) => c.repeat(40);
 
 type QueueItem = {
   change: { id: string; op: string; status: string; submissionId: string };
-  submission: { id: string; author: 'anonymous' | { userId: string } };
+  submission: { id: string; author: 'anonymous' | { userId: string; handle: string | null } };
   ageSeconds: number;
 };
 type Entity = {
@@ -55,7 +55,7 @@ it('the queue lists pending changes oldest first with their age; a contributor g
     const body = (await res.json()) as { items: QueueItem[]; nextCursor: string | null };
     expect(body.items.map((i) => i.change.id)).toEqual([older.changes[0]!.id, newer.changes[0]!.id]);
     expect(body.items[0]?.submission.author).toBe('anonymous');
-    expect(body.items[1]?.submission).toEqual({ id: newer.id, author: { userId: expect.any(String) } });
+    expect(body.items[1]?.submission).toEqual({ id: newer.id, author: { userId: expect.any(String), handle: null } });
     expect(body.items[0]?.ageSeconds).toBeGreaterThanOrEqual(7200);
     expect(body.items[1]?.ageSeconds).toBeLessThan(60);
     expect(JSON.stringify(body)).not.toMatch(/anon_?hash/i);

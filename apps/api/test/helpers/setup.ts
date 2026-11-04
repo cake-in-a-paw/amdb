@@ -28,6 +28,12 @@ export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
         : {};
   const as = (actor: Actor) => ({
     get: (path: string) => app.request(path, { headers: headersFor(actor) }),
+    patch: (path: string, body: unknown) =>
+      app.request(path, {
+        method: 'PATCH',
+        headers: { ...headersFor(actor), 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      }),
     post: (path: string, body?: unknown) =>
       app.request(path, {
         method: 'POST',
@@ -36,9 +42,13 @@ export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
       }),
   });
   /** Inserts a user row directly; the user then signs in by sending its id in `x-test-user`. */
-  const createUser = async ({ role = 'contributor', email }: { role?: Role; email?: string } = {}) => {
+  const createUser = async ({
+    role = 'contributor',
+    email,
+    name = 'Test User',
+  }: { role?: Role; email?: string; name?: string } = {}) => {
     const id = crypto.randomUUID();
-    await db.insert(users).values({ id, email: email ?? `${id}@example.test`, name: 'Test User', role });
+    await db.insert(users).values({ id, email: email ?? `${id}@example.test`, name, role });
     return id;
   };
   return { app, db, close, as, createUser };

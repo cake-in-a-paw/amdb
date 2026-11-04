@@ -36,6 +36,7 @@ import {
   type Inverse,
   InverseSchema,
 } from './apply';
+import { publicAuthor } from './author';
 import {
   type ChangeRow,
   changesRepository,
@@ -580,14 +581,14 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         id: c.id,
       });
       return {
-        items: items.map(({ change: c, authorUserId }) => {
+        items: items.map(({ change: c, authorUserId, authorHandle }) => {
           if (c.redactedAt) {
             return {
               changeId: c.id,
               op: c.op,
               redacted: true as const,
               reason: c.redactionReason,
-              author: authorUserId ? { userId: authorUserId } : ('anonymous' as const),
+              author: publicAuthor(authorUserId, authorHandle),
               appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
             };
           }
@@ -597,7 +598,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             op: c.op,
             // Without `submitted`: what a moderator edited out of a contributor's original stays out of public view.
             payload: fieldsOf(c.payload),
-            author: authorUserId ? { userId: authorUserId } : ('anonymous' as const),
+            author: publicAuthor(authorUserId, authorHandle),
             source: 'human' as const,
             appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
             revertOf: typeof revertOf === 'string' ? revertOf : null,
