@@ -350,3 +350,83 @@ test('a review dialog traps focus in itself and gives it back to its button when
 
   await waitFor(() => expect(opener).toHaveFocus());
 });
+
+test('an unrelate shows which credit goes, so a changed role reads as old then new', async () => {
+  await open('moderator', async (a) => {
+    const { contributor } = await actors(a);
+    const catalog = await seed(a);
+    const entity = await a.as({ kind: 'none' }).get(`/api/entities/${catalog.works.spiritedAway}`);
+    const body = (await entity.json()) as { relations: { creators: { relationId: string; role: string }[] } };
+    const credit = body.relations.creators.find((c) => c.role === 'director');
+    await submit(contributor, [
+      { op: 'unrelate', relationId: credit?.relationId },
+      {
+        op: 'relate',
+        type: 'work_creator',
+        from: { id: catalog.works.spiritedAway },
+        to: { id: catalog.creators.miyazaki },
+        data: { role: 'producer' },
+      },
+    ]);
+  });
+  const [removed, added] = await queueItems();
+
+  await waitFor(() => expect(removed).toHaveTextContent('Credit: Hayao Miyazaki (Director)'));
+  await waitFor(() => expect(added).toHaveTextContent('Spirited Away → Hayao Miyazaki'));
+  expect(added).toHaveTextContent('Producer');
+});
+
+test('an edit with a number field cleared is invalid, not zero', async () => {
+  const { user } = await renderApp('/moderation', {
+    as: 'moderator',
+    seed: async (a) => submit((await actors(a)).contributor, [work('w', 'Arrival')]),
+  });
+  const [item] = await queueItems();
+
+  await user.click(within(item as HTMLElement).getByRole('button', { name: 'Edit and approve' }));
+  const dialog = await screen.findByRole('dialog', { name: 'Edit and approve' });
+  await user.clear(within(dialog).getByLabelText('Release year'));
+
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('Enter a number for Release year');
+  expect(within(dialog).getByRole('button', { name: 'Approve with changes' })).toBeDisabled();
+});
+
+test('after a review, focus moves to the next item, or the heading when none is left', async () => {
+  const { user } = await renderApp('/moderation', {
+    as: 'moderator',
+    seed: async (a) => submit((await actors(a)).contributor, [work('a', 'First'), work('b', 'Second')]),
+  });
+  const [first] = await queueItems();
+
+  await user.click(within(first as HTMLElement).getByRole('button', { name: 'Approve' }));
+  const [second] = await waitFor(async () => {
+    const items = await queueItems();
+    expect(items).toHaveLength(1);
+    return items;
+  });
+  await waitFor(() => expect(second).toHaveFocus());
+
+  await user.click(within(second as HTMLElement).getByRole('button', { name: 'Approve' }));
+  await waitFor(() => expect(screen.getByRole('heading', { name: 'Moderation queue' })).toHaveFocus());
+});
+
+test('a failed account lookup shows an error with retry, not Not found', async () => {
+  const { api, router, user } = await renderApp('/', { as: 'moderator' });
+  const real = api.app.request.bind(api.app);
+  // Network fault: /api/me never gets an answer while the page loads.
+  const spy = vi.spyOn(api.app, 'request').mockImplementation(async (...args: Parameters<typeof real>) => {
+    const [input] = args;
+    if (String(input instanceof Request ? input.url : input).includes('/api/me')) throw new TypeError('offline');
+    return real(...args);
+  });
+  // Forget the account the shell loaded, so the page has to ask again.
+  router.options.context.queryClient.removeQueries({ queryKey: ['me'] });
+  await router.navigate({ to: '/moderation' });
+  expect(await screen.findByText(/Couldn't load your account/)).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Not found' })).not.toBeInTheDocument();
+  spy.mockRestore();
+
+  await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+  expect(await screen.findByRole('heading', { name: 'Moderation queue' })).toBeInTheDocument();
+});

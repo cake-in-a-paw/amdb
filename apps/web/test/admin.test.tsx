@@ -1,5 +1,5 @@
 import { screen, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 import { actors, publish, renderApp, type TestApi } from './harness';
 
 const meOf = async (api: TestApi, userId: string) =>
@@ -129,4 +129,23 @@ test('moderators can revert but not redact', async () => {
 
   expect(within(item).getByRole('button', { name: /Revert/ })).toBeInTheDocument();
   expect(within(item).queryByRole('button', { name: /Redact/ })).not.toBeInTheDocument();
+});
+
+test('a failed takedown retry says so instead of staying silent', async () => {
+  const { user, api, seeded, router } = await renderApp('/', { as: 'admin', seed: liveWork });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const item = (await screen.findByRole('list', { name: 'History' })).children[0] as HTMLElement;
+  await user.click(within(item).getByRole('button', { name: /Redact/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Redact this change' });
+  await user.type(within(dialog).getByLabelText('Reason'), 'Contains personal data');
+  await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
+  await within(dialog).findByRole('button', { name: 'Redact and take down' });
+
+  // Network fault: the retry with removeEntity never gets an answer.
+  const spy = vi.spyOn(api.app, 'request').mockRejectedValueOnce(new TypeError('offline'));
+  await user.click(within(dialog).getByRole('button', { name: 'Redact and take down' }));
+
+  expect(await within(dialog).findByText(/Couldn't reach AMDB/)).toBeInTheDocument();
+  spy.mockRestore();
+  expect((await api.as({ kind: 'none' }).get(`/api/entities/${seeded.id}`)).status).toBe(200);
 });

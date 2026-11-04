@@ -1,9 +1,10 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import { useEffect, useRef } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { createdTitle } from '@/components/change-diff';
 import { LoadError, Loading, NotFound } from '@/components/entity-states';
 import { LoadMore } from '@/components/load-more';
-import { QueueItem } from '@/components/queue-item';
+import { changeAnchor, QueueItem } from '@/components/queue-item';
 import { unwrap } from '@/lib/api';
 import { PAGE_SIZE } from '@/lib/entity';
 import { canModerate, meQueryOptions } from '@/lib/me';
@@ -28,7 +29,23 @@ function Moderation() {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 
+  // After a review the item is gone; focus moves to the next one (or the heading) instead of being lost.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const reviewed = useRef<{ id: string; next: string | null } | null>(null);
+  const shown = queue.data?.pages.flatMap((page) => page.items) ?? [];
+  useEffect(() => {
+    const done = reviewed.current;
+    if (!done || shown.some((entry) => entry.change.id === done.id)) return;
+    reviewed.current = null;
+    // After the closing dialog has returned its own focus (to a button that no longer exists).
+    setTimeout(() => {
+      const next = done.next ? document.getElementById(changeAnchor(done.next)) : null;
+      (next ?? heading.current)?.focus();
+    }, 0);
+  });
+
   if (me.isPending) return <Loading what="the review queue" />;
+  if (me.isError) return <LoadError what="your account" error={me.error} onRetry={() => void me.refetch()} />;
   if (!allowed) return <NotFound what="page" />;
   if (queue.isPending) return <Loading what="the review queue" />;
   // A failed "Load more" keeps the pages already loaded; only a failed first load replaces the list.
@@ -46,15 +63,20 @@ function Moderation() {
     if (change.entityId) titles.set(change.entityId, title);
   }
   // An approval or rejection changes the queue and, for approvals, what the catalog shows.
-  const onReviewed = () =>
-    Promise.all([
+  const onReviewed = (id: string) => {
+    const at = entries.findIndex((entry) => entry.change.id === id);
+    reviewed.current = { id, next: (entries[at + 1] ?? entries[at - 1])?.change.id ?? null };
+    return Promise.all([
       queryClient.invalidateQueries({ queryKey: queueQueryKey }),
       queryClient.invalidateQueries({ queryKey: ['entity'] }),
     ]);
+  };
 
   return (
     <div className="max-w-3xl py-10">
-      <h1 className="font-serif text-3xl font-semibold">Moderation queue</h1>
+      <h1 ref={heading} tabIndex={-1} className="font-serif text-3xl font-semibold">
+        Moderation queue
+      </h1>
       {entries.length === 0 ? (
         <p className="mt-4 text-muted-foreground">Nothing is waiting for review.</p>
       ) : (

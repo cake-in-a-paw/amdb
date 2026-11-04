@@ -4,7 +4,7 @@ import { useId, useState, type FormEvent } from 'react';
 import { Role } from '@amdb/shared';
 import type { paths } from '@amdb/shared/api';
 import { fieldClass } from '@/components/form-fields';
-import { Loading, NotFound } from '@/components/entity-states';
+import { LoadError, Loading, NotFound } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { describeError } from '@/lib/errors';
@@ -26,6 +26,7 @@ function AdminUsers() {
   });
 
   if (me.isPending) return <Loading what="your account" />;
+  if (me.isError) return <LoadError what="your account" error={me.error} onRetry={() => void me.refetch()} />;
   // Only admins may ask; to everyone else this page doesn't exist.
   if (me.data?.role !== 'admin') return <NotFound what="page" />;
 

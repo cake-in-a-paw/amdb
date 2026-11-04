@@ -101,7 +101,7 @@ export function RedactDialog({
               disappears until someone submits it again.
             </p>
           )}
-          {redact.isError && !isLive && (
+          {redact.isError && !(redact.error instanceof ApiError && redact.error.code === 'content_is_current') && (
             <p role="alert" className="text-sm text-destructive">
               {describeError(redact.error, "Couldn't redact this change. Try again.")}
             </p>

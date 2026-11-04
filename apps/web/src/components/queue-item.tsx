@@ -113,7 +113,8 @@ export function QueueItem({
   entry: QueueEntry;
   titles: Titles;
   changeTitles: ReadonlyMap<string, string>;
-  onReviewed: () => Promise<unknown>;
+  /** Called with the reviewed change's id once the queue has been told. */
+  onReviewed: (changeId: string) => Promise<unknown>;
 }) {
   const { api } = rootRoute.useRouteContext();
   const { change } = entry;
@@ -125,12 +126,12 @@ export function QueueItem({
           body: fields ? { fields } : {},
         }),
       ),
-    onSuccess: onReviewed,
+    onSuccess: () => onReviewed(change.id),
   });
   const canEdit = change.op === 'create' || change.op === 'update';
 
   return (
-    <li id={changeAnchor(change.id)} className="border-b border-border py-4">
+    <li id={changeAnchor(change.id)} tabIndex={-1} className="border-b border-border py-4">
       <p className="flex flex-wrap items-baseline gap-x-3 text-sm text-muted-foreground">
         <span>
           From <span className="font-medium text-foreground">{authorName(entry.submission.author)}</span>
@@ -147,7 +148,7 @@ export function QueueItem({
         {canEdit && (
           <EditApproveDialog fields={record(change.payload)} onApprove={(fields) => approve.mutateAsync(fields)} />
         )}
-        <RejectDialog changeId={change.id} onRejected={onReviewed} />
+        <RejectDialog changeId={change.id} onRejected={() => onReviewed(change.id)} />
       </div>
       {approve.isError && <ApproveError error={approve.error} entry={entry} changeTitles={changeTitles} />}
     </li>

@@ -32,9 +32,13 @@ export function EditApproveDialog({
   const changed = () =>
     Object.fromEntries(
       keys
-        .filter((key) => values[key] !== String(fields[key]))
+        .filter((key) => values[key] !== String(fields[key]) && !notANumber(key))
         .map((key) => [key, typeof fields[key] === 'number' ? Number(values[key]) : values[key]]),
     );
+  /** A number field left empty or holding something that isn't a number: it can't be sent as a value. */
+  const notANumber = (key: string) =>
+    typeof fields[key] === 'number' && (values[key]?.trim() === '' || !Number.isFinite(Number(values[key])));
+  const invalid = keys.filter(notANumber);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -95,6 +99,11 @@ export function EditApproveDialog({
               )}
             </div>
           ))}
+          {invalid.length > 0 && (
+            <p role="alert" className="text-sm text-destructive">
+              Enter a number for {invalid.map(fieldLabel).join(' and ')}.
+            </p>
+          )}
           {error !== null && (
             <p role="alert" className="text-sm text-destructive">
               {describeError(error, "Couldn't approve this change. Try again.")}
@@ -106,7 +115,7 @@ export function EditApproveDialog({
                 Cancel
               </Button>
             </DialogClose>
-            <Button type="submit" disabled={pending || Object.keys(changed()).length === 0}>
+            <Button type="submit" disabled={pending || invalid.length > 0 || Object.keys(changed()).length === 0}>
               Approve with changes
             </Button>
           </div>

@@ -3,6 +3,7 @@ import { getRouteApi } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
 import { valueText } from '@/components/history-list';
 import { entityQueryOptions, entityTitle } from '@/lib/entity';
+import { formFromEntity } from '@/lib/entity-form';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
 
 type Queue = paths['/api/moderation/queue']['get']['responses'][200]['content']['application/json'];
@@ -109,6 +110,48 @@ function UpdateDiff({ change, titles }: { change: QueuedChange; titles: Titles }
   );
 }
 
+/** The relation a row of the entry's form holds, in words: what it links to and its role, position or kind. */
+function describeRelation(row: ReturnType<typeof formFromEntity>, relationId: string): string | null {
+  const title = (e: { title: string }) => e.title;
+  const pick = <T extends { relationId?: string | undefined }>(rows: T[]) =>
+    rows.find((r) => r.relationId === relationId);
+  const credit = pick(row.credits);
+  if (credit) return `Credit: ${title(credit.entity)} (${roleLabel(credit.role)})`;
+  const series = pick(row.series);
+  if (series) return `Series: ${title(series.entity)}, no. ${series.position}`;
+  const property = pick(row.properties);
+  if (property) return `Property: ${title(property.entity)}`;
+  const tag = pick(row.tags);
+  if (tag) return `Tag: ${title(tag.entity)}`;
+  const link = pick(row.links);
+  if (link) return `${workLinkLabels[link.linkType].outgoing}: ${title(link.entity)}`;
+  const id = pick(row.externalIds);
+  if (id) return `Identifier: ${id.scheme ? idSchemeLabels[id.scheme] : ''} ${id.value}`.trim();
+  return null;
+}
+
+/** A link taken away, read from the entry it is on, so the moderator sees which credit or link goes. */
+function UnrelateDiff({ change, titles }: { change: QueuedChange; titles: Titles }) {
+  const { api } = rootRoute.useRouteContext();
+  const id = change.entityId;
+  const entity = useQuery({ ...entityQueryOptions(api, id ?? ''), enabled: Boolean(id) });
+  const relationId = record(change.payload).relationId;
+  const what =
+    entity.data && typeof relationId === 'string' ? describeRelation(formFromEntity(entity.data), relationId) : null;
+  return (
+    <>
+      <p>
+        Removes a link from <EntryTitle id={id} titles={titles} />
+      </p>
+      {what ? (
+        <p className="text-sm">{what}</p>
+      ) : (
+        entity.isSuccess && <p className="text-sm text-muted-foreground">It is no longer on the entry.</p>
+      )}
+    </>
+  );
+}
+
 /** What a queued change would do, in words and values. */
 export function ChangeDiff({ change, titles }: { change: QueuedChange; titles: Titles }) {
   const payload = record(change.payload);
@@ -143,11 +186,7 @@ export function ChangeDiff({ change, titles }: { change: QueuedChange; titles: T
       );
     }
     case 'unrelate':
-      return (
-        <p>
-          Removes a link from <EntryTitle id={change.entityId} titles={titles} />
-        </p>
-      );
+      return <UnrelateDiff change={change} titles={titles} />;
     case 'merge': {
       const from = typeof payload.from === 'string' ? payload.from : null;
       const into = typeof payload.into === 'string' ? payload.into : null;
