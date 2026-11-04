@@ -1,17 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
-import type { paths } from '@amdb/shared/api';
+import { EntryRow } from '@/components/entry-row';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
+import { linkClass } from '@/lib/styles';
 
 export const Route = createFileRoute('/')({ component: Home });
-
-type Summary = paths['/api/browse']['get']['responses'][200]['content']['application/json']['items'][number];
-
-const mediaTypeLabels: Record<NonNullable<Summary['mediaType']>, string> = {
-  film_tv: 'Film & TV',
-  book: 'Book',
-};
 
 function Home() {
   return (
@@ -58,36 +52,17 @@ function CatalogList() {
       ) : works.data.items.length === 0 ? (
         <div className="py-4">
           <p>The catalog is empty.</p>
-          <a
-            href="/submit"
-            className="mt-2 inline-flex min-h-11 min-w-11 items-center text-primary underline underline-offset-4"
-          >
+          <a href="/submit" className={linkClass}>
             Add the first entry
           </a>
         </div>
       ) : (
         <ul aria-labelledby="catalog-heading">
           {works.data.items.map((work) => (
-            <li key={work.id} className="border-b border-border/70">
-              <a
-                href={`/entities/${work.id}`}
-                className="group flex min-h-11 min-w-11 items-baseline gap-3 py-2.5 hover:bg-secondary/60"
-              >
-                <span className="font-serif text-lg leading-snug group-hover:underline group-hover:underline-offset-4">
-                  {work.title}
-                </span>
-                <span aria-hidden="true" className="leader flex-1" />
-                <span className="shrink-0 text-sm text-muted-foreground tabular-nums">{describe(work)}</span>
-              </a>
-            </li>
+            <EntryRow key={work.id} entry={work} />
           ))}
         </ul>
       )}
     </section>
   );
-}
-
-/** "Film & TV, 2001": the media type and year, as far as they're known. */
-function describe(work: Summary) {
-  return [work.mediaType && mediaTypeLabels[work.mediaType], work.releaseYear].filter(Boolean).join(', ');
 }

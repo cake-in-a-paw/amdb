@@ -94,6 +94,43 @@ describe('accessibility floor on the sign-in, account and submissions pages', ()
   });
 });
 
+describe('accessibility floor on the public browser', () => {
+  /** Every link and button on the page, the header search included, and every field and select. */
+  function expectBrowserFloor() {
+    for (const control of [...screen.getAllByRole('link'), ...screen.queryAllByRole('button')]) {
+      expectFloor(control);
+      expect(control, control.outerHTML).toHaveClass('min-w-11');
+    }
+    for (const control of [...screen.queryAllByRole('combobox'), ...screen.queryAllByRole('searchbox')]) {
+      expect(control).toHaveAccessibleName();
+      expect(control).toHaveClass('min-h-11');
+    }
+  }
+
+  test('browse, search, a work, a creator and the history', async () => {
+    const t = await renderApp('/browse', { as: 'moderator', seed });
+    await screen.findByRole('list', { name: 'Works' });
+    expectBrowserFloor();
+
+    await t.router.navigate({ to: '/search', search: { q: 'howl' } });
+    await screen.findByRole('region', { name: 'Works' });
+    expectBrowserFloor();
+
+    await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.works.howlsMovingCastle } });
+    await screen.findByRole('region', { name: 'Adapted from' });
+    expectBrowserFloor();
+
+    await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.creators.miyazaki } });
+    await screen.findByRole('list', { name: 'Works' });
+    expectBrowserFloor();
+
+    // The moderator's Revert buttons are controls too.
+    await t.router.navigate({ to: '/entities/$id/history', params: { id: t.seeded.works.spiritedAway } });
+    await screen.findAllByRole('button', { name: /^Revert/ });
+    expectBrowserFloor();
+  });
+});
+
 describe('accessibility floor in the shadcn button', () => {
   const sizes = ['default', 'xs', 'sm', 'lg', 'icon', 'icon-xs', 'icon-sm', 'icon-lg'] as const;
   test.each(sizes)('the %s size is at least 44px and keeps its focus outline', (size) => {

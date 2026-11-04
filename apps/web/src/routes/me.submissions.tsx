@@ -5,14 +5,13 @@ import { ChangeStatus } from '@/components/change-status';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { meQueryOptions } from '@/lib/me';
+import { linkClass } from '@/lib/styles';
 
 export const Route = createFileRoute('/me/submissions')({ component: MySubmissions });
 
 type Page = paths['/api/me/submissions']['get']['responses'][200]['content']['application/json'];
 type Submission = Page['items'][number];
 type Change = Submission['changes'][number];
-
-const linkClass = 'inline-flex min-h-11 min-w-11 items-center text-primary underline underline-offset-4';
 
 function describeChange(change: Change) {
   switch (change.op) {

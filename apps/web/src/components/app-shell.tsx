@@ -3,6 +3,7 @@ import { getRouteApi, Link, useRouterState } from '@tanstack/react-router';
 import { cn } from 'cn';
 import { ChevronDownIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { SearchBox } from '@/components/search-box';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -21,8 +22,8 @@ const navLink =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-medium text-foreground hover:bg-secondary';
 
 /*
- * Browse, Contribute, Search and Moderation are plain links until their routes exist (Tasks 7 to
- * 10); a typed <Link> to a route that isn't there fails tsc.
+ * Contribute and Moderation are plain links until their routes exist (Tasks 8 to 10); a typed
+ * <Link> to a route that isn't there fails tsc.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -36,24 +37,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           >
             AMDB
           </Link>
-          <form
-            role="search"
-            action="/search"
-            method="get"
-            className="order-last w-full sm:order-none sm:w-auto sm:max-w-md sm:flex-1"
-          >
-            <input
-              type="search"
-              name="q"
-              aria-label="Search the catalog"
-              placeholder="Search titles and people"
-              className="min-h-11 w-full rounded-md border border-input bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground"
-            />
-          </form>
+          <SearchBox />
           <nav aria-label="Main" className="ml-auto flex flex-wrap items-center justify-end gap-1">
-            <a href="/browse" className={navLink}>
+            <Link to="/browse" className={navLink}>
               Browse
-            </a>
+            </Link>
             <a href="/submit" className={navLink}>
               Contribute
             </a>

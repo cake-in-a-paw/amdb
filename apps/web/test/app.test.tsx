@@ -8,11 +8,9 @@ test('the home page shows the site name, a search box and works from the catalog
   expect(screen.getByRole('link', { name: 'AMDB home' })).toBeInTheDocument();
   expect(screen.getByRole('searchbox', { name: 'Search the catalog' })).toBeInTheDocument();
   const list = await screen.findByRole('list', { name: 'In the catalog' });
-  expect(await within(list).findByRole('link', { name: /Spirited Away/ })).toHaveAttribute(
-    'href',
-    `/entities/${seeded.works.spiritedAway}`,
-  );
-  expect(within(list).getByText('Film & TV, 2001')).toBeInTheDocument();
+  const row = await within(list).findByRole('link', { name: /Spirited Away/ });
+  expect(row).toHaveAttribute('href', `/entities/${seeded.works.spiritedAway}`);
+  expect(within(row).getByText('Film & TV, 2001')).toBeInTheDocument();
 });
 
 test('an empty catalog invites the first contribution', async () => {
