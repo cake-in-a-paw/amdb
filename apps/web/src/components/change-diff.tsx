@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
+import { Button } from '@/components/ui/button';
+import { describeError } from '@/lib/errors';
 import { valueText } from '@/components/history-list';
 import { entityQueryOptions, entityTitle } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
@@ -143,10 +145,21 @@ function UnrelateDiff({ change, titles }: { change: QueuedChange; titles: Titles
       <p>
         Removes a link from <EntryTitle id={id} titles={titles} />
       </p>
-      {what ? (
+      {entity.isPending && id ? (
+        <p role="status" className="text-sm text-muted-foreground">
+          Loading the link…
+        </p>
+      ) : entity.isError ? (
+        <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
+          <p>Couldn't load which link this removes. {describeError(entity.error, '')}</p>
+          <Button variant="outline" onClick={() => void entity.refetch()}>
+            Try again
+          </Button>
+        </div>
+      ) : what ? (
         <p className="text-sm">{what}</p>
       ) : (
-        entity.isSuccess && <p className="text-sm text-muted-foreground">It is no longer on the entry.</p>
+        <p className="text-sm text-muted-foreground">It is no longer on the entry.</p>
       )}
     </>
   );

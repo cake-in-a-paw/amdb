@@ -42,6 +42,7 @@ export function EditApproveDialog({
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (invalid.length > 0) return;
     setPending(true);
     setError(null);
     try {

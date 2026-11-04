@@ -149,3 +149,24 @@ test('a failed takedown retry says so instead of staying silent', async () => {
   spy.mockRestore();
   expect((await api.as({ kind: 'none' }).get(`/api/entities/${seeded.id}`)).status).toBe(200);
 });
+
+test('a failed account lookup shows an error with retry, not Not found', async () => {
+  const { api, router, user } = await renderApp('/', { as: 'admin' });
+  const real = api.app.request.bind(api.app);
+  // Network fault: /api/me never gets an answer while the page loads.
+  const spy = vi.spyOn(api.app, 'request').mockImplementation(async (...args: Parameters<typeof real>) => {
+    const [input] = args;
+    if (String(input instanceof Request ? input.url : input).includes('/api/me')) throw new TypeError('offline');
+    return real(...args);
+  });
+  // Forget the account the shell loaded, so the page has to ask again.
+  router.options.context.queryClient.removeQueries({ queryKey: ['me'] });
+  await router.navigate({ to: '/admin/users' });
+  expect(await screen.findByText(/Couldn't load your account/)).toBeInTheDocument();
+  expect(screen.queryByRole('heading', { name: 'Not found' })).not.toBeInTheDocument();
+  spy.mockRestore();
+
+  await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+  expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument();
+});

@@ -430,3 +430,34 @@ test('a failed account lookup shows an error with retry, not Not found', async (
 
   expect(await screen.findByRole('heading', { name: 'Moderation queue' })).toBeInTheDocument();
 });
+
+test('an unrelate whose entry cannot be loaded says so and can retry', async () => {
+  const { api, router, user } = await renderApp('/', {
+    as: 'moderator',
+    seed: async (a) => {
+      const { contributor } = await actors(a);
+      const catalog = await seed(a);
+      const entity = await a.as({ kind: 'none' }).get(`/api/entities/${catalog.works.spiritedAway}`);
+      const body = (await entity.json()) as { relations: { creators: { relationId: string; role: string }[] } };
+      const credit = body.relations.creators.find((c) => c.role === 'director');
+      await submit(contributor, [{ op: 'unrelate', relationId: credit?.relationId }]);
+    },
+  });
+  const real = api.app.request.bind(api.app);
+  // Network fault: entry requests never get an answer.
+  const spy = vi.spyOn(api.app, 'request').mockImplementation(async (...args: Parameters<typeof real>) => {
+    const [input] = args;
+    if (String(input instanceof Request ? input.url : input).includes('/api/entities/')) {
+      throw new TypeError('offline');
+    }
+    return real(...args);
+  });
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+
+  expect(await within(item as HTMLElement).findByText(/Couldn't load which link this removes/)).toBeInTheDocument();
+  spy.mockRestore();
+  await user.click(within(item as HTMLElement).getByRole('button', { name: 'Try again' }));
+
+  await waitFor(() => expect(item).toHaveTextContent('Credit: Hayao Miyazaki (Director)'));
+});
