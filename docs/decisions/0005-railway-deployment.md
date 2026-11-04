@@ -42,7 +42,9 @@ stop being read on 2026-12-01.
 ## Consequences
 
 Every push to `main` reaches production once CI passes, so `main` must stay releasable until a
-`dev` environment exists. Railway's config can't register custom domains, so the domain is added
-with `railway domain` before it is listed in `domains`. Secrets are set by hand and are not in
+`dev` environment exists. Railway's config can't register custom domains, so the domain is
+registered with `railway domain` on the linked `app` service, which needs the service to exist.
+The runbook (docs/deploy.md step 3) plans first and, if the plan refuses the domain, applies once,
+registers it and applies again. Secrets are set by hand and are not in
 git. Turning on the Cloudflare proxy later requires `TRUSTED_PROXY_HOPS=2` in the same change.
 Revisit this when moderators start working real data.

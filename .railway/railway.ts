@@ -14,7 +14,8 @@ export default defineRailway(() => {
     // The API applies Drizzle migrations at boot (platform/db/open.ts), so there is no preDeploy.
     start: 'pnpm --filter @amdb/api start',
     healthcheck: '/api/health',
-    // Railway's config can't register a custom domain: add it with `railway domain` first.
+    // Railway's config can't register a custom domain: `railway domain` does, on the linked `app`
+    // service, so docs/deploy.md step 3 registers it before (or between) applies.
     domains: [domain],
     env: {
       DATABASE_URL: db.env.DATABASE_URL,

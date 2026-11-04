@@ -19,7 +19,7 @@ Verify: the plan page lists custom domains with at least one free. If not, upgra
 Check first that every commit on `main` is signed:
 
 ```bash
-git log --format='%h %G? %s' main | rg -v ' [GE] '   # prints nothing when all are signed
+git log --format='%h %G? %s' main | rg -v '^\S+ G '   # prints nothing when all are signed
 ```
 
 Create the public `cake-in-a-paw/amdb` repo on GitHub and push `main`. Then install the Railway
@@ -28,16 +28,48 @@ GitHub app on that repo (GitHub, Settings, Applications, Railway, Repository acc
 Verify: GitHub shows every commit as Verified, CI runs and passes on `main`, and the Railway app
 lists `amdb` as an accessible repository.
 
-## 3. Create the Railway project and apply it
+## 3. Create the Railway project and plan it
 
 ```bash
 railway init            # create the project "amdb"; the environment is "production"
-railway config plan     # read the plan: Postgres and the `app` service, nothing else
-railway config apply
+railway link            # if init did not already link this directory
+railway config plan     # read it before applying anything
 ```
 
-Verify: the plan shows no deletions. After applying, the project has a `postgres` and an `app`
-service. `app` fails its first deploy until the secrets (step 6) exist; that is expected.
+`.railway/railway.ts` lists `amdb.ty-pe.com` under `domains`, and Railway's config can't register a
+domain itself: `railway domain` does that, and it needs the `app` service to exist. So read what
+the plan says about the domain, then take one branch.
+
+- **Branch A: the plan is clean.** It lists Postgres and the `app` service, shows the domain as
+  an addition, and reports no error. Apply, then register the domain on the now-existing service
+  and plan again to confirm:
+
+  ```bash
+  railway config apply
+  railway service app
+  railway domain amdb.ty-pe.com
+  railway config plan     # no domain error, no changes left for the domain
+  ```
+
+- **Branch B: the plan or apply refuses over the domain.** The output names `amdb.ty-pe.com` as
+  not registered, or says the service it belongs to does not exist. Apply once without the
+  domain (temporarily set `domains: []` in `.railway/railway.ts`), register the domain, restore
+  the line and apply again:
+
+  ```bash
+  railway config apply    # with domains: [] ; creates postgres and app
+  railway service app
+  railway domain amdb.ty-pe.com
+  # restore domains: [domain] in .railway/railway.ts
+  railway config plan     # no domain error
+  railway config apply
+  ```
+
+Either way, finish with a plan that has no domain error and no deletions, then apply.
+
+Verify: the final `railway config plan` shows no deletions and no domain error. After applying,
+the project has a `postgres` and an `app` service. `app`'s first deploy fails until the secrets
+(step 6) exist; that is expected. Step 6 ends with an explicit redeploy.
 
 ## 4. Create the OAuth clients
 
@@ -70,15 +102,21 @@ In Railway, on the `app` service, production environment, set:
 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `EMAIL_API_KEY`, `EMAIL_FROM` and `ADMIN_EMAILS`
 (comma-separated addresses that become admins on sign-up).
 
-Verify: `railway config plan` shows no changes to these variables (they are `preserve()`d), and
-the service's next deploy starts. A missing variable fails boot with `Invalid environment:` and
-the variable's name in the deploy log.
-
-## 7. Add the domain and DNS
+Then redeploy explicitly, since the first deploy already failed and setting variables may not
+trigger another:
 
 ```bash
-railway domain amdb.ty-pe.com
+railway redeploy --service app
 ```
+
+Verify: `railway config plan` shows no changes to these variables (they are `preserve()`d), and
+the redeploy goes healthy. A missing variable fails boot with `Invalid environment:` and the
+variable's name in the deploy log.
+
+## 7. Write the DNS records
+
+The domain was registered in step 3 (`railway domain amdb.ty-pe.com`, on the linked `app`
+service). If it was not, run that now.
 
 Railway prints a CNAME target and a `_railway-verify` TXT value. In Cloudflare, create
 `CNAME amdb` pointing at the target and a TXT `_railway-verify.amdb` with the value. Both must
