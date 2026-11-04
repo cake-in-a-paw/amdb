@@ -15,8 +15,10 @@ import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SubmitRouteImport } from './routes/submit'
+import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as EntitiesIdRouteImport } from './routes/entities.$id'
 import { Route as MeSubmissionsRouteImport } from './routes/me.submissions'
+import { Route as ModerationIndexRouteImport } from './routes/moderation.index'
 import { Route as ChangesIdResubmitRouteImport } from './routes/changes.$id.resubmit'
 import { Route as EntitiesIdIndexRouteImport } from './routes/entities.$id.index'
 import { Route as EntitiesIdEditRouteImport } from './routes/entities.$id.edit'
@@ -52,6 +54,11 @@ const SubmitRoute = SubmitRouteImport.update({
   path: '/submit',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminUsersRoute = AdminUsersRouteImport.update({
+  id: '/admin/users',
+  path: '/admin/users',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EntitiesIdRoute = EntitiesIdRouteImport.update({
   id: '/entities/$id',
   path: '/entities/$id',
@@ -60,6 +67,11 @@ const EntitiesIdRoute = EntitiesIdRouteImport.update({
 const MeSubmissionsRoute = MeSubmissionsRouteImport.update({
   id: '/me/submissions',
   path: '/me/submissions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ModerationIndexRoute = ModerationIndexRouteImport.update({
+  id: '/moderation/',
+  path: '/moderation/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChangesIdResubmitRoute = ChangesIdResubmitRouteImport.update({
@@ -90,8 +102,10 @@ export interface FileRoutesByFullPath {
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
   '/submit': typeof SubmitRoute
+  '/admin/users': typeof AdminUsersRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
+  '/moderation/': typeof ModerationIndexRoute
   '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
@@ -104,7 +118,9 @@ export interface FileRoutesByTo {
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
   '/submit': typeof SubmitRoute
+  '/admin/users': typeof AdminUsersRoute
   '/me/submissions': typeof MeSubmissionsRoute
+  '/moderation': typeof ModerationIndexRoute
   '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
@@ -118,8 +134,10 @@ export interface FileRoutesById {
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
   '/submit': typeof SubmitRoute
+  '/admin/users': typeof AdminUsersRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
+  '/moderation/': typeof ModerationIndexRoute
   '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
@@ -134,8 +152,10 @@ export interface FileRouteTypes {
     | '/search'
     | '/sign-in'
     | '/submit'
+    | '/admin/users'
     | '/entities/$id'
     | '/me/submissions'
+    | '/moderation/'
     | '/changes/$id/resubmit'
     | '/entities/$id/edit'
     | '/entities/$id/history'
@@ -148,7 +168,9 @@ export interface FileRouteTypes {
     | '/search'
     | '/sign-in'
     | '/submit'
+    | '/admin/users'
     | '/me/submissions'
+    | '/moderation'
     | '/changes/$id/resubmit'
     | '/entities/$id/edit'
     | '/entities/$id/history'
@@ -161,8 +183,10 @@ export interface FileRouteTypes {
     | '/search'
     | '/sign-in'
     | '/submit'
+    | '/admin/users'
     | '/entities/$id'
     | '/me/submissions'
+    | '/moderation/'
     | '/changes/$id/resubmit'
     | '/entities/$id/edit'
     | '/entities/$id/history'
@@ -176,8 +200,10 @@ export interface RootRouteChildren {
   SearchRoute: typeof SearchRoute
   SignInRoute: typeof SignInRoute
   SubmitRoute: typeof SubmitRoute
+  AdminUsersRoute: typeof AdminUsersRoute
   EntitiesIdRoute: typeof EntitiesIdRouteWithChildren
   MeSubmissionsRoute: typeof MeSubmissionsRoute
+  ModerationIndexRoute: typeof ModerationIndexRoute
   ChangesIdResubmitRoute: typeof ChangesIdResubmitRoute
 }
 
@@ -225,6 +251,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SubmitRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/users': {
+      id: '/admin/users'
+      path: '/admin/users'
+      fullPath: '/admin/users'
+      preLoaderRoute: typeof AdminUsersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/entities/$id': {
       id: '/entities/$id'
       path: '/entities/$id'
@@ -237,6 +270,13 @@ declare module '@tanstack/react-router' {
       path: '/me/submissions'
       fullPath: '/me/submissions'
       preLoaderRoute: typeof MeSubmissionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/moderation/': {
+      id: '/moderation/'
+      path: '/moderation'
+      fullPath: '/moderation/'
+      preLoaderRoute: typeof ModerationIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/changes/$id/resubmit': {
@@ -293,8 +333,10 @@ const rootRouteChildren: RootRouteChildren = {
   SearchRoute: SearchRoute,
   SignInRoute: SignInRoute,
   SubmitRoute: SubmitRoute,
+  AdminUsersRoute: AdminUsersRoute,
   EntitiesIdRoute: EntitiesIdRouteWithChildren,
   MeSubmissionsRoute: MeSubmissionsRoute,
+  ModerationIndexRoute: ModerationIndexRoute,
   ChangesIdResubmitRoute: ChangesIdResubmitRoute,
 }
 export const routeTree = rootRouteImport

@@ -39,11 +39,11 @@ export function EmptyList({ children }: { children?: ReactNode }) {
   );
 }
 
-export function NotFound() {
+export function NotFound({ what = 'entry' }: { what?: string }) {
   return (
     <div className="py-12">
       <h1 className="font-serif text-3xl font-semibold">Not found</h1>
-      <p className="mt-3 text-muted-foreground">There's no entry at this address.</p>
+      <p className="mt-3 text-muted-foreground">There's no {what} at this address.</p>
     </div>
   );
 }

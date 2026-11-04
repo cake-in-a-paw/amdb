@@ -47,6 +47,12 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
       return 'Something else changed this entry in the meantime, so this no longer applies. Reload and look again.';
     case 'has_dependents':
       return "Other entries or later changes build on this, so it can't be undone yet. Undo those first.";
+    case 'last_admin':
+      return "You're the last admin. Make someone else an admin first.";
+    case 'edit_out_of_scope':
+      return 'An edit can only change fields the contributor submitted.';
+    case 'already_published':
+      return 'This change is already live. Submit a new change to correct it.';
     case 'already_reverted':
       return 'This change was already reverted.';
     case 'not_revertable':

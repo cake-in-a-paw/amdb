@@ -20,3 +20,7 @@ export const meQueryOptions = (api: ApiClient) =>
       }
     },
   });
+
+/** Moderators and admins review changes. */
+export const canModerate = (me: { role: string } | null | undefined): boolean =>
+  me?.role === 'moderator' || me?.role === 'admin';

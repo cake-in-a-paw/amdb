@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { meQueryKey, meQueryOptions } from '@/lib/me';
+import { canModerate, meQueryKey, meQueryOptions } from '@/lib/me';
 
 const rootRoute = getRouteApi('__root__');
 
@@ -21,10 +21,6 @@ const rootRoute = getRouteApi('__root__');
 const navLink =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-medium text-foreground hover:bg-secondary';
 
-/*
- * Moderation is a plain link until its route exists (Task 10); a typed <Link> to a route that
- * isn't there fails tsc.
- */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-col">
@@ -96,13 +92,17 @@ function Session() {
     );
   }
 
-  const canModerate = me.data.role === 'moderator' || me.data.role === 'admin';
   return (
     <>
-      {canModerate && (
-        <a href="/moderation" className={navLink}>
+      {canModerate(me.data) && (
+        <Link to="/moderation" className={navLink}>
           Moderation
-        </a>
+        </Link>
+      )}
+      {me.data.role === 'admin' && (
+        <Link to="/admin/users" className={navLink}>
+          Users
+        </Link>
       )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

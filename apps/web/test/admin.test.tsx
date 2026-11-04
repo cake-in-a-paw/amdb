@@ -1,0 +1,132 @@
+import { screen, within } from '@testing-library/react';
+import { expect, test } from 'vitest';
+import { actors, publish, renderApp, type TestApi } from './harness';
+
+const meOf = async (api: TestApi, userId: string) =>
+  (await (await api.as({ kind: 'user', userId }).get('/api/me')).json()) as { email: string; role: string };
+
+test('non-admins get Not found at the user admin page', async () => {
+  await renderApp('/admin/users', { as: 'moderator' });
+  expect(await screen.findByRole('heading', { name: 'Not found' })).toBeInTheDocument();
+});
+
+test('an admin finds a user by email and makes them a moderator', async () => {
+  const { user, api, seeded } = await renderApp('/admin/users', {
+    as: 'admin',
+    seed: async (a) => {
+      const id = await a.createUser({ email: 'sam@example.test' });
+      return { id };
+    },
+  });
+
+  await user.type(await screen.findByLabelText('Email'), 'sam@example.test');
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+  const row = await screen.findByRole('listitem', { name: /sam@example.test/ });
+  await user.selectOptions(within(row).getByLabelText('Role'), 'moderator');
+  await user.click(within(row).getByRole('button', { name: 'Save role' }));
+
+  expect(await within(row).findByText('Saved: moderator')).toBeInTheDocument();
+  expect(await meOf(api, seeded.id)).toMatchObject({ role: 'moderator' });
+});
+
+test('an email nobody has says so', async () => {
+  const { user } = await renderApp('/admin/users', { as: 'admin' });
+  await user.type(await screen.findByLabelText('Email'), 'nobody@example.test');
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+  expect(await screen.findByText('No account has that email.')).toBeInTheDocument();
+});
+
+test("the last admin can't demote themselves", async () => {
+  const { user, api, session } = await renderApp('/admin/users', { as: 'admin' });
+  const me = await meOf(api, session.userId ?? '');
+
+  await user.type(await screen.findByLabelText('Email'), me.email);
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+  const row = await screen.findByRole('listitem', { name: new RegExp(me.email) });
+  await user.selectOptions(within(row).getByLabelText('Role'), 'contributor');
+  await user.click(within(row).getByRole('button', { name: 'Save role' }));
+
+  expect(await within(row).findByRole('alert')).toHaveTextContent("You're the last admin");
+  expect(await meOf(api, session.userId ?? '')).toMatchObject({ role: 'admin' });
+});
+
+async function liveWork(api: TestApi) {
+  const { contributor, moderator } = await actors(api);
+  const created = await publish(contributor, moderator, [
+    {
+      op: 'create',
+      kind: 'work',
+      ref: 'w',
+      fields: { mediaType: 'film_tv', subtype: 'movie', title: 'Arrival', releaseYear: 2016 },
+    },
+  ]);
+  return { id: created.changes[0]?.entityId ?? '' };
+}
+
+test('an admin redacts a live change: the dialog explains it takes the content down, then does', async () => {
+  const { user, api, seeded, router } = await renderApp('/', { as: 'admin', seed: liveWork });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const item = (await screen.findByRole('list', { name: 'History' })).children[0] as HTMLElement;
+
+  await user.click(within(item).getByRole('button', { name: /Redact/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Redact this change' });
+  await user.type(within(dialog).getByLabelText('Reason'), 'Contains personal data');
+  await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
+
+  expect(await within(dialog).findByText(/also takes the content down/)).toBeInTheDocument();
+  expect((await api.as({ kind: 'none' }).get(`/api/entities/${seeded.id}`)).status).toBe(200);
+  await user.click(within(dialog).getByRole('button', { name: 'Redact and take down' }));
+
+  // The entry is down, so its page says so instead of the history.
+  expect(await screen.findByRole('heading', { name: 'This entry was removed' })).toBeInTheDocument();
+  expect((await api.as({ kind: 'none' }).get(`/api/entities/${seeded.id}`)).status).toBe(410);
+});
+
+test('redacting a change that is no longer current needs no takedown and leaves a stub in the history', async () => {
+  const { user, api, seeded, router } = await renderApp('/', {
+    as: 'admin',
+    seed: async (a) => {
+      const { id } = await liveWork(a);
+      const { contributor, moderator } = await actors(a);
+      const edit = (releaseYear: number) => ({ op: 'update', kind: 'work', entityId: id, fields: { releaseYear } });
+      await publish(contributor, moderator, [edit(2017)]);
+      await publish(contributor, moderator, [edit(2018)]);
+      return { id };
+    },
+  });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const list = await screen.findByRole('list', { name: 'History' });
+  // Newest first: the 2018 edit, the 2017 edit it overwrote, then the create.
+  const overwritten = list.children[1] as HTMLElement;
+  expect(overwritten).toHaveTextContent('2017');
+
+  await user.click(within(overwritten).getByRole('button', { name: /Redact/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Redact this change' });
+  await user.type(within(dialog).getByLabelText('Reason'), 'Contains personal data');
+  await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
+
+  expect(await screen.findByText('Removed: Contains personal data')).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect((await api.as({ kind: 'none' }).get(`/api/entities/${seeded.id}`)).status).toBe(200);
+});
+
+test('redacting needs a reason', async () => {
+  const { user, router, seeded } = await renderApp('/', { as: 'admin', seed: liveWork });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const item = (await screen.findByRole('list', { name: 'History' })).children[0] as HTMLElement;
+
+  await user.click(within(item).getByRole('button', { name: /Redact/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Redact this change' });
+  await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
+
+  expect(within(dialog).getByRole('alert')).toHaveTextContent('Give a reason');
+});
+
+test('moderators can revert but not redact', async () => {
+  const { router, seeded } = await renderApp('/', { as: 'moderator', seed: liveWork });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const item = (await screen.findByRole('list', { name: 'History' })).children[0] as HTMLElement;
+
+  expect(within(item).getByRole('button', { name: /Revert/ })).toBeInTheDocument();
+  expect(within(item).queryByRole('button', { name: /Redact/ })).not.toBeInTheDocument();
+});

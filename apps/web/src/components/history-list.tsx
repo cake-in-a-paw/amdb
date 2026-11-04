@@ -3,12 +3,13 @@ import { getRouteApi } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
 import { LoadError, Loading } from '@/components/entity-states';
 import { LoadMore } from '@/components/load-more';
+import { RedactDialog } from '@/components/redact-dialog';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { entityQueryKey, PAGE_SIZE } from '@/lib/entity';
 import { describeError } from '@/lib/errors';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
-import { meQueryOptions } from '@/lib/me';
+import { canModerate, meQueryOptions } from '@/lib/me';
 
 type Page = paths['/api/entities/{id}/history']['get']['responses'][200]['content']['application/json'];
 type Item = Page['items'][number];
@@ -24,7 +25,7 @@ function authorName(author: Item['author']): string {
 }
 
 /** A value from a change's fields, short enough for a line of history. */
-function valueText(value: unknown): string {
+export function valueText(value: unknown): string {
   if (value === null) return 'cleared';
   const text = typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
   return text.length > 280 ? `${text.slice(0, 280)}…` : text;
@@ -97,22 +98,35 @@ function ChangeSummary({ item }: { item: Extract<Item, { payload: unknown }> }) 
   }
 }
 
-function HistoryItem({ item, entityId, canRevert }: { item: Item; entityId: string; canRevert: boolean }) {
+function HistoryItem({
+  item,
+  entityId,
+  canRevert,
+  canRedact,
+}: {
+  item: Item;
+  entityId: string;
+  canRevert: boolean;
+  canRedact: boolean;
+}) {
   const { api } = rootRoute.useRouteContext();
   const queryClient = useQueryClient();
+  const refresh = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: historyQueryKey(entityId) }),
+      queryClient.invalidateQueries({ queryKey: entityQueryKey(entityId) }),
+    ]);
   const revert = useMutation({
     mutationFn: async () =>
       unwrap(await api.POST('/api/changes/{id}/revert', { params: { path: { id: item.changeId } } })),
     // The entry and its history both changed: ask again rather than patching either.
-    onSuccess: () =>
-      Promise.all([
-        queryClient.invalidateQueries({ queryKey: historyQueryKey(entityId) }),
-        queryClient.invalidateQueries({ queryKey: entityQueryKey(entityId) }),
-      ]),
+    onSuccess: () => refresh(),
   });
   const redacted = 'redacted' in item;
   // A revert can't be reverted; and a redacted change has no content to bring back or take away.
   const revertible = canRevert && !redacted && !item.revertOf;
+  // A revert holds nothing to erase, and a redacted change is already erased.
+  const redactable = canRedact && !redacted && !item.revertOf;
 
   return (
     <li className="border-b border-border py-3">
@@ -123,17 +137,25 @@ function HistoryItem({ item, entityId, canRevert }: { item: Item; entityId: stri
         </time>
       </p>
       {redacted ? <p>Removed: {item.reason ?? 'no reason given'}</p> : <ChangeSummary item={item} />}
-      {revertible && (
-        <Button
-          variant="outline"
-          className="mt-2"
-          disabled={revert.isPending}
-          aria-label={`Revert: change by ${authorName(item.author)}, ${item.op}`}
-          onClick={() => revert.mutate()}
-        >
-          Revert
-        </Button>
-      )}
+      <div className="mt-2 flex flex-wrap gap-2">
+        {revertible && (
+          <Button
+            variant="outline"
+            disabled={revert.isPending}
+            aria-label={`Revert: change by ${authorName(item.author)}, ${item.op}`}
+            onClick={() => revert.mutate()}
+          >
+            Revert
+          </Button>
+        )}
+        {redactable && (
+          <RedactDialog
+            changeId={item.changeId}
+            label={`change by ${authorName(item.author)}, ${item.op}`}
+            onRedacted={refresh}
+          />
+        )}
+      </div>
       {revert.isError && (
         <p role="alert" className="mt-2 text-sm text-destructive">
           {describeError(revert.error, "Couldn't revert this change. Try again.")}
@@ -147,7 +169,8 @@ function HistoryItem({ item, entityId, canRevert }: { item: Item; entityId: stri
 export function HistoryList({ entityId }: { entityId: string }) {
   const { api } = rootRoute.useRouteContext();
   const me = useQuery(meQueryOptions(api));
-  const canRevert = me.data?.role === 'moderator' || me.data?.role === 'admin';
+  const canRevert = canModerate(me.data);
+  const canRedact = me.data?.role === 'admin';
   const history = useInfiniteQuery({
     queryKey: historyQueryKey(entityId),
     initialPageParam: undefined as string | undefined,
@@ -176,7 +199,13 @@ export function HistoryList({ entityId }: { entityId: string }) {
       ) : (
         <ul aria-labelledby="history-heading">
           {items.map((item) => (
-            <HistoryItem key={item.changeId} item={item} entityId={entityId} canRevert={canRevert} />
+            <HistoryItem
+              key={item.changeId}
+              item={item}
+              entityId={entityId}
+              canRevert={canRevert}
+              canRedact={canRedact}
+            />
           ))}
         </ul>
       )}
