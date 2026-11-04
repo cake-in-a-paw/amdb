@@ -5,7 +5,14 @@ import { gone, notFound } from '../../platform/http/errors';
 import { decodeKeyCursor, encodeKeyCursor } from '../../platform/http/pagination';
 import { normalizeTitle } from './normalize';
 import { catalogRepository } from './repository';
-import { type EntityView, SearchCursor, type SearchQuery, type Summary } from './schemas';
+import {
+  type BrowseQuery,
+  type EntityView,
+  RELATED_LIMIT,
+  SearchCursor,
+  type SearchQuery,
+  type Summary,
+} from './schemas';
 
 /** Columns derived from others, not shown as fields. */
 const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
@@ -24,6 +31,16 @@ interface SummaryRow {
   releaseYear: number | null;
 }
 
+/** One page of summaries from `limit` + 1 rows, with a cursor when another page exists. */
+function pageOf(rows: SummaryRow[], limit: number) {
+  const items = rows.slice(0, limit);
+  const last = items.at(-1);
+  return {
+    items: items.map(toSummary),
+    nextCursor: rows.length > limit && last ? encodeKeyCursor({ title: last.title, id: last.id }) : null,
+  };
+}
+
 const toSummary = (s: SummaryRow): Summary => ({
   id: s.id,
   kind: s.kind,
@@ -34,6 +51,38 @@ const toSummary = (s: SummaryRow): Summary => ({
 
 export function createCatalogService(db: Db) {
   const repo = catalogRepository(db);
+
+  /** A work's other works through each shared creator, series and property (three queries). */
+  async function related(workId: string, creators: Summary[], series: Summary[], properties: Summary[]) {
+    const groups = async (type: Parameters<typeof repo.worksOfHubs>[0], hubs: Summary[]) => {
+      const pairs = await repo.worksOfHubs(
+        type,
+        hubs.map((h) => h.id),
+        workId,
+        RELATED_LIMIT,
+      );
+      const summaries = new Map(
+        (await repo.summaries([...new Set(pairs.map((p) => p.workId))])).map((s): [string, Summary] => [
+          s.id,
+          toSummary(s),
+        ]),
+      );
+      return hubs.flatMap((hub) => {
+        const works = pairs.filter((p) => p.hubId === hub.id).flatMap((p) => summaries.get(p.workId) ?? []);
+        return works.length ? [{ hub, works }] : [];
+      });
+    };
+    const [byCreator, bySeries, byProperty] = await Promise.all([
+      groups('work_creator', creators),
+      groups('series_work', series),
+      groups('property_work', properties),
+    ]);
+    return {
+      byCreator: byCreator.map(({ hub, works }) => ({ creator: hub, works })),
+      bySeries: bySeries.map(({ hub, works }) => ({ series: hub, works })),
+      byProperty: byProperty.map(({ hub, works }) => ({ property: hub, works })),
+    };
+  }
 
   return {
     /** Current state of a live entity (410 `removed` once taken down); a merged id answers `{ redirectTo }` with its winner. A reserved id whose create isn't live yet is unknown: 404. */
@@ -103,6 +152,12 @@ export function createCatalogService(db: Db) {
           relations.externalIds = outgoing('external_id').flatMap((r) =>
             r.scheme && r.value ? [{ relationId: r.id, scheme: r.scheme, value: r.value }] : [],
           );
+          relations.related = await related(
+            id,
+            relations.creators.map((c) => c.creator),
+            relations.series.map((x) => x.series),
+            relations.properties.map((p) => p.property),
+          );
           break;
         case 'creator':
           relations.works = incoming('work_creator').map((r) => ({
@@ -139,12 +194,18 @@ export function createCatalogService(db: Db) {
         decodeKeyCursor(query.cursor, SearchCursor),
         query.limit,
       );
-      const items = rows.slice(0, query.limit);
-      const last = items.at(-1);
-      return {
-        items: items.map(toSummary),
-        nextCursor: rows.length > query.limit && last ? encodeKeyCursor({ title: last.title, id: last.id }) : null,
-      };
+      return pageOf(rows, query.limit);
+    },
+
+    /** Listed entities of a kind (and media type), alphabetical by title, paged like search. */
+    async browse(query: BrowseQuery) {
+      const rows = await repo.browse(
+        query.kind,
+        query.mediaType,
+        decodeKeyCursor(query.cursor, SearchCursor),
+        query.limit,
+      );
+      return pageOf(rows, query.limit);
     },
 
     /**

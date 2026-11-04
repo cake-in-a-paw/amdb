@@ -38,6 +38,16 @@ it('"amelie" finds "  Amélie "', async () => {
   }
 });
 
+it('an original title is found with accents folded', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    await publish(author, mod, [work('Amelie', { originalTitle: "Le Fabuleux Destin d'Amélie Poulain" })]);
+    expect((await search('q=amelie+poulain')).items.map((i) => i.title)).toEqual(['Amelie']);
+  } finally {
+    await t.close();
+  }
+});
+
 it('search matches a prefix on the last term, in any word order, and filters by kind and media type', async () => {
   const { t, author, mod, search } = await setup();
   try {

@@ -95,6 +95,7 @@ async function writeRow(
         title: f.title,
         titleNorm: normalizeTitle(f.title),
         originalTitle: f.originalTitle ?? null,
+        originalTitleNorm: f.originalTitle ? normalizeTitle(f.originalTitle) : null,
         description: f.description ?? null,
         releaseYear: f.releaseYear ?? null,
         releaseMonth: f.releaseMonth ?? null,
@@ -617,7 +618,14 @@ async function eraseText(tx: Tx, entityId: string): Promise<void> {
     case 'work':
       await tx
         .update(works)
-        .set({ title: PLACEHOLDER, titleNorm: norm, originalTitle: null, description: null, attributes: {} })
+        .set({
+          title: PLACEHOLDER,
+          titleNorm: norm,
+          originalTitle: null,
+          originalTitleNorm: null,
+          description: null,
+          attributes: {},
+        })
         .where(eq(works.entityId, entityId));
       return;
     case 'creator':

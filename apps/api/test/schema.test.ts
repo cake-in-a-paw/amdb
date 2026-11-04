@@ -129,7 +129,7 @@ describe('schema constraints', () => {
 
 describe('works search column', () => {
   it('is generated from the normalized and original titles', async () => {
-    await work({ titleNorm: 'heat', originalTitle: 'Le Samourai' });
+    await work({ titleNorm: 'heat', originalTitle: 'Le Samouraï', originalTitleNorm: 'le samourai' });
     const hits = await opened.db
       .select({ id: works.entityId })
       .from(works)

@@ -1,5 +1,5 @@
 import type { EntityKind, MediaType } from '@amdb/shared';
-import { and, asc, desc, eq, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 import type { SearchCursor } from './schemas';
@@ -105,6 +105,71 @@ export function catalogRepository(db: DbOrTx) {
         )
         .orderBy(asc(titleExpr), asc(entities.id))
         .limit(limit + 1);
+    },
+
+    /** Listed entities of `kind` (and for works, `mediaType`), ordered by title then id; fetches `limit` + 1. */
+    async browse(kind: EntityKind, mediaType: MediaType | undefined, after: SearchCursor | null, limit: number) {
+      return db
+        .select(summaryColumns)
+        .from(entities)
+        .leftJoin(works, eq(works.entityId, entities.id))
+        .leftJoin(creators, eq(creators.entityId, entities.id))
+        .leftJoin(series, eq(series.entityId, entities.id))
+        .leftJoin(properties, eq(properties.entityId, entities.id))
+        .leftJoin(tags, eq(tags.entityId, entities.id))
+        .where(
+          and(
+            listed(),
+            eq(entities.kind, kind),
+            mediaType ? eq(works.mediaType, mediaType) : undefined,
+            after ? sql`(${titleExpr}, ${entities.id}) > (${after.title}, ${after.id}::uuid)` : undefined,
+          ),
+        )
+        .orderBy(asc(titleExpr), asc(entities.id))
+        .limit(limit + 1);
+    },
+
+    /**
+     * For each hub (creator, series or property) in `hubIds`, its listed works other than
+     * `exceptWorkId` through active relations of `type`: ordered by release year (undated last)
+     * then title, at most `perHub` per hub. Returns `{ hubId, workId }` pairs in that order.
+     */
+    async worksOfHubs(
+      type: 'work_creator' | 'series_work' | 'property_work',
+      hubIds: string[],
+      exceptWorkId: string,
+      perHub: number,
+    ) {
+      if (!hubIds.length) return [];
+      // A creator is the relation's target and the work its source; for series and property, the reverse.
+      const hubCol = type === 'work_creator' ? relations.toId : relations.fromId;
+      const workCol = type === 'work_creator' ? relations.fromId : relations.toId;
+      const ranked = db
+        .select({
+          hubId: sql<string>`${hubCol}`.as('hub_id'),
+          workId: sql<string>`${workCol}`.as('work_id'),
+          rank: sql<number>`row_number() over (partition by ${hubCol} order by ${works.releaseYear} asc nulls last, ${works.title} asc, ${workCol} asc)`.as(
+            'rank',
+          ),
+        })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, workCol))
+        .innerJoin(works, eq(works.entityId, workCol))
+        .where(
+          and(
+            eq(relations.type, type),
+            isNull(relations.removedByChange),
+            inArray(hubCol, hubIds),
+            ne(workCol, exceptWorkId),
+            listed(),
+          ),
+        )
+        .as('ranked');
+      return db
+        .select({ hubId: ranked.hubId, workId: ranked.workId })
+        .from(ranked)
+        .where(lte(ranked.rank, perHub))
+        .orderBy(ranked.hubId, ranked.rank);
     },
 
     /**

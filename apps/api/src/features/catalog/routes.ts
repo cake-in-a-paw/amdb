@@ -1,6 +1,14 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
-import { DuplicatesQuery, DuplicatesSchema, EntityIdParam, EntitySchema, SearchQuery, SearchSchema } from './schemas';
+import {
+  BrowseQuery,
+  DuplicatesQuery,
+  DuplicatesSchema,
+  EntityIdParam,
+  EntitySchema,
+  SearchQuery,
+  SearchSchema,
+} from './schemas';
 import type { CatalogService } from './service';
 
 const getEntityRoute = createRoute({
@@ -25,6 +33,13 @@ const searchRoute = createRoute({
   responses: { 200: json(SearchSchema), 400: json(ErrorSchema, 'Invalid query') },
 });
 
+const browseRoute = createRoute({
+  method: 'get',
+  path: '/api/browse',
+  request: { query: BrowseQuery },
+  responses: { 200: json(SearchSchema), 400: json(ErrorSchema, 'Invalid query') },
+});
+
 const duplicatesRoute = createRoute({
   method: 'get',
   path: '/api/duplicates',
@@ -42,6 +57,7 @@ export function catalogRoutes(catalog: CatalogService) {
     return c.json(entity, 200);
   });
   app.openapi(searchRoute, async (c) => c.json(await catalog.search(c.req.valid('query')), 200));
+  app.openapi(browseRoute, async (c) => c.json(await catalog.browse(c.req.valid('query')), 200));
   app.openapi(duplicatesRoute, async (c) => c.json(await catalog.duplicates(c.req.valid('query')), 200));
   return app;
 }

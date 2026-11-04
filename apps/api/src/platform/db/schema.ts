@@ -152,6 +152,7 @@ export const works = pgTable(
     title: text('title').notNull(),
     titleNorm: text('title_norm').notNull(),
     originalTitle: text('original_title'),
+    originalTitleNorm: text('original_title_norm'),
     description: text('description'),
     // A partial date: whatever the source knows. Null year = no date announced yet.
     releaseYear: smallint('release_year'),
@@ -160,7 +161,7 @@ export const works = pgTable(
     lifecycle: text('lifecycle').$type<Lifecycle>().notNull().default('unknown'),
     attributes: jsonb('attributes').$type<Record<string, unknown>>().notNull().default({}),
     search: tsvector('search').generatedAlwaysAs(
-      sql`to_tsvector('simple', coalesce(title_norm, '') || ' ' || coalesce(original_title, ''))`,
+      sql`to_tsvector('simple', coalesce(title_norm, '') || ' ' || coalesce(original_title_norm, ''))`,
     ),
   },
   (t) => [

@@ -14,6 +14,11 @@ export const SummarySchema = z.object({
 });
 export type Summary = z.infer<typeof SummarySchema>;
 
+/** The most works a "more like this" group lists. */
+export const RELATED_LIMIT = 12;
+
+const relatedWorks = z.array(SummarySchema);
+
 const relationId = z.uuid();
 
 /** Only the groups relevant to the entity's kind are present. */
@@ -53,6 +58,14 @@ export const EntitySchema = z.object({
       .optional(),
     tags: z.array(z.object({ relationId, tag: SummarySchema })).optional(),
     externalIds: z.array(z.object({ relationId, scheme: IdScheme, value: z.string() })).optional(),
+    /** A work's other works by shared creator, series or property: each group at most 12, by release year then title. */
+    related: z
+      .object({
+        byCreator: z.array(z.object({ creator: SummarySchema, works: relatedWorks })),
+        bySeries: z.array(z.object({ series: SummarySchema, works: relatedWorks })),
+        byProperty: z.array(z.object({ property: SummarySchema, works: relatedWorks })),
+      })
+      .optional(),
   }),
 });
 export type EntityView = z.infer<typeof EntitySchema>;
@@ -74,6 +87,14 @@ export type SearchQuery = z.infer<typeof SearchQuery>;
 /** The decoded search cursor: the last result's sort title and id. */
 export const SearchCursor = z.object({ title: z.string(), id: z.uuid() });
 export type SearchCursor = z.infer<typeof SearchCursor>;
+
+export const BrowseQuery = z
+  .object({ kind: EntityKind, mediaType: MediaType.optional(), ...PageQuery })
+  .refine((q) => !q.mediaType || q.kind === 'work', {
+    message: 'mediaType only applies to works',
+    path: ['mediaType'],
+  });
+export type BrowseQuery = z.infer<typeof BrowseQuery>;
 
 export const SearchSchema = z.object({ items: z.array(SummarySchema), nextCursor: z.string().nullable() });
 

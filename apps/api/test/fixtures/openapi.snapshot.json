@@ -3171,6 +3171,283 @@
                               "value"
                             ]
                           }
+                        },
+                        "related": {
+                          "type": "object",
+                          "properties": {
+                            "byCreator": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "creator": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "work",
+                                          "creator",
+                                          "series",
+                                          "property",
+                                          "tag"
+                                        ]
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "enum": [
+                                          "film_tv",
+                                          "book"
+                                        ]
+                                      },
+                                      "releaseYear": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "kind",
+                                      "title"
+                                    ]
+                                  },
+                                  "works": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "work",
+                                            "creator",
+                                            "series",
+                                            "property",
+                                            "tag"
+                                          ]
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "mediaType": {
+                                          "type": "string",
+                                          "enum": [
+                                            "film_tv",
+                                            "book"
+                                          ]
+                                        },
+                                        "releaseYear": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "kind",
+                                        "title"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "creator",
+                                  "works"
+                                ]
+                              }
+                            },
+                            "bySeries": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "series": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "work",
+                                          "creator",
+                                          "series",
+                                          "property",
+                                          "tag"
+                                        ]
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "enum": [
+                                          "film_tv",
+                                          "book"
+                                        ]
+                                      },
+                                      "releaseYear": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "kind",
+                                      "title"
+                                    ]
+                                  },
+                                  "works": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "work",
+                                            "creator",
+                                            "series",
+                                            "property",
+                                            "tag"
+                                          ]
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "mediaType": {
+                                          "type": "string",
+                                          "enum": [
+                                            "film_tv",
+                                            "book"
+                                          ]
+                                        },
+                                        "releaseYear": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "kind",
+                                        "title"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "series",
+                                  "works"
+                                ]
+                              }
+                            },
+                            "byProperty": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "property": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "kind": {
+                                        "type": "string",
+                                        "enum": [
+                                          "work",
+                                          "creator",
+                                          "series",
+                                          "property",
+                                          "tag"
+                                        ]
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "mediaType": {
+                                        "type": "string",
+                                        "enum": [
+                                          "film_tv",
+                                          "book"
+                                        ]
+                                      },
+                                      "releaseYear": {
+                                        "type": "integer"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "kind",
+                                      "title"
+                                    ]
+                                  },
+                                  "works": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "kind": {
+                                          "type": "string",
+                                          "enum": [
+                                            "work",
+                                            "creator",
+                                            "series",
+                                            "property",
+                                            "tag"
+                                          ]
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "mediaType": {
+                                          "type": "string",
+                                          "enum": [
+                                            "film_tv",
+                                            "book"
+                                          ]
+                                        },
+                                        "releaseYear": {
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "kind",
+                                        "title"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "property",
+                                  "works"
+                                ]
+                              }
+                            }
+                          },
+                          "required": [
+                            "byCreator",
+                            "bySeries",
+                            "byProperty"
+                          ]
                         }
                       }
                     }
@@ -3307,6 +3584,153 @@
               ]
             },
             "required": false,
+            "name": "kind",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "film_tv",
+                "book"
+              ]
+            },
+            "required": false,
+            "name": "mediaType",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "kind": {
+                            "type": "string",
+                            "enum": [
+                              "work",
+                              "creator",
+                              "series",
+                              "property",
+                              "tag"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "type": "string",
+                            "enum": [
+                              "film_tv",
+                              "book"
+                            ]
+                          },
+                          "releaseYear": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "kind",
+                          "title"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/browse": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "work",
+                "creator",
+                "series",
+                "property",
+                "tag"
+              ]
+            },
+            "required": true,
             "name": "kind",
             "in": "query"
           },
