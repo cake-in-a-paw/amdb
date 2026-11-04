@@ -1,4 +1,4 @@
-import type { ChangeOp, EntityKind, MediaType } from '@amdb/shared';
+import type { ChangeOp, EntityKind, IdScheme, MediaType } from '@amdb/shared';
 import { and, arrayContains, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import {
   changes,
@@ -56,6 +56,28 @@ const ownerCondition = (owner: Owner) =>
 
 export function changesRepository(db: DbOrTx) {
   return {
+    /** The tag holding `slug`, retracted or not (the unique index covers every tag). */
+    async findTagBySlug(slug: string): Promise<string | null> {
+      const [row] = await db.select({ id: tags.entityId }).from(tags).where(eq(tags.slug, slug));
+      return row?.id ?? null;
+    },
+
+    /** The entity that holds an external id (scheme + value) right now. */
+    async findExternalIdHolder(scheme: string, value: string): Promise<string | null> {
+      const [row] = await db
+        .select({ id: relations.fromId })
+        .from(relations)
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, scheme as IdScheme),
+            eq(relations.value, value),
+            isNull(relations.removedByChange),
+          ),
+        );
+      return row?.id ?? null;
+    },
+
     /** A live entity (not removed, retracted or merged away) and, for a work, its media type. */
     async findEntity(id: string): Promise<{ kind: EntityKind; mediaType: MediaType | null } | null> {
       const [row] = await db

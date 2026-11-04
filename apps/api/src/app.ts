@@ -12,6 +12,7 @@ import type { Db } from './platform/db/types';
 import type { SessionInfo } from './platform/http/app-env';
 import { errorBody, handleError, withErrorShape } from './platform/http/errors';
 import { createApi, json, OkSchema } from './platform/http/openapi';
+import { serveSpa } from './platform/http/spa';
 
 export interface AppDeps {
   db: Db;
@@ -25,6 +26,8 @@ export interface AppDeps {
   reviewPolicy?: ReviewPolicy;
   /** Proxies in front of the API that append to `x-forwarded-for`. Defaults to 1 (Railway's edge). */
   trustedProxyHops?: number;
+  /** Directory of the built web app. When set, the API serves it for every non-`/api` GET. */
+  webDistDir?: string;
 }
 
 const healthRoute = createRoute({
@@ -70,6 +73,9 @@ export function createApp(deps: AppDeps) {
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 
   app.doc('/api/openapi.json', { openapi: '3.0.0', info: { title: 'AMDB API', version: '0.1.0' } });
+
+  // Last, so it only sees what no API route answered.
+  if (deps.webDistDir) app.route('/', serveSpa(deps.webDistDir));
 
   return app;
 }

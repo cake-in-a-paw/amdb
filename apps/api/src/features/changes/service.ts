@@ -32,6 +32,8 @@ import {
   scrubRedacted,
   assertUndoable,
   currentContent,
+  duplicateExternalId,
+  duplicateSlug,
   fieldsOf,
   type Inverse,
   InverseSchema,
@@ -253,6 +255,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           const parsed = FieldsFor[change.kind].safeParse(change.fields);
           if (!parsed.success) throw invalidFields(index, parsed.error);
           const payload: Record<string, unknown> = parsed.data;
+          if (change.kind === 'tag' && typeof payload.slug === 'string') {
+            const existing = await repo.findTagBySlug(payload.slug);
+            if (existing) throw duplicateSlug(payload.slug, existing);
+          }
           // A resubmitted create keeps the id its first submission reserved.
           const entityId = reservedId ?? randomUUID();
           const mediaType = payload.mediaType;
@@ -311,6 +317,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
               'invalid_relation',
               `Change ${index + 1}: ${change.type} data ${missing.length ? `needs ${missing.join(', ')}` : `can't have ${extra.join(', ')}`}`,
             );
+          }
+          if (change.type === 'external_id' && change.data.scheme && change.data.value) {
+            const holder = await repo.findExternalIdHolder(change.data.scheme, change.data.value);
+            if (holder) throw duplicateExternalId(change.data.scheme, change.data.value, holder);
           }
           if (change.type === 'work_creator') {
             if (!from.mediaType)
@@ -687,7 +697,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           if (current && !input.removeEntity) {
             throw conflict(
               'content_is_current',
-              'This change’s content is live; pass removeEntity to take it down too',
+              'This change’s content is live; pass removeEntity: true to take it down too',
               {
                 entityId: current.entityId,
                 relationId: current.relationId,

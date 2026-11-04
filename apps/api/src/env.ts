@@ -15,6 +15,8 @@ const EnvSchema = z.object({
   EMAIL_FROM: z.string().min(1),
   /** Proxies in front of the API that append to X-Forwarded-For; the client is that many entries from the right. */
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(1).default(1),
+  /** Directory of the built web app to serve alongside the API. Unset means the API serves no web app. */
+  WEB_DIST_DIR: z.string().min(1).optional(),
   /** Comma-separated addresses; an account created with one of them is an admin. Unset means none. */
   ADMIN_EMAILS: z
     .string()

@@ -209,15 +209,16 @@ it('under a publish policy, a change that conflicts when applied is held and the
       ref,
       fields: { kind: 'genre', name: 'Drama', slug: 'drama' },
     });
-    await submit(author, [tag('a')]);
+    // Both tags are checked before either exists, so the duplicate only shows when it is applied.
     const second = await submit(author, [
+      tag('a'),
       tag('b'),
       { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Keep me', kind: 'person' } },
     ]);
-    expect(second.changes.map((c) => c.status)).toEqual(['pending', 'published']);
+    expect(second.changes.map((c) => c.status)).toEqual(['published', 'pending', 'published']);
     const detail = (await (await author.get(`/api/submissions/${second.id}`)).json()) as Detail;
-    expect(detail.changes.map((c) => c.status)).toEqual(['pending', 'published']);
-    expect((await t.as({ kind: 'none' }).get(`/api/entities/${second.changes[1]!.entityId}`)).status).toBe(200);
+    expect(detail.changes.map((c) => c.status)).toEqual(['published', 'pending', 'published']);
+    expect((await t.as({ kind: 'none' }).get(`/api/entities/${second.changes[2]!.entityId}`)).status).toBe(200);
   } finally {
     await t.close();
   }

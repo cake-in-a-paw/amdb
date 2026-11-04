@@ -328,7 +328,10 @@ fixes it.
   setting doesn't, the limit keys on the wrong entry (too low: spoofable; too high: every client
   shares a bucket). Requests without a trustworthy address share one bucket. Better Auth reads
   the address its own way; check it matches before relying on its limits.
-- No bot protection for anonymous submissions yet (§11): a limit per address is the only guard.
+- *No bot protection on anonymous writes.* Hold-all means spam reaches only the moderators'
+  queue, and a per-address limit caps it. Add a challenge (e.g. Turnstile) if the queue fills.
+- *Reads are public until plan 4.* Spec §7 wants an API key on reads. Plan 2 deploys reads
+  without a key. Plan 4 adds keys and metering.
 
 **Queries without the index they need**
 
@@ -347,9 +350,6 @@ fixes it.
 
 **Schema and operations**
 
-- Migrations 0005 and 0006 have no backfill, and 0006 adds `tags.name_norm` `NOT NULL` without a
-  default, so it fails on a populated table. Nothing is deployed yet: squash or add backfills
-  before the first deploy (plan 2).
 - `ADMIN_EMAILS` grants admin only when an account is created; adding an address later does
   nothing for an existing account.
 - The last admin can demote themselves; recovery then needs a database edit.

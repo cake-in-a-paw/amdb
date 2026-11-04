@@ -148,7 +148,9 @@ it('redacting a current relate with removeEntity removes the relation, not its e
     const work = made.changes[0]!.entityId!;
     const relate = made.changes[2]!.id;
     const bare = await redact(admin, relate, { reason: 'Wrong' });
-    expect(await code(bare)).toBe('content_is_current');
+    const refusal = (await bare.json()) as Err & { error: { message: string } };
+    expect(refusal.error.code).toBe('content_is_current');
+    expect(refusal.error.message).toContain('removeEntity: true');
     const res = await redact(admin, relate, { reason: 'Wrong', removeEntity: true });
     expect(res.status, await res.clone().text()).toBe(200);
     const entity = (await (await anon.get(`/api/entities/${work}`)).json()) as { relations: { creators: unknown[] } };

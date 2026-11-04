@@ -196,12 +196,11 @@ export interface ChangesRoutesOptions {
 export function changesRoutes(changes: ChangesService, { trustedProxyHops }: ChangesRoutesOptions) {
   const app = createApi();
 
-  // Anonymous submissions, per anonymous token and per client address. Tokens are free to mint,
+  // Anonymous submissions and resubmits, per anonymous token and per client address. Tokens are free to mint,
   // so the address is the limit that holds; requests without a trustworthy one share a bucket.
   const anonPost = (bucket: (c: Context<AppEnv>) => string) => (c: Context<AppEnv>) =>
     c.req.method === 'POST' && c.var.actor.kind === 'anon' ? bucket(c) : null;
-  app.use(
-    '/api/submissions',
+  const limits = [
     rateLimit({
       limit: ANON_LIMIT,
       windowMs: ANON_WINDOW_MS,
@@ -212,7 +211,10 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
       windowMs: ANON_WINDOW_MS,
       key: anonPost((c) => `ip:${clientIp(c, trustedProxyHops) ?? 'unknown'}`),
     }),
-  );
+  ];
+  // A resubmit is a submission too, so it draws on the same buckets.
+  app.use('/api/submissions', ...limits);
+  app.use('/api/changes/:id/resubmit', ...limits);
 
   app.openapi(createSubmissionRoute, async (c) => {
     const created = await changes.createSubmission(c.var.actor, c.req.valid('json'));

@@ -1,4 +1,5 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
 const work = {
@@ -332,4 +333,114 @@ it('CORS lets the web app send the anonymous token and read Retry-After and Loca
   } finally {
     await t.close();
   }
+});
+
+it('anonymous resubmits draw on the same limit as anonymous submits', async () => {
+  const t = await setupTest();
+  try {
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const first = (await (await anonPost(t, token('a'), '198.51.100.1')).json()) as Created;
+    const rejected = await mod.post(`/api/changes/${first.changes[0]!.id}/reject`, { reason: 'Not enough' });
+    expect(rejected.status).toBe(200);
+    const resubmit = (tok: string, ip: string) =>
+      t.app.request(`/api/changes/${first.changes[0]!.id}/resubmit`, {
+        method: 'POST',
+        headers: { 'x-amdb-anon': tok, 'content-type': 'application/json', 'x-forwarded-for': ip },
+        body: '{}',
+      });
+    // The submit above is the 1st request; the first resubmit succeeds, later ones are 409 but still count.
+    expect((await resubmit(token('a'), '198.51.100.1')).status).toBe(201);
+    for (let i = 0; i < 18; i++) expect((await resubmit(token('a'), '198.51.100.1')).status).toBe(409);
+    await expectLimited(await resubmit(token('a'), '198.51.100.1'));
+    // The same bucket also stops a plain submit from that address.
+    await expectLimited(await anonPost(t, token('b'), '198.51.100.1'));
+  } finally {
+    await t.close();
+  }
+});
+
+const tag = (slug: string, ref = 't') => ({
+  op: 'create',
+  kind: 'tag',
+  ref,
+  fields: { kind: 'genre', name: `Tag ${slug}`, slug },
+});
+const extId = (value: string) => ({
+  op: 'relate',
+  type: 'external_id',
+  from: { ref: 'w' },
+  data: { scheme: 'imdb', value },
+});
+
+describe('duplicate tag slugs and external ids', () => {
+  it('a submitted tag whose slug exists is 409 duplicate_slug with existingId', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const made = await publish(author, mod, [tag('noir')]);
+      const res = await author.post('/api/submissions', submission([tag('noir')]));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: { code: 'duplicate_slug', details: { existingId: made.changes[0]!.entityId } },
+      });
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('a submitted external id that exists is 409 duplicate_external_id with existingId', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const made = await publish(author, mod, [work, extId('tt2543164')]);
+      const res = await author.post('/api/submissions', submission([work, extId('tt2543164')]));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: { code: 'duplicate_external_id', details: { existingId: made.changes[0]!.entityId } },
+      });
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('approving a tag whose slug appeared meanwhile is 409 duplicate_slug, and the change stays pending', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const a = await submit(author, [tag('noir')]);
+      const b = await submit(author, [tag('noir')]);
+      expect((await mod.post(`/api/changes/${a.changes[0]!.id}/approve`)).status).toBe(200);
+      const res = await mod.post(`/api/changes/${b.changes[0]!.id}/approve`);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: { code: 'duplicate_slug', details: { existingId: a.changes[0]!.entityId } },
+      });
+      const detail = (await (await author.get(`/api/submissions/${b.id}`)).json()) as { changes: { status: string }[] };
+      expect(detail.changes[0]?.status).toBe('pending');
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('approving an external id that appeared meanwhile is 409 duplicate_external_id', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const a = await submit(author, [work, extId('tt2543164')]);
+      const b = await submit(author, [work, extId('tt2543164')]);
+      for (const c of a.changes) expect((await mod.post(`/api/changes/${c.id}/approve`)).status).toBe(200);
+      expect((await mod.post(`/api/changes/${b.changes[0]!.id}/approve`)).status).toBe(200);
+      const res = await mod.post(`/api/changes/${b.changes[1]!.id}/approve`);
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({
+        error: { code: 'duplicate_external_id', details: { existingId: a.changes[0]!.entityId } },
+      });
+    } finally {
+      await t.close();
+    }
+  });
 });

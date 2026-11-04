@@ -6,9 +6,9 @@ import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
 import { mergeFamily, resolveWinner } from '../../platform/db/merge';
-import { badRequest, conflict } from '../../platform/http/errors';
+import { type ApiError, badRequest, conflict, isUniqueViolation } from '../../platform/http/errors';
 import { normalizeTitle } from '../catalog/normalize';
-import type { ChangeRow } from './repository';
+import { type ChangeRow, changesRepository } from './repository';
 import { MergePayload, REDACTED_VALUE, RedactedValue, RelatePayload, UnrelatePayload } from './schemas';
 
 /**
@@ -136,8 +136,17 @@ async function writeRow(
     case 'tag': {
       const f = parseFields(FieldsFor.tag, input);
       const values = { kind: f.kind, name: f.name, nameNorm: normalizeTitle(f.name), slug: f.slug };
-      if (mode === 'insert') await tx.insert(tags).values({ entityId: id, ...values });
-      else await tx.update(tags).set(values).where(eq(tags.entityId, id));
+      await writeUnique(
+        tx,
+        (sp) =>
+          mode === 'insert'
+            ? sp.insert(tags).values({ entityId: id, ...values })
+            : sp.update(tags).set(values).where(eq(tags.entityId, id)),
+        async () => {
+          const existing = await changesRepository(tx).findTagBySlug(f.slug);
+          return existing ? duplicateSlug(f.slug, existing) : null;
+        },
+      );
       return;
     }
   }
@@ -201,6 +210,27 @@ function targetOf(change: ChangeRow): string {
   return change.entityId;
 }
 
+/** 409 for a tag slug that another tag already holds. */
+export const duplicateSlug = (slug: string, existingId: string) =>
+  conflict('duplicate_slug', `The slug "${slug}" is already in use`, { existingId });
+
+/** 409 for an external id that another entity already holds. */
+export const duplicateExternalId = (scheme: string, value: string, existingId: string) =>
+  conflict('duplicate_external_id', `${scheme} ${value} is already recorded`, { existingId });
+
+/**
+ * Runs `write` in a savepoint; a unique violation (a slug or external id that appeared since the
+ * change was checked) becomes `duplicate()`'s 409. Any other violation is rethrown as is.
+ */
+async function writeUnique(tx: Tx, write: (sp: Tx) => Promise<unknown>, duplicate: () => Promise<ApiError | null>) {
+  try {
+    await tx.transaction(write);
+  } catch (err) {
+    if (!isUniqueViolation(err)) throw err;
+    throw (await duplicate()) ?? err;
+  }
+}
+
 /** Applies one change to current state in `tx`, returning its inverse. Throws ApiError on conflict. */
 export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
   const fields = fieldsOf(change.payload);
@@ -262,18 +292,27 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       const from = ends(p.from);
       const to = p.to ? ends(p.to) : null;
       const relationId = randomUUID();
-      await tx.insert(relations).values({
-        id: relationId,
-        type: p.type,
-        fromId: from,
-        toId: to,
-        role: p.data.role ?? null,
-        position: p.data.position ?? null,
-        linkType: p.data.linkType ?? null,
-        scheme: p.data.scheme ?? null,
-        value: p.data.value ?? null,
-        createdByChange: change.id,
-      });
+      await writeUnique(
+        tx,
+        (sp) =>
+          sp.insert(relations).values({
+            id: relationId,
+            type: p.type,
+            fromId: from,
+            toId: to,
+            role: p.data.role ?? null,
+            position: p.data.position ?? null,
+            linkType: p.data.linkType ?? null,
+            scheme: p.data.scheme ?? null,
+            value: p.data.value ?? null,
+            createdByChange: change.id,
+          }),
+        async () => {
+          const { scheme, value } = p.data;
+          const holder = scheme && value ? await changesRepository(tx).findExternalIdHolder(scheme, value) : null;
+          return holder && scheme && value ? duplicateExternalId(scheme, value, holder) : null;
+        },
+      );
       return { op: 'remove_relation', relationId };
     }
     case 'unrelate': {

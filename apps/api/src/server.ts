@@ -20,6 +20,7 @@ const app = createApp({
   authHandler: (request) => auth.handler(request),
   webOrigin: env.WEB_ORIGIN,
   trustedProxyHops: env.TRUSTED_PROXY_HOPS,
+  webDistDir: env.WEB_DIST_DIR,
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {
