@@ -3,7 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Cc0Agreement } from '@/components/cc0-agreement';
 import { EntryForm } from '@/components/entry-form';
-import { fieldClass } from '@/components/form-fields';
+import { NoteField } from '@/components/note-field';
 import { SubmissionResult } from '@/components/submission-result';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
@@ -13,6 +13,7 @@ import { linkClass } from '@/lib/styles';
 import {
   buildSubmission,
   emptyForm,
+  isEntryForm,
   validateForm,
   type EntryForm as EntryFormValue,
   type FormErrors,
@@ -34,7 +35,7 @@ function Submit() {
   const { api } = Route.useRouteContext();
   const { title } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [form, setForm, clearDraft] = useDraft<EntryFormValue>('submit', EMPTY);
+  const [form, setForm, clearDraft] = useDraft<EntryFormValue>('submit', EMPTY, isEntryForm);
   const [cc0, setCc0] = useState(false);
   // Errors show once a submit was tried, then follow the form as it changes.
   const [checked, setChecked] = useState(false);
@@ -101,18 +102,7 @@ function Submit() {
       </p>
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
         <EntryForm value={form} onChange={setForm} errors={errors} />
-        <div className="grid gap-1">
-          <label htmlFor="submit-note" className="text-sm font-medium">
-            Note for the moderator <span className="font-normal text-muted-foreground">(optional)</span>
-          </label>
-          <textarea
-            id="submit-note"
-            rows={2}
-            value={form.note}
-            onChange={(e) => setForm({ ...form, note: e.target.value })}
-            className={`${fieldClass} py-2`}
-          />
-        </div>
+        <NoteField id="submit-note" value={form.note} onChange={(note) => setForm({ ...form, note })} />
         <Cc0Agreement checked={cc0} onChange={setCc0} />
         {submit.isError && (
           <div role="alert" className="flex flex-wrap items-center gap-x-3 text-destructive">

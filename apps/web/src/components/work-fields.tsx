@@ -20,6 +20,18 @@ interface Props {
   errors: FormErrors;
 }
 
+/** What differs when the form changes an entry that exists, or a rejected change's fields. */
+export interface WorkOptions {
+  /** The entry being edited, left out of its own duplicate check. */
+  entityId?: string | undefined;
+  /** The kind of entry can't be changed. */
+  lockKind?: boolean | undefined;
+  /** The media type can't be changed. */
+  lockMediaType?: boolean | undefined;
+  /** Show the relation sections (credits, series and so on); a rejected create's fields have none. */
+  relations?: boolean | undefined;
+}
+
 const monthOptions = Object.fromEntries(
   [
     'January',
@@ -40,7 +52,14 @@ const monthOptions = Object.fromEntries(
 const asMediaType = (raw: string | undefined): MediaType | null => (raw === 'book' || raw === 'film_tv' ? raw : null);
 
 /** A work's fields, chosen by media type, and its relations: credits, series, properties, tags, links and ids. */
-export function WorkFields({ value, onChange, errors }: Props) {
+export function WorkFields({
+  value,
+  onChange,
+  errors,
+  entityId,
+  lockMediaType = false,
+  relations = true,
+}: Props & WorkOptions) {
   const props = { value, onChange, errors };
   const mediaType = asMediaType(value.fields.mediaType);
 
@@ -63,6 +82,7 @@ export function WorkFields({ value, onChange, errors }: Props) {
           <select
             {...fieldProps('mediaType', errors)}
             value={value.fields.mediaType ?? ''}
+            disabled={lockMediaType}
             onChange={(e) => changeMediaType(e.target.value)}
             className={fieldClass}
           >
@@ -78,7 +98,12 @@ export function WorkFields({ value, onChange, errors }: Props) {
       </div>
       <div className="grid gap-4">
         <TextField name="title" label="Title" {...props} />
-        <DuplicateCheck kind="work" title={value.fields.title ?? ''} mediaType={mediaType ?? undefined} />
+        <DuplicateCheck
+          kind="work"
+          title={value.fields.title ?? ''}
+          mediaType={mediaType ?? undefined}
+          excludeId={entityId}
+        />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
       </div>
       <fieldset className="grid gap-4 sm:grid-cols-3">
@@ -99,7 +124,7 @@ export function WorkFields({ value, onChange, errors }: Props) {
         {mediaType && <TextField name="originalLanguage" label="Original language" hint="(e.g. ja)" {...props} />}
       </div>
       <DescriptionField {...props} />
-      <WorkRelations {...props} mediaType={mediaType} />
+      {relations && <WorkRelations {...props} mediaType={mediaType} />}
     </div>
   );
 }

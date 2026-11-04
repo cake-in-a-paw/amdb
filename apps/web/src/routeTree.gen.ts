@@ -17,7 +17,9 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SubmitRouteImport } from './routes/submit'
 import { Route as EntitiesIdRouteImport } from './routes/entities.$id'
 import { Route as MeSubmissionsRouteImport } from './routes/me.submissions'
+import { Route as ChangesIdResubmitRouteImport } from './routes/changes.$id.resubmit'
 import { Route as EntitiesIdIndexRouteImport } from './routes/entities.$id.index'
+import { Route as EntitiesIdEditRouteImport } from './routes/entities.$id.edit'
 import { Route as EntitiesIdHistoryRouteImport } from './routes/entities.$id.history'
 
 const IndexRoute = IndexRouteImport.update({
@@ -60,9 +62,19 @@ const MeSubmissionsRoute = MeSubmissionsRouteImport.update({
   path: '/me/submissions',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChangesIdResubmitRoute = ChangesIdResubmitRouteImport.update({
+  id: '/changes/$id/resubmit',
+  path: '/changes/$id/resubmit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EntitiesIdIndexRoute = EntitiesIdIndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => EntitiesIdRoute,
+} as any)
+const EntitiesIdEditRoute = EntitiesIdEditRouteImport.update({
+  id: '/edit',
+  path: '/edit',
   getParentRoute: () => EntitiesIdRoute,
 } as any)
 const EntitiesIdHistoryRoute = EntitiesIdHistoryRouteImport.update({
@@ -80,6 +92,8 @@ export interface FileRoutesByFullPath {
   '/submit': typeof SubmitRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
+  '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
+  '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id/': typeof EntitiesIdIndexRoute
 }
@@ -91,6 +105,8 @@ export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/submit': typeof SubmitRoute
   '/me/submissions': typeof MeSubmissionsRoute
+  '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
+  '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id': typeof EntitiesIdIndexRoute
 }
@@ -104,6 +120,8 @@ export interface FileRoutesById {
   '/submit': typeof SubmitRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
+  '/changes/$id/resubmit': typeof ChangesIdResubmitRoute
+  '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id/': typeof EntitiesIdIndexRoute
 }
@@ -118,6 +136,8 @@ export interface FileRouteTypes {
     | '/submit'
     | '/entities/$id'
     | '/me/submissions'
+    | '/changes/$id/resubmit'
+    | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id/'
   fileRoutesByTo: FileRoutesByTo
@@ -129,6 +149,8 @@ export interface FileRouteTypes {
     | '/sign-in'
     | '/submit'
     | '/me/submissions'
+    | '/changes/$id/resubmit'
+    | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id'
   id:
@@ -141,6 +163,8 @@ export interface FileRouteTypes {
     | '/submit'
     | '/entities/$id'
     | '/me/submissions'
+    | '/changes/$id/resubmit'
+    | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id/'
   fileRoutesById: FileRoutesById
@@ -154,6 +178,7 @@ export interface RootRouteChildren {
   SubmitRoute: typeof SubmitRoute
   EntitiesIdRoute: typeof EntitiesIdRouteWithChildren
   MeSubmissionsRoute: typeof MeSubmissionsRoute
+  ChangesIdResubmitRoute: typeof ChangesIdResubmitRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -214,11 +239,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MeSubmissionsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/changes/$id/resubmit': {
+      id: '/changes/$id/resubmit'
+      path: '/changes/$id/resubmit'
+      fullPath: '/changes/$id/resubmit'
+      preLoaderRoute: typeof ChangesIdResubmitRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/entities/$id/': {
       id: '/entities/$id/'
       path: '/'
       fullPath: '/entities/$id/'
       preLoaderRoute: typeof EntitiesIdIndexRouteImport
+      parentRoute: typeof EntitiesIdRoute
+    }
+    '/entities/$id/edit': {
+      id: '/entities/$id/edit'
+      path: '/edit'
+      fullPath: '/entities/$id/edit'
+      preLoaderRoute: typeof EntitiesIdEditRouteImport
       parentRoute: typeof EntitiesIdRoute
     }
     '/entities/$id/history': {
@@ -232,11 +271,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface EntitiesIdRouteChildren {
+  EntitiesIdEditRoute: typeof EntitiesIdEditRoute
   EntitiesIdHistoryRoute: typeof EntitiesIdHistoryRoute
   EntitiesIdIndexRoute: typeof EntitiesIdIndexRoute
 }
 
 const EntitiesIdRouteChildren: EntitiesIdRouteChildren = {
+  EntitiesIdEditRoute: EntitiesIdEditRoute,
   EntitiesIdHistoryRoute: EntitiesIdHistoryRoute,
   EntitiesIdIndexRoute: EntitiesIdIndexRoute,
 }
@@ -254,6 +295,7 @@ const rootRouteChildren: RootRouteChildren = {
   SubmitRoute: SubmitRoute,
   EntitiesIdRoute: EntitiesIdRouteWithChildren,
   MeSubmissionsRoute: MeSubmissionsRoute,
+  ChangesIdResubmitRoute: ChangesIdResubmitRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

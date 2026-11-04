@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { PendingEdits } from '@/components/pending-edits';
 import { ListPage } from '@/components/list-page';
 import { WorkPage } from '@/components/work-page';
 import { entityQueryOptions } from '@/lib/entity';
@@ -12,5 +13,10 @@ function Entry() {
   const { api } = Route.useRouteContext();
   const { data: entity } = useQuery(entityQueryOptions(api, id));
   if (!entity) return null;
-  return entity.kind === 'work' ? <WorkPage entity={entity} /> : <ListPage entity={entity} />;
+  return (
+    <>
+      <PendingEdits entityId={entity.id} />
+      {entity.kind === 'work' ? <WorkPage entity={entity} /> : <ListPage entity={entity} />}
+    </>
+  );
 }

@@ -8,8 +8,8 @@ import { entityQueryKey, entityQueryOptions } from '@/lib/entity';
 export const Route = createFileRoute('/entities/$id')({ component: EntityLayout });
 
 /**
- * Everything under `/entities/$id`: loads the entry once for the page and its history (and, later,
- * its edit form), says so if it is unknown, removed or unreachable, and sends a merged id to the
+ * Everything under `/entities/$id`: loads the entry once for the page and its history and its edit
+ * form, says so if it is unknown, removed or unreachable, and sends a merged id to the
  * winner. The pages below read the same query from the cache.
  */
 function EntityLayout() {
@@ -17,6 +17,7 @@ function EntityLayout() {
   const { api, queryClient } = Route.useRouteContext();
   const router = useRouter();
   const onHistory = useMatch({ from: '/entities/$id/history', shouldThrow: false }) !== undefined;
+  const onEdit = useMatch({ from: '/entities/$id/edit', shouldThrow: false }) !== undefined;
   const entity = useQuery(entityQueryOptions(api, id));
   // `fetch` followed the API's 308, so a different id in the answer means this one was merged.
   const winnerId = entity.data && entity.data.id !== id ? entity.data.id : null;
@@ -25,13 +26,13 @@ function EntityLayout() {
     if (!winnerId || !entity.data) return;
     queryClient.setQueryData(entityQueryKey(winnerId), entity.data);
     // Replace, not push: Back shouldn't land on the dead id and bounce forward again.
-    // A page under the entry (its history; Task 9 adds edit here) stays on that page for the winner.
+    // A page under the entry (its history, its edit form) stays on that page for the winner.
     void router.navigate({
-      to: onHistory ? '/entities/$id/history' : '/entities/$id',
+      to: onHistory ? '/entities/$id/history' : onEdit ? '/entities/$id/edit' : '/entities/$id',
       params: { id: winnerId },
       replace: true,
     });
-  }, [winnerId, entity.data, onHistory, queryClient, router]);
+  }, [winnerId, entity.data, onHistory, onEdit, queryClient, router]);
 
   if (entity.isPending || winnerId) return <Loading what="this entry" />;
   if (entity.isError) {

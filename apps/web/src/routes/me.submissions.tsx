@@ -120,10 +120,9 @@ function SubmissionItem({ submission }: { submission: Submission }) {
             <span className="font-serif text-lg">{describeChange(change)}</span>
             <ChangeStatus status={change.status} reason={reasons.get(change.id)} />
             {change.status === 'rejected' && (
-              // Task 9 adds this route; until then it is a plain link, as the shell's other future routes are.
-              <a href={`/changes/${change.id}/resubmit`} className={linkClass}>
+              <Link to="/changes/$id/resubmit" params={{ id: change.id }} className={linkClass}>
                 Fix and resubmit
-              </a>
+              </Link>
             )}
           </li>
         ))}

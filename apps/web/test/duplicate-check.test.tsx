@@ -51,7 +51,7 @@ test('"  amelie " finds the existing Amélie and the pending one, which shows on
   );
   expect(within(match).getByRole('link', { name: 'Edit this instead' })).toHaveAttribute(
     'href',
-    `/entities/${t.seeded.works.amelie}`,
+    `/entities/${t.seeded.works.amelie}/edit`,
   );
 
   const pending = within(within(region).getByRole('list', { name: 'Pending review' })).getByRole('listitem');
@@ -90,4 +90,17 @@ test('no matches says so, and a failed check says so without blocking the form',
 
   expect(await screen.findByText(/Couldn't check for duplicates/)).toBeInTheDocument();
   expect(screen.getByLabelText('Title')).toBeEnabled();
+});
+
+test('a tag name is checked too: the duplicate check accepts kind=tag', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed });
+
+  await t.user.click(screen.getByLabelText('Tag'));
+  await t.user.type(screen.getByLabelText('Name'), 'fantas');
+
+  const existing = await screen.findByRole('list', { name: 'Already in the catalog' });
+  expect(within(existing).getByRole('link', { name: 'Fantasy' })).toHaveAttribute(
+    'href',
+    `/entities/${t.seeded.tags.fantasy}`,
+  );
 });

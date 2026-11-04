@@ -1,16 +1,9 @@
-import {
-  CreatorRole,
-  FieldsFor,
-  type EntityKind,
-  type IdScheme,
-  type MediaType,
-  type WorkLinkType,
-} from '@amdb/shared';
+import { CreatorRole, EntityKind, FieldsFor, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
 import type { paths } from '@amdb/shared/api';
 
 export type SubmissionInput = paths['/api/submissions']['post']['requestBody']['content']['application/json'];
 export type SubmissionCreated = paths['/api/submissions']['post']['responses'][201]['content']['application/json'];
-type ChangeInput = SubmissionInput['changes'][number];
+export type ChangeInput = SubmissionInput['changes'][number];
 
 /**
  * An entry a relation points at: one already in the catalog (by id), or one made inline with
@@ -18,6 +11,11 @@ type ChangeInput = SubmissionInput['changes'][number];
  */
 export type Picked =
   { id: string; title: string } | { ref: string; title: string; kind: EntityKind; fields: Record<string, unknown> };
+
+/** A relation row's `relationId` is set on a row loaded from an existing entry, and only then. */
+interface Row {
+  relationId?: string | undefined;
+}
 
 /**
  * Everything the entry form holds, as plain JSON so it can be saved as a draft. Field inputs are
@@ -27,13 +25,46 @@ export type Picked =
 export interface EntryForm {
   kind: EntityKind;
   fields: Record<string, string>;
-  credits: { entity: Picked; role: string }[];
-  series: { entity: Picked; position: string }[];
-  properties: { entity: Picked }[];
-  tags: { entity: Picked }[];
-  links: { entity: Picked; linkType: WorkLinkType }[];
-  externalIds: { scheme: IdScheme | ''; value: string }[];
+  credits: (Row & { entity: Picked; role: string })[];
+  series: (Row & { entity: Picked; position: string })[];
+  properties: (Row & { entity: Picked })[];
+  tags: (Row & { entity: Picked })[];
+  links: (Row & { entity: Picked; linkType: WorkLinkType })[];
+  externalIds: (Row & { scheme: IdScheme | ''; value: string })[];
   note: string;
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+const isText = (v: unknown): v is string => typeof v === 'string';
+const rowsOf = (v: unknown, ok: (row: Record<string, unknown>) => boolean) =>
+  Array.isArray(v) &&
+  v.every((row) => isRecord(row) && (row.relationId === undefined || isText(row.relationId)) && ok(row));
+
+function isPicked(v: unknown): v is Picked {
+  if (!isRecord(v) || !isText(v.title)) return false;
+  if (isText(v.id)) return true;
+  return isText(v.ref) && EntityKind.safeParse(v.kind).success && isRecord(v.fields);
+}
+
+/**
+ * Whether `v` is a form this version can show. A draft is JSON a person's browser kept, possibly
+ * from an older version or damaged (`null`, a changed nested shape); one that fails this is dropped
+ * for a fresh form instead of crashing the page.
+ */
+export function isEntryForm(v: unknown): v is EntryForm {
+  return (
+    isRecord(v) &&
+    EntityKind.safeParse(v.kind).success &&
+    isRecord(v.fields) &&
+    Object.values(v.fields).every(isText) &&
+    isText(v.note) &&
+    rowsOf(v.credits, (r) => isPicked(r.entity) && isText(r.role)) &&
+    rowsOf(v.series, (r) => isPicked(r.entity) && isText(r.position)) &&
+    rowsOf(v.properties, (r) => isPicked(r.entity)) &&
+    rowsOf(v.tags, (r) => isPicked(r.entity)) &&
+    rowsOf(v.links, (r) => isPicked(r.entity) && WorkLinkType.safeParse(r.linkType).success) &&
+    rowsOf(v.externalIds, (r) => (r.scheme === '' || IdScheme.safeParse(r.scheme).success) && isText(r.value))
+  );
 }
 
 export const emptyForm = (): EntryForm => ({
@@ -104,6 +135,24 @@ export function toFields(kind: EntityKind, inputs: Record<string, string>): Reco
   return fields;
 }
 
+/** The inverse of `toFields`: an entry's API fields as the form's typed-in inputs. */
+export function toInputs(kind: EntityKind, fields: Record<string, unknown>): Record<string, string> {
+  const inputs: Record<string, string> = {};
+  const take = (source: Record<string, unknown>, key: string) => {
+    const v = source[key];
+    if (typeof v === 'string' || typeof v === 'number') inputs[key] = String(v);
+  };
+  for (const key of stringKeys[kind]) take(fields, key);
+  if (kind !== 'work') return inputs;
+  for (const key of workNumberKeys) take(fields, key);
+  const attributes = fields.attributes;
+  if (typeof attributes === 'object' && attributes !== null) {
+    for (const { key } of [...attributeKeys.film_tv, ...attributeKeys.book])
+      take(attributes as Record<string, unknown>, key); // narrowed to an object just above
+  }
+  return inputs;
+}
+
 const endpoint = (picked: Picked) => ('id' in picked ? { id: picked.id } : { ref: picked.ref });
 
 /** Every entry the form names, in order: what each relation points at. */
@@ -114,41 +163,47 @@ function pickedEntries(form: EntryForm): Picked[] {
 }
 
 /**
- * The form as one submission: the entry's `create`, then a `create` for each entry made inline
- * (once, however many rows name it), then the relates, so every ref names an earlier create.
+ * The changes for the relations the form holds, for the entry named `entry`: a `create` for each
+ * entry made inline (once, however many rows name it), then the `relate`s, so every ref names an
+ * earlier create. A work's only; other kinds have no relation rows.
  */
+export function relationChanges(form: EntryForm, entry: { id: string } | { ref: string }): ChangeInput[] {
+  const changes: ChangeInput[] = [];
+  const made = new Set<string>();
+  for (const picked of pickedEntries(form)) {
+    if ('id' in picked || made.has(picked.ref)) continue;
+    made.add(picked.ref);
+    changes.push({ op: 'create', kind: picked.kind, ref: picked.ref, fields: picked.fields });
+  }
+  const relate = (
+    type: Extract<ChangeInput, { op: 'relate' }>['type'],
+    from: { id: string } | { ref: string },
+    to: { id: string } | { ref: string } | undefined,
+    data: Extract<ChangeInput, { op: 'relate' }>['data'] = {},
+  ) => changes.push({ op: 'relate', type, from, ...(to ? { to } : {}), data });
+
+  for (const c of form.credits) relate('work_creator', entry, endpoint(c.entity), { role: c.role });
+  for (const s of form.series) {
+    relate('series_work', endpoint(s.entity), entry, { position: Number(s.position.trim()) });
+  }
+  for (const p of form.properties) relate('property_work', endpoint(p.entity), entry);
+  for (const tag of form.tags) relate('work_tag', entry, endpoint(tag.entity));
+  for (const l of form.links) relate('work_link', entry, endpoint(l.entity), { linkType: l.linkType });
+  for (const x of form.externalIds) {
+    // An unchosen scheme never gets here: `validateForm` stops the submission first.
+    if (x.scheme) relate('external_id', entry, undefined, { scheme: x.scheme, value: x.value.trim() });
+  }
+  return changes;
+}
+
+/** The form as one submission: the entry's `create`, then `relationChanges` for a work. */
 export function buildSubmission(form: EntryForm): SubmissionInput {
   const entry = { ref: ENTRY_REF };
+  const note = form.note.trim();
   const changes: ChangeInput[] = [
     { op: 'create', kind: form.kind, ref: ENTRY_REF, fields: toFields(form.kind, form.fields) },
+    ...(form.kind === 'work' ? relationChanges(form, entry) : []),
   ];
-  const note = form.note.trim();
-  if (form.kind === 'work') {
-    const made = new Set<string>();
-    for (const picked of pickedEntries(form)) {
-      if ('id' in picked || made.has(picked.ref)) continue;
-      made.add(picked.ref);
-      changes.push({ op: 'create', kind: picked.kind, ref: picked.ref, fields: picked.fields });
-    }
-    const relate = (
-      type: Extract<ChangeInput, { op: 'relate' }>['type'],
-      from: { id: string } | { ref: string },
-      to: { id: string } | { ref: string } | undefined,
-      data: Extract<ChangeInput, { op: 'relate' }>['data'] = {},
-    ) => changes.push({ op: 'relate', type, from, ...(to ? { to } : {}), data });
-
-    for (const c of form.credits) relate('work_creator', entry, endpoint(c.entity), { role: c.role });
-    for (const s of form.series) {
-      relate('series_work', endpoint(s.entity), entry, { position: Number(s.position.trim()) });
-    }
-    for (const p of form.properties) relate('property_work', endpoint(p.entity), entry);
-    for (const tag of form.tags) relate('work_tag', entry, endpoint(tag.entity));
-    for (const l of form.links) relate('work_link', entry, endpoint(l.entity), { linkType: l.linkType });
-    for (const x of form.externalIds) {
-      // An unchosen scheme never gets here: `validateForm` stops the submission first.
-      if (x.scheme) relate('external_id', entry, undefined, { scheme: x.scheme, value: x.value.trim() });
-    }
-  }
   return { cc0: true, ...(note ? { note } : {}), changes };
 }
 

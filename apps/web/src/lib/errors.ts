@@ -26,6 +26,9 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
     case 'invalid_relation':
     case 'invalid_role':
       return "Some of this isn't valid. Check it and try again.";
+    case 'unknown_entity':
+    case 'unknown_ref':
+      return "An entry named here doesn't exist (any more). Check it and try again.";
     case 'duplicate_slug':
       return 'A tag with that slug already exists.';
     case 'duplicate_external_id':
@@ -76,4 +79,19 @@ export function existingIdOf(error: unknown): string | null {
   if (!(error instanceof ApiError) || typeof error.details !== 'object' || error.details === null) return null;
   const id: unknown = 'existingId' in error.details ? error.details.existingId : undefined;
   return typeof id === 'string' ? id : null;
+}
+
+/** `describeError` for resubmitting a rejected change, where the state of the change is the usual trouble. */
+export function describeResubmitError(error: unknown): string {
+  if (error instanceof ApiError) {
+    switch (error.code) {
+      case 'not_rejected':
+        return 'Only a rejected change can be resubmitted.';
+      case 'already_resubmitted':
+        return 'You already resubmitted this change.';
+      case 'redacted':
+        return 'This change was removed, so it can’t be resubmitted.';
+    }
+  }
+  return describeError(error, "Couldn't resubmit. Try again.");
 }

@@ -28,10 +28,14 @@ export function EntityHeader({ entity }: { entity: EntityView }) {
         >
           History
         </Link>
-        {/* The edit route arrives in Task 9; until then it is a plain link, like the shell's other future routes. */}
-        <a href={`/entities/${entity.id}/edit`} className={linkClass}>
+        <Link
+          to="/entities/$id/edit"
+          params={{ id: entity.id }}
+          className={linkClass}
+          activeProps={{ 'aria-current': 'page' }}
+        >
           Edit
-        </a>
+        </Link>
       </nav>
     </header>
   );

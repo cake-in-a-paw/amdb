@@ -13,9 +13,20 @@ const rootRoute = getRouteApi('__root__');
 /**
  * Entries like the one being added, asked of `/api/duplicates` 300ms after typing stops: ones
  * already in the catalog (each with a way to edit it instead), and pending creates, which show
- * only their title, type and year. Advice only; it never blocks the form.
+ * only their title, type and year. Advice only; it never blocks the form. `excludeId` is the entry
+ * being edited, so it doesn't flag itself.
  */
-export function DuplicateCheck({ kind, title, mediaType }: { kind: EntityKind; title: string; mediaType?: MediaType }) {
+export function DuplicateCheck({
+  kind,
+  title,
+  mediaType,
+  excludeId,
+}: {
+  kind: EntityKind;
+  title: string;
+  mediaType?: MediaType;
+  excludeId?: string;
+}) {
   const { api } = rootRoute.useRouteContext();
   const id = useId();
   const settled = useDebounced(title.trim(), 300);
@@ -33,6 +44,7 @@ export function DuplicateCheck({ kind, title, mediaType }: { kind: EntityKind; t
       ),
   });
 
+  const existing = query.data?.existing.filter((entry) => entry.id !== excludeId) ?? [];
   if (settled === '') return null;
   return (
     <section aria-labelledby={`${id}-heading`} aria-live="polite" className="text-sm">
@@ -45,23 +57,23 @@ export function DuplicateCheck({ kind, title, mediaType }: { kind: EntityKind; t
         </p>
       ) : query.isError ? (
         <p className="text-muted-foreground">Couldn't check for duplicates. {describeError(query.error, '')}</p>
-      ) : query.data.existing.length === 0 && query.data.pending.length === 0 ? (
+      ) : existing.length === 0 && query.data.pending.length === 0 ? (
         <p className="text-muted-foreground">No similar entries in the catalog.</p>
       ) : (
         <div className="grid gap-3 rounded-md border border-border bg-card p-3">
-          {query.data.existing.length > 0 && (
+          {existing.length > 0 && (
             <div>
               <h4 id={`${id}-existing`} className="font-medium">
                 Already in the catalog
               </h4>
               <ul aria-labelledby={`${id}-existing`}>
-                {query.data.existing.map((entry) => (
+                {existing.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3">
                     <Link to="/entities/$id" params={{ id: entry.id }} className={`${linkClass} font-serif text-base`}>
                       {entry.title}
                     </Link>
                     <span className="text-muted-foreground">{summaryDetail(entry)}</span>
-                    <Link to="/entities/$id" params={{ id: entry.id }} className={linkClass}>
+                    <Link to="/entities/$id/edit" params={{ id: entry.id }} className={linkClass}>
                       Edit this instead
                     </Link>
                   </li>

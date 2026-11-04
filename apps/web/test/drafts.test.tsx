@@ -157,3 +157,52 @@ test('only a 201 clears the draft', async () => {
   expect(screen.getByLabelText('Title')).toHaveValue('');
   expect(screen.getByLabelText(CC0)).not.toBeChecked();
 });
+
+describe('a saved draft is checked on load', () => {
+  test('a draft of JSON null is ignored, and so is one whose nested shape drifted', async () => {
+    for (const saved of ['null', '{"kind":"work","fields":{},"credits":[{"entity":"nope"}],"note":""}']) {
+      localStorage.setItem(KEY, saved);
+      const t = await renderApp('/submit');
+
+      expect(await screen.findByLabelText('Media type')).toHaveValue('');
+      expect(screen.getByLabelText('Title')).toHaveValue('');
+      t.view.unmount();
+    }
+  });
+
+  test('an edit draft that does not fit is ignored, and the form opens from the entry', async () => {
+    const t = await renderApp('/', { as: 'contributor', seed });
+    localStorage.setItem(`amdb.draft.edit.${t.seeded.works.spiritedAway}`, 'null');
+
+    await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Spirited Away');
+  });
+
+  test('a draft missing a newer key still opens, with the key filled in', async () => {
+    localStorage.setItem(KEY, '{"kind":"work","fields":{"title":"Old draft"},"note":""}');
+    await renderApp('/submit');
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Old draft');
+    expect(screen.getByRole('list', { name: 'Tags' })).toBeInTheDocument();
+  });
+});
+
+test('a 400 from the API keeps the draft and the form', async () => {
+  const t = await renderApp('/submit');
+  await fillBook(t, 'Rocannon’s World');
+  await t.user.click(screen.getByLabelText(CC0));
+  const real = t.api.app.request.bind(t.api.app);
+  // A 400 from the API for the submission only: the way to make a valid form meet a refusal.
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    urlOf(input).endsWith('/api/submissions')
+      ? Response.json({ error: { code: 'invalid_fields', message: 'no' } }, { status: 400 })
+      : real(input, init),
+  );
+
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
+  expect(screen.getByLabelText('Title')).toHaveValue('Rocannon’s World');
+  await waitFor(() => expect(stored()?.fields.title).toBe('Rocannon’s World'));
+});
