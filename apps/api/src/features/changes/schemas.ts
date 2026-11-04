@@ -107,7 +107,15 @@ export const MySubmissionsSchema = z.object({
       note: z.string().nullable(),
       createdAt: z.iso.datetime(),
       changes: z.array(
-        z.object({ id: z.uuid(), seq: z.number().int(), op: ChangeOp, kind: EntityKind, status: ChangeStatus }),
+        z.object({
+          id: z.uuid(),
+          seq: z.number().int(),
+          op: ChangeOp,
+          kind: EntityKind,
+          /** The entry the change is about (an edit's target, a relation's work), if it has one. */
+          entityId: z.uuid().nullable(),
+          status: ChangeStatus,
+        }),
       ),
     }),
   ),

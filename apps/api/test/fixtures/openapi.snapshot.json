@@ -1205,6 +1205,11 @@
                                     "tag"
                                   ]
                                 },
+                                "entityId": {
+                                  "type": "string",
+                                  "nullable": true,
+                                  "format": "uuid"
+                                },
                                 "status": {
                                   "type": "string",
                                   "enum": [
@@ -1220,6 +1225,7 @@
                                 "seq",
                                 "op",
                                 "kind",
+                                "entityId",
                                 "status"
                               ]
                             }

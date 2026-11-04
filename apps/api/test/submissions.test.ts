@@ -444,3 +444,23 @@ describe('duplicate tag slugs and external ids', () => {
     }
   });
 });
+
+it('me/submissions names the entry each change is about, so an edit can be found by its entry', async () => {
+  const t = await setupTest();
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const moderator = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const made = await publish(author, moderator, [work]);
+    const entityId = made.changes[0]?.entityId;
+    const edit = await submit(author, [{ op: 'update', kind: 'work', entityId, fields: { releaseYear: 2016 } }]);
+
+    const list = (await (await author.get('/api/me/submissions')).json()) as {
+      items: { id: string; changes: { id: string; entityId: string | null; status: string }[] }[];
+    };
+    expect(list.items.find((s) => s.id === edit.id)?.changes).toEqual([
+      expect.objectContaining({ id: edit.changes[0]?.id, entityId, status: 'pending' }),
+    ]);
+  } finally {
+    await t.close();
+  }
+});

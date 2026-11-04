@@ -339,6 +339,7 @@ export function changesRepository(db: DbOrTx) {
               seq: changes.seq,
               op: changes.op,
               kind: changes.kind,
+              entityId: changes.entityId,
               status: changes.status,
             })
             .from(changes)

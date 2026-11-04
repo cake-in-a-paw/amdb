@@ -566,6 +566,8 @@ export interface paths {
                                     op: "create" | "update" | "relate" | "unrelate" | "merge";
                                     /** @enum {string} */
                                     kind: "work" | "creator" | "series" | "property" | "tag";
+                                    /** Format: uuid */
+                                    entityId: string | null;
                                     /** @enum {string} */
                                     status: "pending" | "published" | "approved" | "rejected";
                                 }[];
