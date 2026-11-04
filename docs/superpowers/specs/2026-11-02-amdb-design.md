@@ -352,4 +352,6 @@ fixes it.
 
 - `ADMIN_EMAILS` grants admin only when an account is created; adding an address later does
   nothing for an existing account.
-- The last admin can demote themselves; recovery then needs a database edit.
+- Demoting the last admin is refused (`last_admin`), but the check and the role change don't
+  share a transaction, so two admins demoting themselves at once could still leave none;
+  recovery then needs a database edit.
