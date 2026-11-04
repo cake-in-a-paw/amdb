@@ -77,6 +77,11 @@ pnpm --filter @amdb/shared gen:api
 
 API tests run against an in-memory PGlite database with the real migrations.
 
+## Deploy
+
+Production runs on Railway at `https://amdb.ty-pe.com`, defined in `.railway/railway.ts` (ADR 0005).
+`docs/deploy.md` is the first-time runbook. After that, a push to `main` deploys once CI passes.
+
 ## Database changes
 
 Edit `apps/api/src/platform/db/schema.ts`, then `pnpm --filter @amdb/api db:generate --name <change>`.
