@@ -32,19 +32,10 @@
                     },
                     "role": {
                       "type": "string",
-                      "enum": [
-                        "contributor",
-                        "moderator",
-                        "admin"
-                      ]
+                      "enum": ["contributor", "moderator", "admin"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "email",
-                    "handle",
-                    "role"
-                  ]
+                  "required": ["id", "email", "handle", "role"]
                 }
               }
             }
@@ -69,15 +60,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -98,9 +84,7 @@
                     "pattern": "^[A-Za-z0-9_-]{3,30}$"
                   }
                 },
-                "required": [
-                  "handle"
-                ]
+                "required": ["handle"]
               }
             }
           }
@@ -126,19 +110,10 @@
                     },
                     "role": {
                       "type": "string",
-                      "enum": [
-                        "contributor",
-                        "moderator",
-                        "admin"
-                      ]
+                      "enum": ["contributor", "moderator", "admin"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "email",
-                    "handle",
-                    "role"
-                  ]
+                  "required": ["id", "email", "handle", "role"]
                 }
               }
             }
@@ -163,15 +138,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -196,15 +166,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -229,15 +194,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -284,25 +244,14 @@
                           },
                           "role": {
                             "type": "string",
-                            "enum": [
-                              "contributor",
-                              "moderator",
-                              "admin"
-                            ]
+                            "enum": ["contributor", "moderator", "admin"]
                           }
                         },
-                        "required": [
-                          "id",
-                          "email",
-                          "handle",
-                          "role"
-                        ]
+                        "required": ["id", "email", "handle", "role"]
                       }
                     }
                   },
-                  "required": [
-                    "items"
-                  ]
+                  "required": ["items"]
                 }
               }
             }
@@ -327,15 +276,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -365,16 +309,10 @@
                 "properties": {
                   "role": {
                     "type": "string",
-                    "enum": [
-                      "contributor",
-                      "moderator",
-                      "admin"
-                    ]
+                    "enum": ["contributor", "moderator", "admin"]
                   }
                 },
-                "required": [
-                  "role"
-                ]
+                "required": ["role"]
               }
             }
           }
@@ -393,17 +331,10 @@
                     },
                     "role": {
                       "type": "string",
-                      "enum": [
-                        "contributor",
-                        "moderator",
-                        "admin"
-                      ]
+                      "enum": ["contributor", "moderator", "admin"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "role"
-                  ]
+                  "required": ["id", "role"]
                 }
               }
             }
@@ -428,15 +359,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -461,15 +387,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -488,9 +409,7 @@
                 "properties": {
                   "cc0": {
                     "type": "boolean",
-                    "enum": [
-                      true
-                    ]
+                    "enum": [true]
                   },
                   "note": {
                     "type": "string",
@@ -505,19 +424,11 @@
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": [
-                                "create"
-                              ]
+                              "enum": ["create"]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "work",
-                                "creator",
-                                "series",
-                                "property",
-                                "tag"
-                              ]
+                              "enum": ["work", "creator", "series", "property", "tag"]
                             },
                             "ref": {
                               "type": "string",
@@ -531,31 +442,18 @@
                               }
                             }
                           },
-                          "required": [
-                            "op",
-                            "kind",
-                            "ref",
-                            "fields"
-                          ]
+                          "required": ["op", "kind", "ref", "fields"]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": [
-                                "update"
-                              ]
+                              "enum": ["update"]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "work",
-                                "creator",
-                                "series",
-                                "property",
-                                "tag"
-                              ]
+                              "enum": ["work", "creator", "series", "property", "tag"]
                             },
                             "entityId": {
                               "type": "string",
@@ -568,21 +466,14 @@
                               }
                             }
                           },
-                          "required": [
-                            "op",
-                            "kind",
-                            "entityId",
-                            "fields"
-                          ]
+                          "required": ["op", "kind", "entityId", "fields"]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": [
-                                "relate"
-                              ]
+                              "enum": ["relate"]
                             },
                             "type": {
                               "type": "string",
@@ -605,9 +496,7 @@
                                       "format": "uuid"
                                     }
                                   },
-                                  "required": [
-                                    "id"
-                                  ]
+                                  "required": ["id"]
                                 },
                                 {
                                   "type": "object",
@@ -618,9 +507,7 @@
                                       "maxLength": 40
                                     }
                                   },
-                                  "required": [
-                                    "ref"
-                                  ]
+                                  "required": ["ref"]
                                 }
                               ]
                             },
@@ -634,9 +521,7 @@
                                       "format": "uuid"
                                     }
                                   },
-                                  "required": [
-                                    "id"
-                                  ]
+                                  "required": ["id"]
                                 },
                                 {
                                   "type": "object",
@@ -647,9 +532,7 @@
                                       "maxLength": 40
                                     }
                                   },
-                                  "required": [
-                                    "ref"
-                                  ]
+                                  "required": ["ref"]
                                 }
                               ]
                             },
@@ -665,21 +548,11 @@
                                 },
                                 "linkType": {
                                   "type": "string",
-                                  "enum": [
-                                    "adapted_from",
-                                    "sequel_of",
-                                    "remake_of",
-                                    "spin_off_of"
-                                  ]
+                                  "enum": ["adapted_from", "sequel_of", "remake_of", "spin_off_of"]
                                 },
                                 "scheme": {
                                   "type": "string",
-                                  "enum": [
-                                    "wikidata",
-                                    "openlibrary",
-                                    "isbn13",
-                                    "imdb"
-                                  ]
+                                  "enum": ["wikidata", "openlibrary", "isbn13", "imdb"]
                                 },
                                 "value": {
                                   "type": "string"
@@ -687,50 +560,32 @@
                               }
                             }
                           },
-                          "required": [
-                            "op",
-                            "type",
-                            "from",
-                            "data"
-                          ]
+                          "required": ["op", "type", "from", "data"]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": [
-                                "unrelate"
-                              ]
+                              "enum": ["unrelate"]
                             },
                             "relationId": {
                               "type": "string",
                               "format": "uuid"
                             }
                           },
-                          "required": [
-                            "op",
-                            "relationId"
-                          ]
+                          "required": ["op", "relationId"]
                         },
                         {
                           "type": "object",
                           "properties": {
                             "op": {
                               "type": "string",
-                              "enum": [
-                                "merge"
-                              ]
+                              "enum": ["merge"]
                             },
                             "kind": {
                               "type": "string",
-                              "enum": [
-                                "work",
-                                "creator",
-                                "series",
-                                "property",
-                                "tag"
-                              ]
+                              "enum": ["work", "creator", "series", "property", "tag"]
                             },
                             "from": {
                               "type": "string",
@@ -741,12 +596,7 @@
                               "format": "uuid"
                             }
                           },
-                          "required": [
-                            "op",
-                            "kind",
-                            "from",
-                            "into"
-                          ]
+                          "required": ["op", "kind", "from", "into"]
                         }
                       ]
                     },
@@ -754,10 +604,7 @@
                     "maxItems": 200
                   }
                 },
-                "required": [
-                  "cc0",
-                  "changes"
-                ]
+                "required": ["cc0", "changes"]
               }
             }
           }
@@ -788,22 +635,11 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": [
-                              "create",
-                              "update",
-                              "relate",
-                              "unrelate",
-                              "merge"
-                            ]
+                            "enum": ["create", "update", "relate", "unrelate", "merge"]
                           },
                           "status": {
                             "type": "string",
-                            "enum": [
-                              "pending",
-                              "published",
-                              "approved",
-                              "rejected"
-                            ]
+                            "enum": ["pending", "published", "approved", "rejected"]
                           },
                           "entityId": {
                             "type": "string",
@@ -811,20 +647,11 @@
                             "format": "uuid"
                           }
                         },
-                        "required": [
-                          "id",
-                          "seq",
-                          "op",
-                          "status",
-                          "entityId"
-                        ]
+                        "required": ["id", "seq", "op", "status", "entityId"]
                       }
                     }
                   },
-                  "required": [
-                    "id",
-                    "changes"
-                  ]
+                  "required": ["id", "changes"]
                 }
               }
             }
@@ -849,15 +676,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -882,15 +704,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -950,23 +767,11 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": [
-                              "create",
-                              "update",
-                              "relate",
-                              "unrelate",
-                              "merge"
-                            ]
+                            "enum": ["create", "update", "relate", "unrelate", "merge"]
                           },
                           "kind": {
                             "type": "string",
-                            "enum": [
-                              "work",
-                              "creator",
-                              "series",
-                              "property",
-                              "tag"
-                            ]
+                            "enum": ["work", "creator", "series", "property", "tag"]
                           },
                           "entityId": {
                             "type": "string",
@@ -980,12 +785,7 @@
                           },
                           "status": {
                             "type": "string",
-                            "enum": [
-                              "pending",
-                              "published",
-                              "approved",
-                              "rejected"
-                            ]
+                            "enum": ["pending", "published", "approved", "rejected"]
                           },
                           "reason": {
                             "type": "string",
@@ -1045,13 +845,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "id",
-                    "note",
-                    "createdAt",
-                    "authorUserId",
-                    "changes"
-                  ]
+                  "required": ["id", "note", "createdAt", "authorUserId", "changes"]
                 }
               }
             }
@@ -1076,15 +870,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1154,50 +943,22 @@
                                 },
                                 "op": {
                                   "type": "string",
-                                  "enum": [
-                                    "create",
-                                    "update",
-                                    "relate",
-                                    "unrelate",
-                                    "merge"
-                                  ]
+                                  "enum": ["create", "update", "relate", "unrelate", "merge"]
                                 },
                                 "kind": {
                                   "type": "string",
-                                  "enum": [
-                                    "work",
-                                    "creator",
-                                    "series",
-                                    "property",
-                                    "tag"
-                                  ]
+                                  "enum": ["work", "creator", "series", "property", "tag"]
                                 },
                                 "status": {
                                   "type": "string",
-                                  "enum": [
-                                    "pending",
-                                    "published",
-                                    "approved",
-                                    "rejected"
-                                  ]
+                                  "enum": ["pending", "published", "approved", "rejected"]
                                 }
                               },
-                              "required": [
-                                "id",
-                                "seq",
-                                "op",
-                                "kind",
-                                "status"
-                              ]
+                              "required": ["id", "seq", "op", "kind", "status"]
                             }
                           }
                         },
-                        "required": [
-                          "id",
-                          "note",
-                          "createdAt",
-                          "changes"
-                        ]
+                        "required": ["id", "note", "createdAt", "changes"]
                       }
                     },
                     "nextCursor": {
@@ -1205,10 +966,7 @@
                       "nullable": true
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -1233,15 +991,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1297,23 +1050,11 @@
                               },
                               "op": {
                                 "type": "string",
-                                "enum": [
-                                  "create",
-                                  "update",
-                                  "relate",
-                                  "unrelate",
-                                  "merge"
-                                ]
+                                "enum": ["create", "update", "relate", "unrelate", "merge"]
                               },
                               "kind": {
                                 "type": "string",
-                                "enum": [
-                                  "work",
-                                  "creator",
-                                  "series",
-                                  "property",
-                                  "tag"
-                                ]
+                                "enum": ["work", "creator", "series", "property", "tag"]
                               },
                               "entityId": {
                                 "type": "string",
@@ -1327,12 +1068,7 @@
                               },
                               "status": {
                                 "type": "string",
-                                "enum": [
-                                  "pending",
-                                  "published",
-                                  "approved",
-                                  "rejected"
-                                ]
+                                "enum": ["pending", "published", "approved", "rejected"]
                               },
                               "reason": {
                                 "type": "string",
@@ -1411,9 +1147,7 @@
                                 "anyOf": [
                                   {
                                     "type": "string",
-                                    "enum": [
-                                      "anonymous"
-                                    ]
+                                    "enum": ["anonymous"]
                                   },
                                   {
                                     "type": "object",
@@ -1427,28 +1161,18 @@
                                         "nullable": true
                                       }
                                     },
-                                    "required": [
-                                      "userId",
-                                      "handle"
-                                    ]
+                                    "required": ["userId", "handle"]
                                   }
                                 ]
                               }
                             },
-                            "required": [
-                              "id",
-                              "author"
-                            ]
+                            "required": ["id", "author"]
                           },
                           "ageSeconds": {
                             "type": "integer"
                           }
                         },
-                        "required": [
-                          "change",
-                          "submission",
-                          "ageSeconds"
-                        ]
+                        "required": ["change", "submission", "ageSeconds"]
                       }
                     },
                     "nextCursor": {
@@ -1456,10 +1180,7 @@
                       "nullable": true
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -1484,15 +1205,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1545,18 +1261,10 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": [
-                        "pending",
-                        "published",
-                        "approved",
-                        "rejected"
-                      ]
+                      "enum": ["pending", "published", "approved", "rejected"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "status"
-                  ]
+                  "required": ["id", "status"]
                 }
               }
             }
@@ -1581,15 +1289,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1614,15 +1317,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1647,15 +1345,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1680,15 +1373,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1722,9 +1410,7 @@
                     "maxLength": 1000
                   }
                 },
-                "required": [
-                  "reason"
-                ]
+                "required": ["reason"]
               }
             }
           }
@@ -1743,18 +1429,10 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": [
-                        "pending",
-                        "published",
-                        "approved",
-                        "rejected"
-                      ]
+                      "enum": ["pending", "published", "approved", "rejected"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "status"
-                  ]
+                  "required": ["id", "status"]
                 }
               }
             }
@@ -1779,15 +1457,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1812,15 +1485,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1845,15 +1513,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -1924,22 +1587,11 @@
                           },
                           "op": {
                             "type": "string",
-                            "enum": [
-                              "create",
-                              "update",
-                              "relate",
-                              "unrelate",
-                              "merge"
-                            ]
+                            "enum": ["create", "update", "relate", "unrelate", "merge"]
                           },
                           "status": {
                             "type": "string",
-                            "enum": [
-                              "pending",
-                              "published",
-                              "approved",
-                              "rejected"
-                            ]
+                            "enum": ["pending", "published", "approved", "rejected"]
                           },
                           "entityId": {
                             "type": "string",
@@ -1947,20 +1599,11 @@
                             "format": "uuid"
                           }
                         },
-                        "required": [
-                          "id",
-                          "seq",
-                          "op",
-                          "status",
-                          "entityId"
-                        ]
+                        "required": ["id", "seq", "op", "status", "entityId"]
                       }
                     }
                   },
-                  "required": [
-                    "id",
-                    "changes"
-                  ]
+                  "required": ["id", "changes"]
                 }
               }
             }
@@ -1985,15 +1628,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2018,15 +1656,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2051,15 +1684,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2094,18 +1722,10 @@
                     },
                     "status": {
                       "type": "string",
-                      "enum": [
-                        "pending",
-                        "published",
-                        "approved",
-                        "rejected"
-                      ]
+                      "enum": ["pending", "published", "approved", "rejected"]
                     }
                   },
-                  "required": [
-                    "id",
-                    "status"
-                  ]
+                  "required": ["id", "status"]
                 }
               }
             }
@@ -2130,15 +1750,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2163,15 +1778,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2208,9 +1818,7 @@
                     "type": "boolean"
                   }
                 },
-                "required": [
-                  "reason"
-                ]
+                "required": ["reason"]
               }
             }
           }
@@ -2238,11 +1846,7 @@
                       "format": "uuid"
                     }
                   },
-                  "required": [
-                    "id",
-                    "entityId",
-                    "relationId"
-                  ]
+                  "required": ["id", "entityId", "relationId"]
                 }
               }
             }
@@ -2267,15 +1871,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2300,15 +1899,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2333,15 +1927,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2363,9 +1952,7 @@
                       "type": "integer"
                     }
                   },
-                  "required": [
-                    "claimed"
-                  ]
+                  "required": ["claimed"]
                 }
               }
             }
@@ -2390,15 +1977,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2423,15 +2005,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2492,13 +2069,7 @@
                               },
                               "op": {
                                 "type": "string",
-                                "enum": [
-                                  "create",
-                                  "update",
-                                  "relate",
-                                  "unrelate",
-                                  "merge"
-                                ]
+                                "enum": ["create", "update", "relate", "unrelate", "merge"]
                               },
                               "payload": {
                                 "type": "object",
@@ -2510,9 +2081,7 @@
                                 "anyOf": [
                                   {
                                     "type": "string",
-                                    "enum": [
-                                      "anonymous"
-                                    ]
+                                    "enum": ["anonymous"]
                                   },
                                   {
                                     "type": "object",
@@ -2526,18 +2095,13 @@
                                         "nullable": true
                                       }
                                     },
-                                    "required": [
-                                      "userId",
-                                      "handle"
-                                    ]
+                                    "required": ["userId", "handle"]
                                   }
                                 ]
                               },
                               "source": {
                                 "type": "string",
-                                "enum": [
-                                  "human"
-                                ]
+                                "enum": ["human"]
                               },
                               "appliedAt": {
                                 "type": "string",
@@ -2549,15 +2113,7 @@
                                 "format": "uuid"
                               }
                             },
-                            "required": [
-                              "changeId",
-                              "op",
-                              "payload",
-                              "author",
-                              "source",
-                              "appliedAt",
-                              "revertOf"
-                            ]
+                            "required": ["changeId", "op", "payload", "author", "source", "appliedAt", "revertOf"]
                           },
                           {
                             "type": "object",
@@ -2568,19 +2124,11 @@
                               },
                               "op": {
                                 "type": "string",
-                                "enum": [
-                                  "create",
-                                  "update",
-                                  "relate",
-                                  "unrelate",
-                                  "merge"
-                                ]
+                                "enum": ["create", "update", "relate", "unrelate", "merge"]
                               },
                               "redacted": {
                                 "type": "boolean",
-                                "enum": [
-                                  true
-                                ]
+                                "enum": [true]
                               },
                               "reason": {
                                 "type": "string",
@@ -2590,9 +2138,7 @@
                                 "anyOf": [
                                   {
                                     "type": "string",
-                                    "enum": [
-                                      "anonymous"
-                                    ]
+                                    "enum": ["anonymous"]
                                   },
                                   {
                                     "type": "object",
@@ -2606,10 +2152,7 @@
                                         "nullable": true
                                       }
                                     },
-                                    "required": [
-                                      "userId",
-                                      "handle"
-                                    ]
+                                    "required": ["userId", "handle"]
                                   }
                                 ]
                               },
@@ -2618,14 +2161,7 @@
                                 "format": "date-time"
                               }
                             },
-                            "required": [
-                              "changeId",
-                              "op",
-                              "redacted",
-                              "reason",
-                              "author",
-                              "appliedAt"
-                            ]
+                            "required": ["changeId", "op", "redacted", "reason", "author", "appliedAt"]
                           }
                         ]
                       }
@@ -2635,10 +2171,7 @@
                       "nullable": true
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -2663,9 +2196,7 @@
                       "format": "uuid"
                     }
                   },
-                  "required": [
-                    "redirectTo"
-                  ]
+                  "required": ["redirectTo"]
                 }
               }
             }
@@ -2690,15 +2221,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2723,15 +2249,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -2766,13 +2287,7 @@
                     },
                     "kind": {
                       "type": "string",
-                      "enum": [
-                        "work",
-                        "creator",
-                        "series",
-                        "property",
-                        "tag"
-                      ]
+                      "enum": ["work", "creator", "series", "property", "tag"]
                     },
                     "fields": {
                       "type": "object",
@@ -2808,33 +2323,20 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               },
                               "role": {
                                 "type": "string"
@@ -2843,11 +2345,7 @@
                                 "type": "integer"
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "creator",
-                              "role"
-                            ]
+                            "required": ["relationId", "creator", "role"]
                           }
                         },
                         "works": {
@@ -2868,33 +2366,20 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               },
                               "role": {
                                 "type": "string"
@@ -2903,10 +2388,7 @@
                                 "type": "integer"
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "work"
-                            ]
+                            "required": ["relationId", "work"]
                           }
                         },
                         "series": {
@@ -2927,43 +2409,26 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               },
                               "position": {
                                 "type": "integer"
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "series",
-                              "position"
-                            ]
+                            "required": ["relationId", "series", "position"]
                           }
                         },
                         "properties": {
@@ -2984,39 +2449,23 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "property"
-                            ]
+                            "required": ["relationId", "property"]
                           }
                         },
                         "links": {
@@ -3030,19 +2479,11 @@
                               },
                               "type": {
                                 "type": "string",
-                                "enum": [
-                                  "adapted_from",
-                                  "sequel_of",
-                                  "remake_of",
-                                  "spin_off_of"
-                                ]
+                                "enum": ["adapted_from", "sequel_of", "remake_of", "spin_off_of"]
                               },
                               "direction": {
                                 "type": "string",
-                                "enum": [
-                                  "outgoing",
-                                  "incoming"
-                                ]
+                                "enum": ["outgoing", "incoming"]
                               },
                               "work": {
                                 "type": "object",
@@ -3053,41 +2494,23 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "type",
-                              "direction",
-                              "work"
-                            ]
+                            "required": ["relationId", "type", "direction", "work"]
                           }
                         },
                         "tags": {
@@ -3108,39 +2531,23 @@
                                   },
                                   "kind": {
                                     "type": "string",
-                                    "enum": [
-                                      "work",
-                                      "creator",
-                                      "series",
-                                      "property",
-                                      "tag"
-                                    ]
+                                    "enum": ["work", "creator", "series", "property", "tag"]
                                   },
                                   "title": {
                                     "type": "string"
                                   },
                                   "mediaType": {
                                     "type": "string",
-                                    "enum": [
-                                      "film_tv",
-                                      "book"
-                                    ]
+                                    "enum": ["film_tv", "book"]
                                   },
                                   "releaseYear": {
                                     "type": "integer"
                                   }
                                 },
-                                "required": [
-                                  "id",
-                                  "kind",
-                                  "title"
-                                ]
+                                "required": ["id", "kind", "title"]
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "tag"
-                            ]
+                            "required": ["relationId", "tag"]
                           }
                         },
                         "externalIds": {
@@ -3154,22 +2561,13 @@
                               },
                               "scheme": {
                                 "type": "string",
-                                "enum": [
-                                  "wikidata",
-                                  "openlibrary",
-                                  "isbn13",
-                                  "imdb"
-                                ]
+                                "enum": ["wikidata", "openlibrary", "isbn13", "imdb"]
                               },
                               "value": {
                                 "type": "string"
                               }
                             },
-                            "required": [
-                              "relationId",
-                              "scheme",
-                              "value"
-                            ]
+                            "required": ["relationId", "scheme", "value"]
                           }
                         },
                         "related": {
@@ -3189,33 +2587,20 @@
                                       },
                                       "kind": {
                                         "type": "string",
-                                        "enum": [
-                                          "work",
-                                          "creator",
-                                          "series",
-                                          "property",
-                                          "tag"
-                                        ]
+                                        "enum": ["work", "creator", "series", "property", "tag"]
                                       },
                                       "title": {
                                         "type": "string"
                                       },
                                       "mediaType": {
                                         "type": "string",
-                                        "enum": [
-                                          "film_tv",
-                                          "book"
-                                        ]
+                                        "enum": ["film_tv", "book"]
                                       },
                                       "releaseYear": {
                                         "type": "integer"
                                       }
                                     },
-                                    "required": [
-                                      "id",
-                                      "kind",
-                                      "title"
-                                    ]
+                                    "required": ["id", "kind", "title"]
                                   },
                                   "works": {
                                     "type": "array",
@@ -3228,40 +2613,24 @@
                                         },
                                         "kind": {
                                           "type": "string",
-                                          "enum": [
-                                            "work",
-                                            "creator",
-                                            "series",
-                                            "property",
-                                            "tag"
-                                          ]
+                                          "enum": ["work", "creator", "series", "property", "tag"]
                                         },
                                         "title": {
                                           "type": "string"
                                         },
                                         "mediaType": {
                                           "type": "string",
-                                          "enum": [
-                                            "film_tv",
-                                            "book"
-                                          ]
+                                          "enum": ["film_tv", "book"]
                                         },
                                         "releaseYear": {
                                           "type": "integer"
                                         }
                                       },
-                                      "required": [
-                                        "id",
-                                        "kind",
-                                        "title"
-                                      ]
+                                      "required": ["id", "kind", "title"]
                                     }
                                   }
                                 },
-                                "required": [
-                                  "creator",
-                                  "works"
-                                ]
+                                "required": ["creator", "works"]
                               }
                             },
                             "bySeries": {
@@ -3278,33 +2647,20 @@
                                       },
                                       "kind": {
                                         "type": "string",
-                                        "enum": [
-                                          "work",
-                                          "creator",
-                                          "series",
-                                          "property",
-                                          "tag"
-                                        ]
+                                        "enum": ["work", "creator", "series", "property", "tag"]
                                       },
                                       "title": {
                                         "type": "string"
                                       },
                                       "mediaType": {
                                         "type": "string",
-                                        "enum": [
-                                          "film_tv",
-                                          "book"
-                                        ]
+                                        "enum": ["film_tv", "book"]
                                       },
                                       "releaseYear": {
                                         "type": "integer"
                                       }
                                     },
-                                    "required": [
-                                      "id",
-                                      "kind",
-                                      "title"
-                                    ]
+                                    "required": ["id", "kind", "title"]
                                   },
                                   "works": {
                                     "type": "array",
@@ -3317,40 +2673,24 @@
                                         },
                                         "kind": {
                                           "type": "string",
-                                          "enum": [
-                                            "work",
-                                            "creator",
-                                            "series",
-                                            "property",
-                                            "tag"
-                                          ]
+                                          "enum": ["work", "creator", "series", "property", "tag"]
                                         },
                                         "title": {
                                           "type": "string"
                                         },
                                         "mediaType": {
                                           "type": "string",
-                                          "enum": [
-                                            "film_tv",
-                                            "book"
-                                          ]
+                                          "enum": ["film_tv", "book"]
                                         },
                                         "releaseYear": {
                                           "type": "integer"
                                         }
                                       },
-                                      "required": [
-                                        "id",
-                                        "kind",
-                                        "title"
-                                      ]
+                                      "required": ["id", "kind", "title"]
                                     }
                                   }
                                 },
-                                "required": [
-                                  "series",
-                                  "works"
-                                ]
+                                "required": ["series", "works"]
                               }
                             },
                             "byProperty": {
@@ -3367,33 +2707,20 @@
                                       },
                                       "kind": {
                                         "type": "string",
-                                        "enum": [
-                                          "work",
-                                          "creator",
-                                          "series",
-                                          "property",
-                                          "tag"
-                                        ]
+                                        "enum": ["work", "creator", "series", "property", "tag"]
                                       },
                                       "title": {
                                         "type": "string"
                                       },
                                       "mediaType": {
                                         "type": "string",
-                                        "enum": [
-                                          "film_tv",
-                                          "book"
-                                        ]
+                                        "enum": ["film_tv", "book"]
                                       },
                                       "releaseYear": {
                                         "type": "integer"
                                       }
                                     },
-                                    "required": [
-                                      "id",
-                                      "kind",
-                                      "title"
-                                    ]
+                                    "required": ["id", "kind", "title"]
                                   },
                                   "works": {
                                     "type": "array",
@@ -3406,59 +2733,33 @@
                                         },
                                         "kind": {
                                           "type": "string",
-                                          "enum": [
-                                            "work",
-                                            "creator",
-                                            "series",
-                                            "property",
-                                            "tag"
-                                          ]
+                                          "enum": ["work", "creator", "series", "property", "tag"]
                                         },
                                         "title": {
                                           "type": "string"
                                         },
                                         "mediaType": {
                                           "type": "string",
-                                          "enum": [
-                                            "film_tv",
-                                            "book"
-                                          ]
+                                          "enum": ["film_tv", "book"]
                                         },
                                         "releaseYear": {
                                           "type": "integer"
                                         }
                                       },
-                                      "required": [
-                                        "id",
-                                        "kind",
-                                        "title"
-                                      ]
+                                      "required": ["id", "kind", "title"]
                                     }
                                   }
                                 },
-                                "required": [
-                                  "property",
-                                  "works"
-                                ]
+                                "required": ["property", "works"]
                               }
                             }
                           },
-                          "required": [
-                            "byCreator",
-                            "bySeries",
-                            "byProperty"
-                          ]
+                          "required": ["byCreator", "bySeries", "byProperty"]
                         }
                       }
                     }
                   },
-                  "required": [
-                    "id",
-                    "kind",
-                    "fields",
-                    "fieldSources",
-                    "relations"
-                  ]
+                  "required": ["id", "kind", "fields", "fieldSources", "relations"]
                 }
               }
             }
@@ -3483,9 +2784,7 @@
                       "format": "uuid"
                     }
                   },
-                  "required": [
-                    "redirectTo"
-                  ]
+                  "required": ["redirectTo"]
                 }
               }
             }
@@ -3510,15 +2809,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -3543,15 +2837,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -3575,13 +2864,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "work",
-                "creator",
-                "series",
-                "property",
-                "tag"
-              ]
+              "enum": ["work", "creator", "series", "property", "tag"]
             },
             "required": false,
             "name": "kind",
@@ -3590,10 +2873,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "film_tv",
-                "book"
-              ]
+              "enum": ["film_tv", "book"]
             },
             "required": false,
             "name": "mediaType",
@@ -3638,33 +2918,20 @@
                           },
                           "kind": {
                             "type": "string",
-                            "enum": [
-                              "work",
-                              "creator",
-                              "series",
-                              "property",
-                              "tag"
-                            ]
+                            "enum": ["work", "creator", "series", "property", "tag"]
                           },
                           "title": {
                             "type": "string"
                           },
                           "mediaType": {
                             "type": "string",
-                            "enum": [
-                              "film_tv",
-                              "book"
-                            ]
+                            "enum": ["film_tv", "book"]
                           },
                           "releaseYear": {
                             "type": "integer"
                           }
                         },
-                        "required": [
-                          "id",
-                          "kind",
-                          "title"
-                        ]
+                        "required": ["id", "kind", "title"]
                       }
                     },
                     "nextCursor": {
@@ -3672,10 +2939,7 @@
                       "nullable": true
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -3700,15 +2964,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -3722,13 +2981,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "work",
-                "creator",
-                "series",
-                "property",
-                "tag"
-              ]
+              "enum": ["work", "creator", "series", "property", "tag"]
             },
             "required": true,
             "name": "kind",
@@ -3737,10 +2990,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "film_tv",
-                "book"
-              ]
+              "enum": ["film_tv", "book"]
             },
             "required": false,
             "name": "mediaType",
@@ -3785,33 +3035,20 @@
                           },
                           "kind": {
                             "type": "string",
-                            "enum": [
-                              "work",
-                              "creator",
-                              "series",
-                              "property",
-                              "tag"
-                            ]
+                            "enum": ["work", "creator", "series", "property", "tag"]
                           },
                           "title": {
                             "type": "string"
                           },
                           "mediaType": {
                             "type": "string",
-                            "enum": [
-                              "film_tv",
-                              "book"
-                            ]
+                            "enum": ["film_tv", "book"]
                           },
                           "releaseYear": {
                             "type": "integer"
                           }
                         },
-                        "required": [
-                          "id",
-                          "kind",
-                          "title"
-                        ]
+                        "required": ["id", "kind", "title"]
                       }
                     },
                     "nextCursor": {
@@ -3819,10 +3056,7 @@
                       "nullable": true
                     }
                   },
-                  "required": [
-                    "items",
-                    "nextCursor"
-                  ]
+                  "required": ["items", "nextCursor"]
                 }
               }
             }
@@ -3847,15 +3081,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -3869,13 +3098,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "work",
-                "creator",
-                "series",
-                "property",
-                "tag"
-              ]
+              "enum": ["work", "creator", "series", "property", "tag"]
             },
             "required": true,
             "name": "kind",
@@ -3894,10 +3117,7 @@
           {
             "schema": {
               "type": "string",
-              "enum": [
-                "film_tv",
-                "book"
-              ]
+              "enum": ["film_tv", "book"]
             },
             "required": false,
             "name": "mediaType",
@@ -3923,33 +3143,20 @@
                           },
                           "kind": {
                             "type": "string",
-                            "enum": [
-                              "work",
-                              "creator",
-                              "series",
-                              "property",
-                              "tag"
-                            ]
+                            "enum": ["work", "creator", "series", "property", "tag"]
                           },
                           "title": {
                             "type": "string"
                           },
                           "mediaType": {
                             "type": "string",
-                            "enum": [
-                              "film_tv",
-                              "book"
-                            ]
+                            "enum": ["film_tv", "book"]
                           },
                           "releaseYear": {
                             "type": "integer"
                           }
                         },
-                        "required": [
-                          "id",
-                          "kind",
-                          "title"
-                        ]
+                        "required": ["id", "kind", "title"]
                       }
                     },
                     "pending": {
@@ -3959,13 +3166,7 @@
                         "properties": {
                           "kind": {
                             "type": "string",
-                            "enum": [
-                              "work",
-                              "creator",
-                              "series",
-                              "property",
-                              "tag"
-                            ]
+                            "enum": ["work", "creator", "series", "property", "tag"]
                           },
                           "title": {
                             "type": "string"
@@ -3973,30 +3174,18 @@
                           "mediaType": {
                             "type": "string",
                             "nullable": true,
-                            "enum": [
-                              "film_tv",
-                              "book",
-                              null
-                            ]
+                            "enum": ["film_tv", "book", null]
                           },
                           "releaseYear": {
                             "type": "integer",
                             "nullable": true
                           }
                         },
-                        "required": [
-                          "kind",
-                          "title",
-                          "mediaType",
-                          "releaseYear"
-                        ]
+                        "required": ["kind", "title", "mediaType", "releaseYear"]
                       }
                     }
                   },
-                  "required": [
-                    "existing",
-                    "pending"
-                  ]
+                  "required": ["existing", "pending"]
                 }
               }
             }
@@ -4021,15 +3210,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "code",
-                        "message"
-                      ]
+                      "required": ["code", "message"]
                     }
                   },
-                  "required": [
-                    "error"
-                  ]
+                  "required": ["error"]
                 }
               }
             }
@@ -4049,14 +3233,10 @@
                   "properties": {
                     "ok": {
                       "type": "boolean",
-                      "enum": [
-                        true
-                      ]
+                      "enum": [true]
                     }
                   },
-                  "required": [
-                    "ok"
-                  ]
+                  "required": ["ok"]
                 }
               }
             }

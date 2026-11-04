@@ -148,7 +148,7 @@ export function catalogRepository(db: DbOrTx) {
         .select({
           hubId: sql<string>`${hubCol}`.as('hub_id'),
           workId: sql<string>`${workCol}`.as('work_id'),
-          rank: sql<number>`row_number() over (partition by ${hubCol} order by ${works.releaseYear} asc nulls last, ${works.title} asc, ${workCol} asc)`.as(
+          rank: sql<number>`dense_rank() over (partition by ${hubCol} order by ${works.releaseYear} asc nulls last, ${works.title} asc, ${workCol} asc)`.as(
             'rank',
           ),
         })
@@ -165,8 +165,10 @@ export function catalogRepository(db: DbOrTx) {
           ),
         )
         .as('ranked');
+      // Two relations (say director and writer) to one work repeat its row with the same dense rank;
+      // distinct keeps the work once, and it takes one of the `perHub` slots.
       return db
-        .select({ hubId: ranked.hubId, workId: ranked.workId })
+        .selectDistinct({ hubId: ranked.hubId, workId: ranked.workId, rank: ranked.rank })
         .from(ranked)
         .where(lte(ranked.rank, perHub))
         .orderBy(ranked.hubId, ranked.rank);

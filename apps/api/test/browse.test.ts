@@ -66,11 +66,10 @@ it('never lists merged, retracted or removed entities', async () => {
       work('Retracted', 'c'),
       work('Removed', 'd'),
     ]);
-    const [kept, merged, retracted, removed] = made.changes.map((c) => c.entityId!);
+    const [kept, merged, , removed] = made.changes.map((c) => c.entityId!);
     await publish(author, mod, [{ op: 'merge', kind: 'work', from: merged, into: kept }]);
     expect((await mod.post(`/api/changes/${made.changes[2]!.id}/revert`)).status).toBe(200);
     await t.db.update(entities).set({ removedAt: new Date() }).where(eq(entities.id, removed!));
-    expect(retracted).toBeTruthy();
     expect((await browse('kind=work')).items.map((i) => i.id)).toEqual([kept]);
   } finally {
     await t.close();

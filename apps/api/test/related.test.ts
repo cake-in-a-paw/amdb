@@ -95,7 +95,7 @@ it('cuts a group at 12 works, ordered by release year then title', async () => {
     ]);
     const group = (await related(made.changes[0]!.entityId!))!.byCreator[0]!;
     expect(group.works).toHaveLength(12);
-    // Even indexes are 2001, odd 2002: the 2001 works first (7 of them), then 2002 by title; 2002's last (w11... w12 is 2001) is cut.
+    // Even indexes are 2001, odd 2002: the 2001 works first (7 of them), then 2002 by title; Work 11, the last, is cut.
     expect(group.works.map((w) => w.title)).toEqual(
       [0, 2, 4, 6, 8, 10, 12, 1, 3, 5, 7, 9].map((i) => `Work ${String(i).padStart(2, '0')}`),
     );
@@ -104,7 +104,7 @@ it('cuts a group at 12 works, ordered by release year then title', async () => {
   }
 });
 
-it('leaves out merged-away and removed works', async () => {
+it('leaves out merged-away, retracted and removed works', async () => {
   const { t, author, mod, related } = await setup();
   try {
     const made = await publish(author, mod, [
@@ -112,17 +112,45 @@ it('leaves out merged-away and removed works', async () => {
       work('Merged', 'b'),
       work('Gone', 'c'),
       work('Kept', 'd'),
+      work('Reverted', 'e'),
       creator,
       directed('a'),
       directed('b'),
       directed('c'),
       directed('d'),
+      directed('e'),
     ]);
     const [a, merged, gone, kept] = made.changes.slice(0, 4).map((c) => c.entityId!);
+    // Reverting the create is blocked while a relation depends on it, so mark the entity retracted directly.
+    await t.db
+      .update(entities)
+      .set({ retractedByChange: made.changes[4]!.id })
+      .where(eq(entities.id, made.changes[4]!.entityId!));
     await publish(author, mod, [{ op: 'merge', kind: 'work', from: merged, into: kept }]);
     await t.db.update(entities).set({ removedAt: new Date() }).where(eq(entities.id, gone!));
     const group = (await related(a!))!.byCreator[0]!;
     expect(group.works.map((w) => w.title)).toEqual(['Kept']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('lists a work once, and counts it once toward the cap, when the creator has two roles on it', async () => {
+  const { t, author, mod, related } = await setup();
+  try {
+    const writer = { ...directed('b'), data: { role: 'writer' } };
+    const made = await publish(author, mod, [
+      work('A', 'a'),
+      work('B', 'b'),
+      work('C', 'c'),
+      creator,
+      directed('a'),
+      directed('b'),
+      writer,
+      directed('c'),
+    ]);
+    const group = (await related(made.changes[0]!.entityId!))!.byCreator[0]!;
+    expect(group.works.map((w) => w.title)).toEqual(['B', 'C']);
   } finally {
     await t.close();
   }
