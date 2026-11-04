@@ -7,3 +7,4 @@ dist/
 apps/api/test/fixtures/
 .claude/worktrees/
 packages/shared/src/api/schema.ts
+apps/web/src/routeTree.gen.ts

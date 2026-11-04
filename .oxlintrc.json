@@ -5,6 +5,7 @@
     "apps/api/drizzle/**",
     "**/dist/**",
     "coverage/**",
-    "packages/shared/src/api/schema.ts"
+    "packages/shared/src/api/schema.ts",
+    "apps/web/src/routeTree.gen.ts"
   ]
 }

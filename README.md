@@ -11,7 +11,10 @@ recorded in `docs/decisions/`.
     `service.ts` (rules), `repository.ts` (Drizzle) and `schemas.ts`.
   - `src/platform/`: `db` and `http`, shared infrastructure that knows nothing about features.
   - `src/app.ts` wires everything; `src/server.ts` starts it.
-- `packages/shared`: zod value lists shared by the API and the web app.
+- `apps/web`: the web app (React, Vite, TanStack Router and Query, Tailwind, shadcn/ui).
+  - `src/routes/`: file-based routes; `src/routeTree.gen.ts` is generated and committed.
+  - `test/harness.tsx`: renders the app on the real API, in process on PGlite.
+- `packages/shared`: zod value lists shared by the API and the web app, and the typed API client.
 
 ## Run the API locally
 
@@ -25,6 +28,19 @@ pnpm --filter @amdb/api dev      # http://localhost:3000/api/health
 
 `DATABASE_URL=pglite:.pglite` keeps an embedded Postgres in `apps/api/.pglite/`, so no database
 install is needed. Point it at a real Postgres URL to use one instead. Migrations run on startup.
+
+## Run the web app locally
+
+With the API running on port 3000:
+
+```bash
+pnpm --filter @amdb/web dev      # http://localhost:5173, proxies /api to the API
+```
+
+Port 5173 is fixed (`strictPort`): it must match `WEB_ORIGIN`, the origin Better Auth trusts.
+
+Web tests run the real API in process on PGlite (`apps/web/test/harness.tsx`); only Better Auth's
+browser client is stubbed. ADR 0004 explains why.
 
 ## Checks
 
