@@ -112,7 +112,11 @@ export const MySubmissionsSchema = z.object({
           seq: z.number().int(),
           op: ChangeOp,
           kind: EntityKind,
-          /** The entry the change is about (an edit's target, a relation's work), if it has one. */
+          /**
+           * The entry the change is about, if it has one: an edit's target, or a relation's `from`
+           * end, which is the work for most relations but the series or property for `series_work`
+           * and `property_work`.
+           */
           entityId: z.uuid().nullable(),
           status: ChangeStatus,
         }),
