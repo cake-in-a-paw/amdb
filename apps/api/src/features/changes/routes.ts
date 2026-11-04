@@ -63,6 +63,7 @@ const createSubmissionRoute = createRoute({
   responses: {
     201: json(SubmissionCreatedSchema, 'Created'),
     400: json(ErrorSchema, 'Invalid submission'),
+    409: json(ErrorSchema, 'Duplicate slug or external id (duplicate_slug, duplicate_external_id)'),
     429: json(ErrorSchema, 'Rate limited'),
   },
 });
@@ -130,7 +131,10 @@ const resubmitRoute = createRoute({
     201: json(SubmissionCreatedSchema, 'Created'),
     400: json(ErrorSchema, 'Invalid change'),
     404: json(ErrorSchema, 'Not found'),
-    409: json(ErrorSchema, 'Not rejected, or already resubmitted'),
+    409: json(
+      ErrorSchema,
+      'Not rejected, already resubmitted, or a duplicate slug or external id (duplicate_slug, duplicate_external_id)',
+    ),
   },
 });
 

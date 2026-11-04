@@ -862,6 +862,39 @@
               }
             }
           },
+          "409": {
+            "description": "Duplicate slug or external id (duplicate_slug, duplicate_external_id)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
           "429": {
             "description": "Rate limited",
             "content": {
@@ -2032,7 +2065,7 @@
             }
           },
           "409": {
-            "description": "Not rejected, or already resubmitted",
+            "description": "Not rejected, already resubmitted, or a duplicate slug or external id (duplicate_slug, duplicate_external_id)",
             "content": {
               "application/json": {
                 "schema": {
