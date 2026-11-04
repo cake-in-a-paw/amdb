@@ -221,3 +221,52 @@ test("a resubmit draft saved before the entry changed keeps only the contributor
   await screen.findByRole('list', { name: 'Your submissions' });
   expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
 });
+
+test("a background refetch while a rejected edit is open sends only the contributor's edit", async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  const r = await rejected(t.api, t.session.userId ?? '', [
+    { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2002 } },
+  ]);
+  await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: r.changeId } });
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+
+  // Someone else sets the description while the form is open, and the entry is read again.
+  const moderator = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  const other = t.api.as({ kind: 'user', userId: await t.api.createUser() });
+  const made = await other.post('/api/submissions', {
+    cc0: true,
+    changes: [{ op: 'update', kind: 'work', entityId: id, fields: { description: 'Changed by someone else.' } }],
+  });
+  const changeId = ((await made.json()) as Created).changes[0]?.id;
+  expect((await moderator.post(`/api/changes/${changeId}/approve`)).status).toBe(200);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+  const sent = watchResubmits(t);
+
+  await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
+  await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await sent()).toEqual([{ fields: { originalTitle: 'Sen to Chihiro' } }]);
+});
+
+test('the resubmit conflict notice names fields in words', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  const r = await rejected(t.api, t.session.userId ?? '', [
+    { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2002 } },
+  ]);
+  await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: r.changeId } });
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+
+  const moderator = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  const other = t.api.as({ kind: 'user', userId: await t.api.createUser() });
+  const made = await other.post('/api/submissions', {
+    cc0: true,
+    changes: [{ op: 'update', kind: 'work', entityId: id, fields: { originalTitle: '千と千尋の神隠し' } }],
+  });
+  const changeId = ((await made.json()) as Created).changes[0]?.id;
+  expect((await moderator.post(`/api/changes/${changeId}/approve`)).status).toBe(200);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+
+  expect(await screen.findByText(/changed since you started editing.*check original title\./)).toBeInTheDocument();
+  expect(screen.getByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
+});

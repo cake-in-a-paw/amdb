@@ -1,4 +1,6 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { same } from '@/lib/diff';
+import { useDraft } from '@/lib/drafts';
 import { isEntryForm, type EntryForm } from '@/lib/submission';
 
 /**
@@ -93,4 +95,49 @@ export function isEditDraft(v: unknown, kind: EntryForm['kind']): v is EditDraft
     v.base.kind === kind &&
     v.form.kind === kind
   );
+}
+
+/**
+ * An edit form kept as a draft under `key`, always laid over `current` (the form built from the
+ * entry, or the change, as it is now). A restored draft is rebased when it loads, and the form is
+ * rebased again whenever `current` changes while it is open (a refetch on returning to the tab, an
+ * invalidation), so what is sent is only ever the contributor's own edits: never a revert of a
+ * field someone else changed meanwhile, nor an unrelate of a relation someone else added.
+ * `conflicts` names the fields both sides changed, from the load on.
+ */
+export function useEditDraft(
+  key: string,
+  current: EntryForm,
+): { form: EntryForm; setForm: (next: EntryForm) => void; clear: () => void; conflicts: string[] } {
+  const loaded = useRef<string[]>([]);
+  const [draft, setDraft, clear] = useDraft<EditDraft>(
+    key,
+    { base: current, form: current },
+    (v): v is EditDraft => isEditDraft(v, current.kind),
+    (saved) => {
+      const rebased = rebase(saved.base, saved.form, current);
+      loaded.current = rebased.conflicts;
+      return { base: current, form: rebased.form };
+    },
+  );
+  const [conflicts, setConflicts] = useState(() => loaded.current);
+  // Rebased during render, so even the render before the effect below never builds a request
+  // from a form that was based on an older entry.
+  const rebased = useMemo(
+    () => (same(draft.base, current) ? null : rebase(draft.base, draft.form, current)),
+    [draft, current],
+  );
+  useEffect(() => {
+    if (!rebased) return;
+    setDraft({ base: current, form: rebased.form });
+    if (rebased.conflicts.length > 0) setConflicts((was) => [...new Set([...was, ...rebased.conflicts])]);
+  }, [rebased, current, setDraft]);
+
+  return {
+    form: rebased ? rebased.form : draft.form,
+    // The form shown is always based on `current`, so an edit to it is too.
+    setForm: (next) => setDraft({ base: current, form: next }),
+    clear,
+    conflicts,
+  };
 }

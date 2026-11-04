@@ -1,16 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChangeStatus } from '@/components/change-status';
+import { ConflictNotice } from '@/components/conflict-notice';
 import { EntryForm } from '@/components/entry-form';
 import { LoadError, Loading } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { ApiError, unwrap } from '@/lib/api';
 import { diffFields } from '@/lib/diff';
-import { useDraft } from '@/lib/drafts';
 import { entityQueryOptions } from '@/lib/entity';
 import { describeResubmitError } from '@/lib/errors';
-import { isEditDraft, rebase, type EditDraft } from '@/lib/rebase';
+import { useEditDraft } from '@/lib/rebase';
 import { changeQueryOptions, type ChangeDetail } from '@/lib/rejected-change';
 import { linkClass } from '@/lib/styles';
 import {
@@ -97,9 +97,10 @@ function UpdateFix({
 }) {
   const { api } = Route.useRouteContext();
   const entity = useQuery(entityQueryOptions(api, entityId));
+  const base = useMemo(() => (entity.data ? { ...entity.data.fields, ...payload } : null), [entity.data, payload]);
   if (entity.isPending) return <Loading what="the entry" />;
   if (entity.isError) return <LoadError what="the entry" error={entity.error} onRetry={() => void entity.refetch()} />;
-  return <FieldsFix change={change} base={{ ...entity.data.fields, ...payload }} />;
+  return <FieldsFix change={change} base={base} />;
 }
 
 /**
@@ -112,22 +113,13 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
   const kind = change.kind;
-  const initial: EntryFormValue = { ...emptyForm(), kind, fields: toInputs(kind, base ?? {}) };
-  // As when editing an entry: the draft keeps the form it started from beside the edited one, and
-  // on load the edits are laid over what the change would set now.
-  const conflicts = useRef<string[]>([]);
-  const [draft, setDraft, clearDraft] = useDraft<EditDraft>(
-    `resubmit.${change.id}`,
-    { base: initial, form: initial },
-    (v): v is EditDraft => isEditDraft(v, kind),
-    (saved) => {
-      const rebased = rebase(saved.base, saved.form, initial);
-      conflicts.current = rebased.conflicts;
-      return { base: initial, form: rebased.form };
-    },
+  const initial: EntryFormValue = useMemo(
+    () => ({ ...emptyForm(), kind, fields: toInputs(kind, base ?? {}) }),
+    [kind, base],
   );
-  const form = draft.form;
-  const setForm = (next: EntryFormValue) => setDraft({ base: draft.base, form: next });
+  // As when editing an entry: the draft keeps the form it started from beside the edited one, and
+  // the edits are laid over what the change would set now, on load and whenever that changes.
+  const { form, setForm, clear: clearDraft, conflicts } = useEditDraft(`resubmit.${change.id}`, initial);
   const [checked, setChecked] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [focusError, setFocusError] = useState(0);
@@ -169,11 +161,7 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
 
   return (
     <>
-      {conflicts.current.length > 0 && (
-        <p role="status" className="mt-4 rounded-md border border-border bg-card p-3">
-          This entry changed since you started editing. Your values are kept; check {conflicts.current.join(', ')}.
-        </p>
-      )}
+      <ConflictNotice conflicts={conflicts} />
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
         {base ? (
           <EntryForm

@@ -361,3 +361,45 @@ test('a relation the contributor removed and someone else removed too sends no u
     { op: 'update', kind: 'work', entityId: id, fields: { originalTitle: 'Sen to Chihiro' } },
   ]);
 });
+
+test("a background refetch while the form is open sends only the contributor's edit", async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+
+  // Someone else's changes are published while the form is open...
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [{ op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2003 } }]);
+  await publish(
+    contributor,
+    moderator,
+    familyTag.map((c) => ('from' in c ? { ...c, from: { id } } : c)),
+  );
+  // ...and the entry is read again, as on returning to the tab.
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+  const posts = watchSubmissions(t);
+
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: id, fields: { originalTitle: 'Sen to Chihiro' } },
+  ]);
+});
+
+test('a background refetch that changes a field the contributor edited says so', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  const year = await screen.findByLabelText('Release year');
+  await t.user.clear(year);
+  await t.user.type(year, '2002');
+
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [{ op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2003 } }]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+
+  expect(await screen.findByText(/changed since you started editing.*release year/)).toBeInTheDocument();
+  expect(screen.getByLabelText('Release year')).toHaveValue(2002);
+});
