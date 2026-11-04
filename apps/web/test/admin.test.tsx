@@ -170,3 +170,31 @@ test('a failed account lookup shows an error with retry, not Not found', async (
 
   expect(await screen.findByRole('heading', { name: 'Users' })).toBeInTheDocument();
 });
+
+test('redacting a change another admin already redacted says so', async () => {
+  const { user, api, seeded, router } = await renderApp('/', {
+    as: 'admin',
+    seed: async (a) => {
+      const { id } = await liveWork(a);
+      const { contributor, moderator } = await actors(a);
+      const edit = (releaseYear: number) => ({ op: 'update', kind: 'work', entityId: id, fields: { releaseYear } });
+      const overwritten = await publish(contributor, moderator, [edit(2017)]);
+      await publish(contributor, moderator, [edit(2018)]);
+      return { id, overwritten: overwritten.changes[0]?.id ?? '' };
+    },
+  });
+  await router.navigate({ to: '/entities/$id/history', params: { id: seeded.id } });
+  const list = await screen.findByRole('list', { name: 'History' });
+  const overwritten = list.children[1] as HTMLElement;
+  await user.click(within(overwritten).getByRole('button', { name: /Redact/ }));
+  const dialog = await screen.findByRole('dialog', { name: 'Redact this change' });
+  await user.type(within(dialog).getByLabelText('Reason'), 'Contains personal data');
+  // Another admin redacts the same change first.
+  const other = api.as({ kind: 'user', userId: await api.createUser({ role: 'admin' }) });
+  const first = await other.post(`/api/admin/changes/${seeded.overwritten}/redact`, { reason: 'Legal request' });
+  expect(first.status, await first.clone().text()).toBe(200);
+
+  await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
+
+  expect(await within(dialog).findByText('Someone already removed this change.')).toBeInTheDocument();
+});

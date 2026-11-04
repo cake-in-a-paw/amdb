@@ -1,5 +1,5 @@
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createFileRoute } from '@tanstack/react-router';
 import { createdTitle } from '@/components/change-diff';
 import { LoadError, Loading, NotFound } from '@/components/entity-states';
@@ -32,6 +32,8 @@ function Moderation() {
   // After a review the item is gone; focus moves to the next one (or the heading) instead of being lost.
   const heading = useRef<HTMLHeadingElement>(null);
   const reviewed = useRef<{ id: string; next: string | null } | null>(null);
+  // Why an item left the queue without this moderator's review (someone else reviewed it first).
+  const [notice, setNotice] = useState<string | null>(null);
   const shown = queue.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
     const done = reviewed.current;
@@ -62,8 +64,10 @@ function Moderation() {
     changeTitles.set(change.id, title);
     if (change.entityId) titles.set(change.entityId, title);
   }
-  // An approval or rejection changes the queue and, for approvals, what the catalog shows.
-  const onReviewed = (id: string) => {
+  // An approval or rejection changes the queue and, for approvals, what the catalog shows. A
+  // `note` says why the item went when it wasn't this review that took it out.
+  const onReviewed = (id: string, note?: string) => {
+    setNotice(note ?? null);
     const at = entries.findIndex((entry) => entry.change.id === id);
     reviewed.current = { id, next: (entries[at + 1] ?? entries[at - 1])?.change.id ?? null };
     return Promise.all([
@@ -77,6 +81,11 @@ function Moderation() {
       <h1 ref={heading} tabIndex={-1} className="font-serif text-3xl font-semibold">
         Moderation queue
       </h1>
+      {notice && (
+        <p role="status" className="mt-4 rounded-md border border-border bg-card p-3">
+          {notice}
+        </p>
+      )}
       {entries.length === 0 ? (
         <p className="mt-4 text-muted-foreground">Nothing is waiting for review.</p>
       ) : (

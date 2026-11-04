@@ -6,7 +6,7 @@ import { RejectDialog } from '@/components/reject-dialog';
 import { Button } from '@/components/ui/button';
 import { ApiError, unwrap } from '@/lib/api';
 import { entityQueryOptions } from '@/lib/entity';
-import { describeError } from '@/lib/errors';
+import { describeError, isApiCode } from '@/lib/errors';
 import { fieldLabel } from '@/lib/labels';
 import { valueText } from '@/components/history-list';
 import { linkClass } from '@/lib/styles';
@@ -113,8 +113,11 @@ export function QueueItem({
   entry: QueueEntry;
   titles: Titles;
   changeTitles: ReadonlyMap<string, string>;
-  /** Called with the reviewed change's id once the queue has been told. */
-  onReviewed: (changeId: string) => Promise<unknown>;
+  /**
+   * Called with the reviewed change's id once the queue has been told; with a `note` when another
+   * moderator reviewed it first, so it goes from the queue with that said.
+   */
+  onReviewed: (changeId: string, note?: string) => Promise<unknown>;
 }) {
   const { api } = rootRoute.useRouteContext();
   const { change } = entry;
@@ -127,6 +130,9 @@ export function QueueItem({
         }),
       ),
     onSuccess: () => onReviewed(change.id),
+    onError: (error) => {
+      if (isApiCode(error, 'already_reviewed')) void onReviewed(change.id, describeError(error));
+    },
   });
   const canEdit = change.op === 'create' || change.op === 'update';
 
@@ -148,7 +154,7 @@ export function QueueItem({
         {canEdit && (
           <EditApproveDialog fields={record(change.payload)} onApprove={(fields) => approve.mutateAsync(fields)} />
         )}
-        <RejectDialog changeId={change.id} onRejected={() => onReviewed(change.id)} />
+        <RejectDialog changeId={change.id} onRejected={(note) => onReviewed(change.id, note)} />
       </div>
       {approve.isError && <ApproveError error={approve.error} entry={entry} changeTitles={changeTitles} />}
     </li>

@@ -461,3 +461,27 @@ test('an unrelate whose entry cannot be loaded says so and can retry', async () 
 
   await waitFor(() => expect(item).toHaveTextContent('Credit: Hayao Miyazaki (Director)'));
 });
+
+test.each(['Approve', 'Reject'] as const)(
+  '%s after another moderator reviewed it says so, and the item leaves the queue',
+  async (action) => {
+    const { user, api, seeded } = await renderApp('/moderation', {
+      as: 'moderator',
+      seed: async (a) => submit((await actors(a)).contributor, [work('w', 'Arrival')]),
+    });
+    const [item] = await queueItems();
+    // Someone else gets there first.
+    const other = api.as({ kind: 'user', userId: await api.createUser({ role: 'moderator' }) });
+    expect((await other.post(`/api/changes/${seeded.changes[0]?.id}/approve`)).status).toBe(200);
+
+    await user.click(within(item as HTMLElement).getByRole('button', { name: action }));
+    if (action === 'Reject') {
+      const dialog = await screen.findByRole('dialog', { name: 'Reject this change' });
+      await user.type(within(dialog).getByLabelText('Reason'), 'Not notable yet');
+      await user.click(within(dialog).getByRole('button', { name: 'Reject' }));
+    }
+
+    expect(await screen.findByText('Someone already reviewed this change.')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing is waiting for review.')).toBeInTheDocument();
+  },
+);

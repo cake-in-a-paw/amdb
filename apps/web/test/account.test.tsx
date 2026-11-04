@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
 import { renderApp } from './harness';
 
@@ -69,4 +69,20 @@ test('signed out, the account page asks for a sign-in', async () => {
 
   expect(await screen.findByText('Sign in to see your account.')).toBeInTheDocument();
   expect(screen.getAllByRole('link', { name: 'Sign in' }).length).toBeGreaterThan(0);
+});
+
+test('saving after the session ended says so, with a way to sign in again', async () => {
+  const t = await renderApp('/account', { as: 'contributor' });
+  await t.user.type(await screen.findByLabelText('Handle'), 'ada_l');
+  // The session expires while the page is open.
+  t.session.userId = null;
+
+  await t.user.click(screen.getByRole('button', { name: 'Save handle' }));
+
+  const alert = await screen.findByRole('alert');
+  expect(alert).toHaveTextContent('Your session ended. Sign in again.');
+  expect(within(alert).getByRole('link', { name: 'Sign in again' })).toHaveAttribute(
+    'href',
+    '/sign-in?next=%2Faccount',
+  );
 });

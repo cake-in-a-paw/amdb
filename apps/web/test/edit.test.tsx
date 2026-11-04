@@ -403,3 +403,21 @@ test('a background refetch that changes a field the contributor edited says so',
   expect(await screen.findByText(/changed since you started editing.*release year/)).toBeInTheDocument();
   expect(screen.getByLabelText('Release year')).toHaveValue(2002);
 });
+
+test('removing a link someone else already removed says so, instead of "Try again"', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+  // Someone else removes the same tag; the form hasn't read the entry again.
+  const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
+    relations: { tags: { relationId: string }[] };
+  };
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.tags[0]?.relationId }]);
+
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent('A link you removed is already gone. Reload the form.');
+});

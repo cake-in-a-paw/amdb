@@ -5,12 +5,22 @@ import { fieldClass } from '@/components/form-fields';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { unwrap } from '@/lib/api';
-import { describeError } from '@/lib/errors';
+import { describeError, isApiCode } from '@/lib/errors';
 
 const rootRoute = getRouteApi('__root__');
 
 /** Rejecting asks for a reason, which goes back to the contributor with their work. */
-export function RejectDialog({ changeId, onRejected }: { changeId: string; onRejected: () => Promise<unknown> }) {
+/**
+ * `onRejected` is called once the rejection is recorded, or with a note when another moderator
+ * reviewed the change first, since then there is nothing left to reject.
+ */
+export function RejectDialog({
+  changeId,
+  onRejected,
+}: {
+  changeId: string;
+  onRejected: (note?: string) => Promise<unknown>;
+}) {
   const { api } = rootRoute.useRouteContext();
   const reasonId = useId();
   const [open, setOpen] = useState(false);
@@ -26,6 +36,11 @@ export function RejectDialog({ changeId, onRejected }: { changeId: string; onRej
       ),
     onSuccess: async () => {
       await onRejected();
+      setOpen(false);
+    },
+    onError: async (error) => {
+      if (!isApiCode(error, 'already_reviewed')) return;
+      await onRejected(describeError(error));
       setOpen(false);
     },
   });

@@ -3,8 +3,9 @@ import { createFileRoute, Link } from '@tanstack/react-router';
 import { useId, useState, type FormEvent } from 'react';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
-import { describeError } from '@/lib/errors';
+import { describeError, isApiCode } from '@/lib/errors';
 import { meQueryKey, meQueryOptions } from '@/lib/me';
+import { linkClass } from '@/lib/styles';
 
 export const Route = createFileRoute('/account')({ component: Account });
 
@@ -101,6 +102,14 @@ function HandleForm({ current }: { current: string | null }) {
       {save.isError && (
         <p role="alert" className="text-sm text-destructive">
           {describeError(save.error)}
+          {isApiCode(save.error, 'unauthenticated') && (
+            <>
+              {' '}
+              <Link to="/sign-in" search={{ next: '/account' }} className={linkClass}>
+                Sign in again
+              </Link>
+            </>
+          )}
         </p>
       )}
       {saved && !save.isPending && (

@@ -25,26 +25,53 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
     case 'invalid_fields':
     case 'invalid_relation':
     case 'invalid_role':
+    case 'duplicate_ref':
       return "Some of this isn't valid. Check it and try again.";
     case 'unknown_entity':
     case 'unknown_ref':
       return "An entry named here doesn't exist (any more). Check it and try again.";
+    case 'unknown_relation':
+      return 'A link you removed is already gone. Reload the form.';
+    case 'invalid_cursor':
+      return 'This list changed while you were reading it. Reload the page.';
+    case 'conflict':
+    case 'already_exists':
+      return 'That already exists. Reload and look again.';
     case 'duplicate_slug':
       return 'A tag with that slug already exists.';
     case 'duplicate_external_id':
       return 'That ID is already recorded on another entry.';
     case 'identity_required':
+    case 'anon_token_required':
       return "AMDB couldn't tell who is submitting. Sign in, or allow this site to store data, and try again.";
     case 'rate_limited':
       return error.retryAfterSeconds
         ? `Too many tries. Try again in ${waitWords(error.retryAfterSeconds)}.`
         : 'Too many tries. Wait a minute and try again.';
+    case 'unauthenticated':
+      return 'Your session ended. Sign in again.';
+    case 'forbidden':
+      return "You can't do that.";
     case 'not_found':
       return "That doesn't exist, or you can't see it.";
     case 'removed':
       return 'This entry was removed.';
     case 'stale_change':
       return 'Something else changed this entry in the meantime, so this no longer applies. Reload and look again.';
+    case 'already_reviewed':
+      return 'Someone already reviewed this change.';
+    case 'dependency_pending':
+      return 'Approve the change this one depends on first.';
+    case 'already_redacted':
+      return 'Someone already removed this change.';
+    case 'not_redactable':
+      return 'A revert holds no content of its own. Remove the change it reverted instead.';
+    case 'content_is_current':
+      return 'This change is what the entry shows now, so removing it takes the content down too.';
+    case 'not_rejected':
+      return 'Only a rejected change can be resubmitted.';
+    case 'already_resubmitted':
+      return 'You already resubmitted this change.';
     case 'has_dependents':
       return "Other entries or later changes build on this, so it can't be undone yet. Undo those first.";
     case 'last_admin':
@@ -59,6 +86,8 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
     case 'not_live':
     case 'redacted':
       return "This change can't be reverted.";
+    case 'internal':
+      return 'Something went wrong at AMDB. Try again in a moment.';
     default:
       return fallback;
   }
@@ -87,17 +116,12 @@ export function existingIdOf(error: unknown): string | null {
   return typeof id === 'string' ? id : null;
 }
 
+/** Whether `error` is the API's answer with `code`. */
+export const isApiCode = (error: unknown, code: string): boolean => error instanceof ApiError && error.code === code;
+
 /** `describeError` for resubmitting a rejected change, where the state of the change is the usual trouble. */
 export function describeResubmitError(error: unknown): string {
-  if (error instanceof ApiError) {
-    switch (error.code) {
-      case 'not_rejected':
-        return 'Only a rejected change can be resubmitted.';
-      case 'already_resubmitted':
-        return 'You already resubmitted this change.';
-      case 'redacted':
-        return 'This change was removed, so it can’t be resubmitted.';
-    }
-  }
+  if (error instanceof ApiError && error.code === 'redacted')
+    return 'This change was removed, so it can’t be resubmitted.';
   return describeError(error, "Couldn't resubmit. Try again.");
 }
