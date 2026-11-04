@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { EntryRow } from '@/components/entry-row';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
@@ -52,9 +52,9 @@ function CatalogList() {
       ) : works.data.items.length === 0 ? (
         <div className="py-4">
           <p>The catalog is empty.</p>
-          <a href="/submit" className={linkClass}>
+          <Link to="/submit" className={linkClass}>
             Add the first entry
-          </a>
+          </Link>
         </div>
       ) : (
         <ul aria-labelledby="catalog-heading">

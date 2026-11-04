@@ -14,6 +14,7 @@ import { Route as AccountRouteImport } from './routes/account'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as SignInRouteImport } from './routes/sign-in'
+import { Route as SubmitRouteImport } from './routes/submit'
 import { Route as EntitiesIdRouteImport } from './routes/entities.$id'
 import { Route as MeSubmissionsRouteImport } from './routes/me.submissions'
 import { Route as EntitiesIdIndexRouteImport } from './routes/entities.$id.index'
@@ -44,6 +45,11 @@ const SignInRoute = SignInRouteImport.update({
   path: '/sign-in',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SubmitRoute = SubmitRouteImport.update({
+  id: '/submit',
+  path: '/submit',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EntitiesIdRoute = EntitiesIdRouteImport.update({
   id: '/entities/$id',
   path: '/entities/$id',
@@ -71,6 +77,7 @@ export interface FileRoutesByFullPath {
   '/browse': typeof BrowseRoute
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
+  '/submit': typeof SubmitRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByTo {
   '/browse': typeof BrowseRoute
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
+  '/submit': typeof SubmitRoute
   '/me/submissions': typeof MeSubmissionsRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id': typeof EntitiesIdIndexRoute
@@ -93,6 +101,7 @@ export interface FileRoutesById {
   '/browse': typeof BrowseRoute
   '/search': typeof SearchRoute
   '/sign-in': typeof SignInRoute
+  '/submit': typeof SubmitRoute
   '/entities/$id': typeof EntitiesIdRouteWithChildren
   '/me/submissions': typeof MeSubmissionsRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/search'
     | '/sign-in'
+    | '/submit'
     | '/entities/$id'
     | '/me/submissions'
     | '/entities/$id/history'
@@ -117,6 +127,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/search'
     | '/sign-in'
+    | '/submit'
     | '/me/submissions'
     | '/entities/$id/history'
     | '/entities/$id'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/browse'
     | '/search'
     | '/sign-in'
+    | '/submit'
     | '/entities/$id'
     | '/me/submissions'
     | '/entities/$id/history'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   BrowseRoute: typeof BrowseRoute
   SearchRoute: typeof SearchRoute
   SignInRoute: typeof SignInRoute
+  SubmitRoute: typeof SubmitRoute
   EntitiesIdRoute: typeof EntitiesIdRouteWithChildren
   MeSubmissionsRoute: typeof MeSubmissionsRoute
 }
@@ -178,6 +191,13 @@ declare module '@tanstack/react-router' {
       path: '/sign-in'
       fullPath: '/sign-in'
       preLoaderRoute: typeof SignInRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/submit': {
+      id: '/submit'
+      path: '/submit'
+      fullPath: '/submit'
+      preLoaderRoute: typeof SubmitRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/entities/$id': {
@@ -231,6 +251,7 @@ const rootRouteChildren: RootRouteChildren = {
   BrowseRoute: BrowseRoute,
   SearchRoute: SearchRoute,
   SignInRoute: SignInRoute,
+  SubmitRoute: SubmitRoute,
   EntitiesIdRoute: EntitiesIdRouteWithChildren,
   MeSubmissionsRoute: MeSubmissionsRoute,
 }

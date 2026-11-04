@@ -1,5 +1,5 @@
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import type { EntityKind } from '@amdb/shared';
 import { EntryRow } from '@/components/entry-row';
 import { LoadError, Loading } from '@/components/entity-states';
@@ -54,9 +54,9 @@ function Results({ q, items }: { q: string; items: Summary[] }) {
     return (
       <div className="py-4">
         <p>No results for “{q}”.</p>
-        <a href="/submit" className={linkClass}>
+        <Link to="/submit" search={{ title: q }} className={linkClass}>
           Add it
-        </a>
+        </Link>
       </div>
     );
   }

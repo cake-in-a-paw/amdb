@@ -69,9 +69,9 @@ function MySubmissions() {
       ) : items.length === 0 ? (
         <div className="mt-4">
           <p>You haven’t submitted anything yet.</p>
-          <a href="/submit" className={linkClass}>
+          <Link to="/submit" className={linkClass}>
             Contribute an entry
-          </a>
+          </Link>
         </div>
       ) : (
         <>

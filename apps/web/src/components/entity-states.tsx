@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
@@ -31,9 +32,9 @@ export function EmptyList({ children }: { children?: ReactNode }) {
   return (
     <p className="py-6">
       {children ?? 'Nothing here yet — '}
-      <a href="/submit" className={linkClass}>
+      <Link to="/submit" className={linkClass}>
         add the first one
-      </a>
+      </Link>
     </p>
   );
 }

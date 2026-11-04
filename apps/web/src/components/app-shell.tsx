@@ -22,8 +22,8 @@ const navLink =
   'inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 text-sm font-medium text-foreground hover:bg-secondary';
 
 /*
- * Contribute and Moderation are plain links until their routes exist (Tasks 8 to 10); a typed
- * <Link> to a route that isn't there fails tsc.
+ * Moderation is a plain link until its route exists (Task 10); a typed <Link> to a route that
+ * isn't there fails tsc.
  */
 export function AppShell({ children }: { children: ReactNode }) {
   return (
@@ -42,9 +42,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <Link to="/browse" className={navLink}>
               Browse
             </Link>
-            <a href="/submit" className={navLink}>
+            <Link to="/submit" className={navLink}>
               Contribute
-            </a>
+            </Link>
             <Session />
           </nav>
         </div>

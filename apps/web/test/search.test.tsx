@@ -66,7 +66,7 @@ test('a query with no results offers to add it', async () => {
   await renderApp('/search?q=zzyzx', { seed });
 
   expect(await screen.findByText(/No results for/)).toHaveTextContent('No results for “zzyzx”');
-  expect(screen.getByRole('link', { name: 'Add it' })).toHaveAttribute('href', '/submit');
+  expect(screen.getByRole('link', { name: 'Add it' })).toHaveAttribute('href', '/submit?title=zzyzx');
 });
 
 test('with no query it asks for one', async () => {

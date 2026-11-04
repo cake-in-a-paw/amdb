@@ -94,6 +94,36 @@ describe('accessibility floor on the sign-in, account and submissions pages', ()
   });
 });
 
+describe('accessibility floor on the submission tool', () => {
+  test('the form, a picker with results, an inline new entry and the selects', async () => {
+    const { user } = await renderApp('/submit', { as: 'contributor', seed });
+    await user.selectOptions(screen.getByLabelText('Media type'), 'book');
+    await user.type(screen.getByLabelText('Find a creator'), 'jones');
+    await screen.findByRole('button', { name: /^Diana Wynne Jones/ });
+    await user.click(screen.getByRole('button', { name: 'Add an external ID' }));
+    await user.type(screen.getByLabelText('Find a series'), 'Brand new');
+    await user.click(screen.getByRole('button', { name: 'Add new series “Brand new”…' }));
+
+    const main = screen.getByRole('main');
+    for (const control of [...within(main).getAllByRole('button'), ...within(main).getAllByRole('link')]) {
+      expectFloor(control);
+      expect(control, control.outerHTML).toHaveClass('min-w-11');
+    }
+    for (const control of [
+      ...within(main).getAllByRole('textbox'),
+      ...within(main).getAllByRole('searchbox'),
+      ...within(main).getAllByRole('combobox'),
+      ...within(main).getAllByRole('spinbutton'),
+    ]) {
+      expect(control).toHaveAccessibleName();
+      expect(control, control.outerHTML).toHaveClass('min-h-11');
+    }
+    expect(within(main).getByRole('checkbox')).toHaveAccessibleName(
+      'I release this contribution into the public domain (CC0)',
+    );
+  });
+});
+
 describe('accessibility floor on the public browser', () => {
   /** Every link and button on the page, the header search included, and every field and select. */
   function expectBrowserFloor() {

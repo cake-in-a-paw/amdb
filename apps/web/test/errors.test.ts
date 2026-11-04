@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { ApiError, unwrap } from '@/lib/api';
-import { describeError } from '@/lib/errors';
+import { describeError, describeSubmitError, existingIdOf } from '@/lib/errors';
 
 const failure = (status: number, code: string, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify({ error: { code, message: 'api words' } }), {
@@ -69,5 +69,34 @@ describe('describeError', () => {
   test('an unknown code gets the fallback, never the API wording', () => {
     expect(describeError(api(500, 'something_new'))).toBe('Something went wrong. Try again.');
     expect(describeError(api(500, 'something_new'), 'Nope.')).toBe('Nope.');
+  });
+});
+
+describe('describeSubmitError', () => {
+  const limited = (retryAfterSeconds?: number) =>
+    new ApiError(429, 'rate_limited', 'api words', undefined, retryAfterSeconds);
+
+  test.each([
+    [limited(3600), 'Too many submissions — try again in 60 minutes'],
+    [limited(61), 'Too many submissions — try again in 2 minutes'],
+    [limited(30), 'Too many submissions — try again in 1 minute'],
+    [limited(), 'Too many submissions — try again later'],
+    [new ApiError(409, 'duplicate_slug', 'api words'), 'A tag with that slug already exists.'],
+    [new ApiError(409, 'duplicate_external_id', 'api words'), 'That ID is already recorded on another entry.'],
+    [new ApiError(400, 'invalid_fields', 'api words'), "Some of this isn't valid. Check it and try again."],
+    [new ApiError(500, 'something_new', 'api words'), "Couldn't submit. Try again."],
+  ])('%s', (error, words) => {
+    expect(describeSubmitError(error)).toBe(words);
+  });
+
+  test('identity_required asks to sign in', () => {
+    expect(describeSubmitError(new ApiError(400, 'identity_required', 'api words'))).toMatch(/Sign in/);
+  });
+
+  test('a duplicate names the entry that already has it', () => {
+    const id = '00000000-0000-4000-8000-000000000001';
+    expect(existingIdOf(new ApiError(409, 'duplicate_slug', 'x', { existingId: id }))).toBe(id);
+    expect(existingIdOf(new ApiError(409, 'duplicate_slug', 'x'))).toBeNull();
+    expect(existingIdOf(new TypeError('Failed to fetch'))).toBeNull();
   });
 });
