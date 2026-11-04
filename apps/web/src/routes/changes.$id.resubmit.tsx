@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ChangeStatus } from '@/components/change-status';
 import { ConflictNotice } from '@/components/conflict-notice';
 import { EntryForm } from '@/components/entry-form';
-import { LoadError, Loading } from '@/components/entity-states';
+import { entryGone, LoadError, Loading } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { ApiError, unwrap } from '@/lib/api';
 import { diffFields } from '@/lib/diff';
@@ -99,7 +99,23 @@ function UpdateFix({
   const entity = useQuery(entityQueryOptions(api, entityId));
   const base = useMemo(() => (entity.data ? { ...entity.data.fields, ...payload } : null), [entity.data, payload]);
   if (entity.isPending) return <Loading what="the entry" />;
-  if (entity.isError) return <LoadError what="the entry" error={entity.error} onRetry={() => void entity.refetch()} />;
+  if (entity.isError) {
+    // Removed or unknown is for good: say so, with no retry that can't help.
+    const gone = entryGone(entity.error);
+    if (gone) {
+      return (
+        <p className="py-6">
+          {gone === 'removed'
+            ? 'This entry was removed, so an edit to it can’t be resubmitted.'
+            : 'The entry this edit was for no longer exists, so it can’t be resubmitted.'}{' '}
+          <Link to="/me/submissions" className={linkClass}>
+            My submissions
+          </Link>
+        </p>
+      );
+    }
+    return <LoadError what="the entry" error={entity.error} onRetry={() => void entity.refetch()} />;
+  }
   return <FieldsFix change={change} base={base} />;
 }
 

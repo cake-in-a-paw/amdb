@@ -270,3 +270,25 @@ test('the resubmit conflict notice names fields in words', async () => {
   expect(await screen.findByText(/changed since you started editing.*check original title\./)).toBeInTheDocument();
   expect(screen.getByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
 });
+
+test('a rejected edit whose entry was removed says so, with no retry', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.amelie;
+  const r = await rejected(t.api, t.session.userId ?? '', [
+    { op: 'update', kind: 'work', entityId: id, fields: { releaseYear: 2002 } },
+  ]);
+  // An admin takes the entry down for legal reasons after the edit was rejected.
+  const admin = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'admin' }) });
+  const redacted = await admin.post(`/api/admin/changes/${t.seeded.createdBy.amelie}/redact`, {
+    reason: 'Legal request',
+    removeEntity: true,
+  });
+  expect(redacted.status, await redacted.clone().text()).toBe(200);
+
+  await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: r.changeId } });
+
+  expect(await screen.findByText(/This entry was removed/)).toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Try again' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: 'Resubmit for review' })).not.toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'My submissions' })).toBeInTheDocument();
+});
