@@ -1,4 +1,10 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "ignorePatterns": [".claude/worktrees/**", "apps/api/drizzle/**", "**/dist/**", "coverage/**"]
+  "ignorePatterns": [
+    ".claude/worktrees/**",
+    "apps/api/drizzle/**",
+    "**/dist/**",
+    "coverage/**",
+    "packages/shared/src/api/schema.ts"
+  ]
 }

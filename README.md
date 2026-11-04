@@ -52,6 +52,13 @@ snapshot. After an intentional API change, refresh it and review the diff:
 pnpm --filter @amdb/api -s openapi:dump > apps/api/test/fixtures/openapi.snapshot.json
 ```
 
+The web app's typed client lives in `packages/shared/src/api`. After an API change, refresh the
+snapshot, then regenerate `schema.ts` and commit both together (a drift test fails otherwise):
+
+```bash
+pnpm --filter @amdb/shared gen:api
+```
+
 API tests run against an in-memory PGlite database with the real migrations.
 
 ## Database changes

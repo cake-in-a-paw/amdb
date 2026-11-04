@@ -4,17 +4,21 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./api": "./src/api/client.ts"
   },
   "scripts": {
     "test": "vitest run",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "gen:api": "openapi-typescript ../../apps/api/test/fixtures/openapi.snapshot.json -o src/api/schema.ts"
   },
   "dependencies": {
+    "openapi-fetch": "0.17.0",
     "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/node": "26.6.5",
+    "openapi-typescript": "7.13.0",
     "typescript": "5.9.3",
     "vitest": "5.0.5"
   }
