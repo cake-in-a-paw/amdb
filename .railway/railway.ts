@@ -15,7 +15,7 @@ export default defineRailway(() => {
     start: 'pnpm --filter @amdb/api start',
     healthcheck: '/api/health',
     // Railway's config can't register a custom domain: `railway domain` does, on the linked `app`
-    // service, so docs/deploy.md step 3 registers it before (or between) applies.
+    // service, so docs/deploy.md step 3 applies once without it, registers it, then restores it.
     domains: [domain],
     env: {
       DATABASE_URL: db.env.DATABASE_URL,

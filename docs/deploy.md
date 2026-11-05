@@ -36,40 +36,25 @@ railway link            # if init did not already link this directory
 railway config plan     # read it before applying anything
 ```
 
-`.railway/railway.ts` lists `amdb.ty-pe.com` under `domains`, and Railway's config can't register a
-domain itself: `railway domain` does that, and it needs the `app` service to exist. So read what
-the plan says about the domain, then take one branch.
+`.railway/railway.ts` lists `amdb.ty-pe.com` under `domains`, but Railway's config can't register
+a custom domain (CLI 5.71: "Custom-domain registration is not supported by Railway
+configuration"), and `railway domain` needs the `app` service to exist. So the first apply runs
+without the domain:
 
-- **Branch A: the plan is clean.** It lists Postgres and the `app` service, shows the domain as
-  an addition, and reports no error. Apply, then register the domain on the now-existing service
-  and plan again to confirm:
+```bash
+# temporarily set domains: [] in .railway/railway.ts
+railway config plan     # 2 to add: postgres and app; nothing else
+railway config apply
+railway domain amdb.ty-pe.com --service app   # prints the CNAME and _railway-verify TXT for step 7
+git checkout .railway/railway.ts              # restore domains: [domain]
+railway config plan     # no domain error
+railway config apply    # if the plan still shows a change (the first apply left checkSuites unset)
+railway config plan     # "already up to date"
+```
 
-  ```bash
-  railway config apply
-  railway service app
-  railway domain amdb.ty-pe.com
-  railway config plan     # no domain error, no changes left for the domain
-  ```
-
-- **Branch B: the plan or apply refuses over the domain.** The output names `amdb.ty-pe.com` as
-  not registered, or says the service it belongs to does not exist. Apply once without the
-  domain (temporarily set `domains: []` in `.railway/railway.ts`), register the domain, restore
-  the line and apply again:
-
-  ```bash
-  railway config apply    # with domains: [] ; creates postgres and app
-  railway service app
-  railway domain amdb.ty-pe.com
-  # restore domains: [domain] in .railway/railway.ts
-  railway config plan     # no domain error
-  railway config apply
-  ```
-
-Either way, finish with a plan that has no domain error and no deletions, then apply.
-
-Verify: the final `railway config plan` shows no deletions and no domain error. After applying,
-the project has a `postgres` and an `app` service. `app`'s first deploy fails until the secrets
-(step 6) exist; that is expected. Step 6 ends with an explicit redeploy.
+Verify: the final `railway config plan` reports the configuration is up to date. The project has a
+`postgres` and an `app` service. `app`'s first deploy fails until the secrets (step 6) exist; that
+is expected. Step 6 ends with an explicit redeploy.
 
 ## 4. Create the OAuth clients
 
