@@ -39,7 +39,7 @@ import {
   InverseSchema,
   withoutAbsent,
 } from './apply';
-import { publicAuthor } from './author';
+import { publicAuthor, runOf } from './author';
 import {
   type ChangeRow,
   changesRepository,
@@ -73,18 +73,30 @@ interface Resolved {
   dependsOn: string | null;
 }
 
-/** Which kinds each relation joins, and which `data` keys it needs and allows. */
+/** Which kinds each relation joins (`from` lists every kind it may start at), and which `data` keys it needs and allows. */
 const RELATION_RULES: Record<
   RelationType,
-  { from: EntityKind; to: EntityKind | null; required: string[]; allowed: string[] }
+  { from: EntityKind[]; to: EntityKind | null; required: string[]; allowed: string[] }
 > = {
-  work_creator: { from: 'work', to: 'creator', required: ['role'], allowed: ['role', 'position'] },
-  series_work: { from: 'series', to: 'work', required: ['position'], allowed: ['position'] },
-  property_work: { from: 'property', to: 'work', required: [], allowed: [] },
-  work_link: { from: 'work', to: 'work', required: ['linkType'], allowed: ['linkType'] },
-  work_tag: { from: 'work', to: 'tag', required: [], allowed: [] },
-  external_id: { from: 'work', to: null, required: ['scheme', 'value'], allowed: ['scheme', 'value'] },
+  work_creator: { from: ['work'], to: 'creator', required: ['role'], allowed: ['role', 'position'] },
+  series_work: { from: ['series'], to: 'work', required: ['position'], allowed: ['position'] },
+  property_work: { from: ['property'], to: 'work', required: [], allowed: [] },
+  work_link: { from: ['work'], to: 'work', required: ['linkType'], allowed: ['linkType'] },
+  work_tag: { from: ['work'], to: 'tag', required: [], allowed: [] },
+  external_id: {
+    from: ['work', 'creator', 'series', 'property'],
+    to: null,
+    required: ['scheme', 'value'],
+    allowed: ['scheme', 'value'],
+  },
 };
+
+/**
+ * Who an import plans as: no one. It sees no one's pending creates and has no moderator rights, so
+ * its changes can only name live entities and its own refs. Kept inside this service rather than
+ * widening the HTTP `Actor`, since no request can ever be an importer.
+ */
+const IMPORTER: Actor = { kind: 'none' };
 
 const ownerOf = (actor: Actor): Owner | null =>
   actor.kind === 'user' ? { userId: actor.userId } : actor.kind === 'anon' ? { anonHash: actor.anonHash } : null;
@@ -307,7 +319,12 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         case 'relate': {
           const rule = RELATION_RULES[change.type];
           const from = await resolve(index, change.from);
-          expectKind(index, from, rule.from);
+          if (!rule.from.includes(from.kind)) {
+            throw badRequest(
+              'kind_mismatch',
+              `Change ${index + 1}: ${from.id} is a ${from.kind}, not a ${rule.from.join(' or ')}`,
+            );
+          }
           let to: Resolved | null = null;
           if (rule.to) {
             if (!change.to) throw badRequest('invalid_relation', `Change ${index + 1}: ${change.type} needs "to"`);
@@ -507,6 +524,28 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       return db.transaction((tx) => store(tx, actor, owner, input.note, items));
     },
 
+    /**
+     * Writes an import run's submission: planned like a submit (same errors, such as
+     * `duplicate_external_id` 409), then every change applied in order as `approved`, with no
+     * reviewer. One transaction, so a change that fails to apply leaves nothing of it behind.
+     */
+    async importSubmission(runId: string, changes: ChangeInput[]) {
+      const items = await plan(
+        IMPORTER,
+        changes.map((change) => ({ change })),
+      );
+      return db.transaction(async (tx) => {
+        const created = await changesRepository(tx).insertSubmission(
+          { importRunId: runId },
+          undefined,
+          items.map((i) => i.row),
+        );
+        const reviewedAt = new Date();
+        for (const c of created.changes) await applyNow(tx, c.id, 'approved', { reviewedBy: null, reviewedAt });
+        return { id: created.id, changes: created.changes.map(({ id, entityId }) => ({ id, entityId })) };
+      });
+    },
+
     /** One change, with the submission it belongs to: visible to its author and to moderators; everyone else gets a 404. */
     async getChange(actor: Actor, id: string) {
       const found = await repo.getChangeWithAuthor(id);
@@ -616,14 +655,15 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         id: c.id,
       });
       return {
-        items: items.map(({ change: c, authorUserId, authorHandle }) => {
+        items: items.map(({ change: c, authorUserId, authorHandle, importRunId, importSource }) => {
+          const author = publicAuthor(authorUserId, authorHandle, runOf(importRunId, importSource));
           if (c.redactedAt) {
             return {
               changeId: c.id,
               op: c.op,
               redacted: true as const,
               reason: c.redactionReason,
-              author: publicAuthor(authorUserId, authorHandle),
+              author,
               appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
             };
           }
@@ -633,7 +673,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             op: c.op,
             // Without `submitted`: what a moderator edited out of a contributor's original stays out of public view.
             payload: fieldsOf(c.payload),
-            author: publicAuthor(authorUserId, authorHandle),
+            author,
             source: 'human' as const,
             appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
             revertOf: typeof revertOf === 'string' ? revertOf : null,

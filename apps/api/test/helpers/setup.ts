@@ -1,5 +1,8 @@
 import type { Role } from '@amdb/shared';
 import { createApp, type AppDeps } from '../../src/app';
+import { ChangeInput } from '../../src/features/changes/schemas';
+import { createChangesService } from '../../src/features/changes/service';
+import { createImportsService } from '../../src/features/imports/service';
 import { openDb } from '../../src/platform/db/open';
 import { users } from '../../src/platform/db/schema';
 
@@ -51,5 +54,18 @@ export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
     await db.insert(users).values({ id, email: email ?? `${id}@example.test`, name, role });
     return id;
   };
-  return { app, db, close, as, createUser };
+  /** Starts a Wikidata run and writes `changes` as one of its submissions, the way the importer does. */
+  const importSubmission = async (changes: unknown[], params: Record<string, unknown> = {}) => {
+    const { id: runId } = await createImportsService(db).startRun({
+      source: 'wikidata',
+      params,
+      licenseUrl: 'https://www.wikidata.org/wiki/Wikidata:Licensing',
+    });
+    const created = await createChangesService(db).importSubmission(
+      runId,
+      changes.map((c) => ChangeInput.parse(c)),
+    );
+    return { runId, ...created };
+  };
+  return { app, db, close, as, createUser, importSubmission };
 }

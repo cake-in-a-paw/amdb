@@ -768,6 +768,13 @@ export interface paths {
                                         /** Format: uuid */
                                         userId: string;
                                         handle: string | null;
+                                    } | {
+                                        importRun: {
+                                            /** Format: uuid */
+                                            id: string;
+                                            /** @enum {string} */
+                                            source: "wikidata";
+                                        };
                                     };
                                 };
                                 ageSeconds: number;
@@ -1386,6 +1393,13 @@ export interface paths {
                                 };
                                 author: "anonymous" | {
                                     handle: string | null;
+                                } | {
+                                    importRun: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @enum {string} */
+                                        source: "wikidata";
+                                    };
                                 };
                                 /** @enum {string} */
                                 source: "human";
@@ -1403,6 +1417,13 @@ export interface paths {
                                 reason: string | null;
                                 author: "anonymous" | {
                                     handle: string | null;
+                                } | {
+                                    importRun: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @enum {string} */
+                                        source: "wikidata";
+                                    };
                                 };
                                 /** Format: date-time */
                                 appliedAt: string;
@@ -1910,6 +1931,77 @@ export interface paths {
                 };
                 /** @description Invalid query */
                 400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/import-runs/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            /** @enum {string} */
+                            source: "wikidata";
+                            /** @enum {string} */
+                            status: "running" | "finished" | "failed" | "capped";
+                            params: {
+                                [key: string]: unknown;
+                            };
+                            licenseUrl: string;
+                            stats: {
+                                [key: string]: unknown;
+                            };
+                            error: string | null;
+                            /** Format: date-time */
+                            startedAt: string;
+                            /** Format: date-time */
+                            finishedAt: string | null;
+                        };
+                    };
+                };
+                /** @description Not found */
+                404: {
                     headers: {
                         [name: string]: unknown;
                     };

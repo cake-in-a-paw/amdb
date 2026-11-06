@@ -55,3 +55,11 @@ export const RESERVED_HANDLES = ['anonymous', 'contributor', 'admin', 'moderator
 
 export const Role = z.enum(['contributor', 'moderator', 'admin']);
 export type Role = z.infer<typeof Role>;
+
+/** Where an import run reads from. */
+export const ImportSource = z.enum(['wikidata']);
+export type ImportSource = z.infer<typeof ImportSource>;
+
+/** An import run's state: `capped` stopped at the database size cap. */
+export const ImportRunStatus = z.enum(['running', 'finished', 'failed', 'capped']);
+export type ImportRunStatus = z.infer<typeof ImportRunStatus>;

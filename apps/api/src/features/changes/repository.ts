@@ -4,6 +4,7 @@ import {
   changes,
   creators,
   entities,
+  importRuns,
   properties,
   relations,
   series,
@@ -34,6 +35,9 @@ export interface HistoryKey {
 
 export type Owner = { userId: string } | { anonHash: string };
 
+/** Who a submission is stored as written by: a contributor, or an import run. */
+export type SubmissionAuthor = Owner | { importRunId: string };
+
 export interface NewChange {
   id: string;
   seq: number;
@@ -50,6 +54,15 @@ export interface NewChange {
 }
 
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
+
+/** A change with what its public and review author views need. */
+const authorFields = {
+  change: changes,
+  authorUserId: submissions.authorUserId,
+  authorHandle: users.handle,
+  importRunId: submissions.importRunId,
+  importSource: importRuns.source,
+};
 
 const ownerCondition = (owner: Owner) =>
   'userId' in owner ? eq(submissions.authorUserId, owner.userId) : eq(submissions.anonHash, owner.anonHash);
@@ -139,12 +152,13 @@ export function changesRepository(db: DbOrTx) {
       return row ?? null;
     },
 
-    async insertSubmission(owner: Owner, note: string | undefined, rows: NewChange[]) {
+    async insertSubmission(owner: SubmissionAuthor, note: string | undefined, rows: NewChange[]) {
       const [submission] = await db
         .insert(submissions)
         .values({
           authorUserId: 'userId' in owner ? owner.userId : null,
           anonHash: 'anonHash' in owner ? owner.anonHash : null,
+          importRunId: 'importRunId' in owner ? owner.importRunId : null,
           note: note ?? null,
         })
         .returning({ id: submissions.id });
@@ -238,10 +252,11 @@ export function changesRepository(db: DbOrTx) {
       const ids = family('uuid');
       const idsText = family('text');
       return db
-        .select({ change: changes, authorUserId: submissions.authorUserId, authorHandle: users.handle })
+        .select(authorFields)
         .from(changes)
         .innerJoin(submissions, eq(submissions.id, changes.submissionId))
         .leftJoin(users, eq(users.id, submissions.authorUserId))
+        .leftJoin(importRuns, eq(importRuns.id, submissions.importRunId))
         .where(
           and(
             inArray(changes.status, ['approved', 'published']),
@@ -277,10 +292,11 @@ export function changesRepository(db: DbOrTx) {
     /** Pending and published changes, oldest first and in submission order; fetches `limit` + 1. */
     async queue(after: QueueKey | null, limit: number) {
       return db
-        .select({ change: changes, authorUserId: submissions.authorUserId, authorHandle: users.handle })
+        .select(authorFields)
         .from(changes)
         .innerJoin(submissions, eq(submissions.id, changes.submissionId))
         .leftJoin(users, eq(users.id, submissions.authorUserId))
+        .leftJoin(importRuns, eq(importRuns.id, submissions.importRunId))
         .where(
           and(
             inArray(changes.status, ['pending', 'published']),

@@ -3,7 +3,7 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../../platform/http/app-env';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
 import { clientIp, rateLimit } from '../../platform/http/rate-limit';
-import { reviewAuthor } from './author';
+import { reviewAuthor, runOf } from './author';
 import {
   ApproveInput,
   ChangeDetailSchema,
@@ -294,7 +294,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
     const now = Date.now();
     return c.json(
       {
-        items: page.items.map(({ change, authorUserId, authorHandle }) => ({
+        items: page.items.map(({ change, authorUserId, authorHandle, importRunId, importSource }) => ({
           change: {
             ...changeView(change),
             submissionId: change.submissionId,
@@ -302,7 +302,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
           },
           submission: {
             id: change.submissionId,
-            author: reviewAuthor(authorUserId, authorHandle),
+            author: reviewAuthor(authorUserId, authorHandle, runOf(importRunId, importSource)),
           },
           ageSeconds: Math.max(0, Math.floor((now - change.createdAt.getTime()) / 1000)),
         })),
