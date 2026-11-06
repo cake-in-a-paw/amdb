@@ -3,13 +3,11 @@ import type { Context } from 'hono';
 import type { AppEnv } from '../../platform/http/app-env';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
 import { clientIp, rateLimit } from '../../platform/http/rate-limit';
+import { reviewAuthor } from './author';
 import {
   ApproveInput,
-  ClaimedSchema,
-  RedactedSchema,
-  RedactedValue,
-  RedactInput,
   ChangeIdParam,
+  ClaimedSchema,
   HistoryParams,
   HistoryQuery,
   HistorySchema,
@@ -17,6 +15,9 @@ import {
   MySubmissionsSchema,
   QueueQuery,
   QueueSchema,
+  RedactedSchema,
+  RedactedValue,
+  RedactInput,
   RejectInput,
   ResubmitInput,
   ReviewedSchema,
@@ -24,7 +25,6 @@ import {
   SubmissionDetailSchema,
   SubmissionInput,
 } from './schemas';
-import { reviewAuthor } from './author';
 import type { ChangesService } from './service';
 
 type ChangeRecord = Awaited<ReturnType<ChangesService['getSubmission']>>['changes'][number];
