@@ -7,6 +7,7 @@ const MAX_IDS = 50;
 const MIN_GAP_MS = 500;
 const TIMEOUT_MS = 30_000;
 const MAX_TRIES = 5;
+const MAX_WAIT_MS = 120_000;
 const BACKOFF_MS = [5000, 10_000, 20_000, 40_000];
 
 export class WikidataUnavailable extends Error {
@@ -50,45 +51,77 @@ export interface WikidataClientDeps {
   fetch: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
+  /** Injectable so tests can assert the 30 s timeout. */
+  timeoutSignal?: (ms: number) => AbortSignal;
 }
 
 export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const now = deps.now ?? Date.now;
+  const timeoutSignal = deps.timeoutSignal ?? ((ms: number) => AbortSignal.timeout(ms));
   let lastStart: number | undefined;
 
-  const retryDelay = (res: Response, attempt: number): number => {
-    const header = Number(res.headers.get('retry-after'));
-    return Number.isFinite(header) && res.headers.has('retry-after') && header >= 0
-      ? header * 1000
-      : (BACKOFF_MS[attempt] ?? 40_000);
+  // Retry-After is delta-seconds or an HTTP-date; empty/unparsable counts as absent. Capped so a
+  // hostile or buggy header cannot park the importer.
+  const retryDelay = (res: Response | undefined, attempt: number): number => {
+    const raw = res?.headers.get('retry-after')?.trim();
+    let ms: number | undefined;
+    if (raw) {
+      const secs = Number(raw);
+      if (Number.isFinite(secs)) ms = secs * 1000;
+      else {
+        const date = Date.parse(raw);
+        if (!Number.isNaN(date)) ms = date - now();
+      }
+    }
+    return Math.min(MAX_WAIT_MS, Math.max(0, ms ?? BACKOFF_MS[attempt] ?? 40_000));
+  };
+
+  const discard = async (res: Response) => {
+    // Free the connection; a failed cancel changes nothing about the outcome.
+    await res.body?.cancel().catch(() => {});
   };
 
   // Serial by contract (callers await each call); returns the parsed JSON body.
   async function request(url: string, headers: Record<string, string>): Promise<unknown> {
+    let lastStatus = 0;
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
       if (lastStart !== undefined) {
         const wait = MIN_GAP_MS - (now() - lastStart);
         if (wait > 0) await sleep(wait);
       }
       lastStart = now();
-      const res = await deps.fetch(url, {
-        headers: { 'User-Agent': USER_AGENT, ...headers },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
 
-      let retryable = res.status === 429 || res.status === 503;
-      let body: unknown;
-      if (res.ok) {
-        // The Action API reports replication lag as an HTTP 200 error body.
-        body = await res.json();
-        const code = (body as { error?: { code?: string } } | null)?.error?.code;
-        if (code !== 'maxlag') return body;
-        retryable = true;
+      let res: Response | undefined;
+      try {
+        res = await deps.fetch(url, {
+          headers: { 'User-Agent': USER_AGENT, ...headers },
+          signal: timeoutSignal(TIMEOUT_MS),
+        });
+        if (res.status === 429 || res.status === 503) {
+          lastStatus = res.status;
+          await discard(res);
+        } else if (!res.ok) {
+          await discard(res);
+          throw new WikidataUnavailable(`Wikidata responded ${res.status}`, res.status, url);
+        } else {
+          const body: unknown = await res.json();
+          // The Action API reports replication lag as an HTTP 200 error body; other error bodies are final.
+          const error = (body as { error?: { code?: string } } | null)?.error;
+          if (!error) return body;
+          if (error.code !== 'maxlag') {
+            throw new WikidataUnavailable(`Wikidata error: ${error.code ?? 'unknown'}`, res.status, url);
+          }
+          lastStatus = res.status;
+        }
+      } catch (e) {
+        if (e instanceof WikidataUnavailable) throw e;
+        // Network/DNS failure, timeout, or an unparsable 200 body: all retryable, reported as status 0.
+        lastStatus = 0;
+        res = undefined;
       }
-      if (!retryable) throw new WikidataUnavailable(`Wikidata responded ${res.status}`, res.status, url);
       if (attempt === MAX_TRIES - 1) {
-        throw new WikidataUnavailable(`Wikidata unavailable after ${MAX_TRIES} tries (${res.status})`, res.status, url);
+        throw new WikidataUnavailable(`Wikidata unavailable after ${MAX_TRIES} tries`, lastStatus, url);
       }
       await sleep(retryDelay(res, attempt));
     }
@@ -101,8 +134,10 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       const url = `${SPARQL_URL}?${new URLSearchParams({ query, format: 'json' })}`;
       // Shape is fixed by the SPARQL results JSON spec; we only read bindings.
       const body = (await request(url, { Accept: 'application/sparql-results+json' })) as {
-        results: { bindings: Array<Record<string, { value: string }>> };
-      };
+        results?: { bindings?: Array<Record<string, { value: string }>> };
+      } | null;
+      if (!body?.results?.bindings)
+        throw new WikidataUnavailable('Wikidata returned an unexpected SPARQL body', 200, url);
       return body.results.bindings.map((b) => Object.fromEntries(Object.entries(b).map(([k, v]) => [k, v.value])));
     },
 
@@ -115,10 +150,12 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
         languages: 'en',
       });
       // Shape follows wbgetentities; `missing` marks absent entities, `redirects` a followed redirect.
-      const body = (await request(`${ENTITY_URL}&${params}`, {})) as {
+      const url = `${ENTITY_URL}&${params}`;
+      const body = (await request(url, {})) as {
         entities?: Record<string, WikidataEntity & { missing?: unknown; redirects?: { from: string; to: string } }>;
-      };
-      const found = Object.values(body.entities ?? {}).filter((e) => e.missing === undefined);
+      } | null;
+      if (!body?.entities) throw new WikidataUnavailable('Wikidata returned an unexpected entities body', 200, url);
+      const found = Object.values(body.entities).filter((e) => e.missing === undefined);
       // A redirected request comes back under the target id; re-key it by the id that was asked for.
       const byKey = new Map<string, WikidataEntity>();
       for (const e of found) {

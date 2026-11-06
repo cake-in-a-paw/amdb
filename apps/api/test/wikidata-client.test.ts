@@ -11,6 +11,7 @@ const harness = (responses: Array<Response | (() => Response)>) => {
   let t = 1_000_000;
   const sleeps: number[] = [];
   const calls: Array<{ url: string; init: RequestInit | undefined; at: number }> = [];
+  const timeouts: number[] = [];
   const queue = [...responses];
   const client = createWikidataClient({
     fetch: async (url, init) => {
@@ -24,19 +25,24 @@ const harness = (responses: Array<Response | (() => Response)>) => {
       t += ms;
     },
     now: () => t,
+    timeoutSignal: (ms) => {
+      timeouts.push(ms);
+      return AbortSignal.timeout(ms);
+    },
   });
-  return { client, sleeps, calls };
+  return { client, sleeps, calls, timeouts };
 };
 
 const sparqlBody = { results: { bindings: [{ item: { type: 'uri', value: 'http://www.wikidata.org/entity/Q1' } }] } };
 
 describe('wikidata client', () => {
   it('sends the AMDB User-Agent and a 30 s timeout signal on every request', async () => {
-    const { client, calls } = harness([json(sparqlBody), json({ entities: {} })]);
+    const { client, calls, timeouts } = harness([json(sparqlBody), json({ entities: {} })]);
     const rows = await client.sparql('SELECT ?item WHERE {}');
     await client.entities(['Q1']);
     expect(rows).toEqual([{ item: 'http://www.wikidata.org/entity/Q1' }]);
     expect(calls).toHaveLength(2);
+    expect(timeouts).toEqual([30_000, 30_000]);
     for (const c of calls) {
       const headers = new Headers(c.init?.headers);
       expect(headers.get('user-agent')).toBe(UA);
@@ -122,5 +128,85 @@ describe('wikidata client', () => {
     const ids = Array.from({ length: 51 }, (_, i) => `Q${i + 1}`);
     await expect(client.entities(ids)).rejects.toThrow(/50/);
     expect(calls).toHaveLength(0);
+  });
+
+  it('retries a network failure, a timeout and a non-JSON 200 body on the backoff schedule', async () => {
+    const { client, sleeps } = harness([
+      () => {
+        throw new TypeError('fetch failed');
+      },
+      () => {
+        throw new DOMException('timed out', 'TimeoutError');
+      },
+      () => new Response('<html>oops</html>', { status: 200 }),
+      json(sparqlBody),
+    ]);
+    await expect(client.sparql('q')).resolves.toHaveLength(1);
+    expect(sleeps).toEqual([5000, 10_000, 20_000]);
+  });
+
+  it.each([
+    [
+      'a network failure',
+      () => {
+        throw new TypeError('fetch failed');
+      },
+    ],
+    [
+      'a timeout',
+      () => {
+        throw new DOMException('timed out', 'TimeoutError');
+      },
+    ],
+    ['a non-JSON body', () => new Response('<html>', { status: 200 })],
+  ] as Array<[string, () => Response]>)(
+    'throws WikidataUnavailable with status 0 after %s on every try',
+    async (_n, f) => {
+      const { client, calls } = harness(Array.from({ length: 5 }, () => f));
+      const err = await client.sparql('q').catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(WikidataUnavailable);
+      expect((err as WikidataUnavailable).status).toBe(0);
+      expect((err as WikidataUnavailable).url).toContain('query.wikidata.org');
+      expect(calls).toHaveLength(5);
+    },
+  );
+
+  it('throws WikidataUnavailable without retrying on a non-maxlag error body', async () => {
+    const { client, calls } = harness([json({ error: { code: 'badvalue', info: 'bad' } })]);
+    await expect(client.entities(['Q1'])).rejects.toBeInstanceOf(WikidataUnavailable);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('throws WikidataUnavailable when the expected body shape is missing', async () => {
+    const { client } = harness([json({}), json({ results: {} })]);
+    await expect(client.entities(['Q1'])).rejects.toBeInstanceOf(WikidataUnavailable);
+    await expect(client.sparql('q')).rejects.toBeInstanceOf(WikidataUnavailable);
+  });
+
+  it('honors an HTTP-date Retry-After, ignores an empty one, and caps waits at 120 s', async () => {
+    const date = new Date(1_000_000 + 9000).toUTCString();
+    const { client, sleeps } = harness([
+      new Response('', { status: 503, headers: { 'retry-after': date } }),
+      new Response('', { status: 503, headers: { 'retry-after': '' } }),
+      new Response('', { status: 429, headers: { 'retry-after': '99999' } }),
+      json(sparqlBody),
+    ]);
+    await client.sparql('q');
+    // Date has second resolution: 9000 ms ahead of t=1_000_000 rounds down to a whole second.
+    expect(sleeps[0]).toBeGreaterThanOrEqual(8000);
+    expect(sleeps[0]).toBeLessThanOrEqual(9000);
+    expect(sleeps[1]).toBe(10_000);
+    expect(sleeps[2]).toBe(120_000);
+  });
+
+  it('waits Retry-After on a 503 and gives up on repeated maxlag', async () => {
+    const a = harness([new Response('', { status: 503, headers: { 'retry-after': '3' } }), json(sparqlBody)]);
+    await a.client.sparql('q');
+    expect(a.sleeps).toEqual([3000]);
+    const lag = () => json({ error: { code: 'maxlag' } });
+    const b = harness(Array.from({ length: 5 }, () => lag));
+    const err = await b.client.entities(['Q1']).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WikidataUnavailable);
+    expect(b.calls).toHaveLength(5);
   });
 });
