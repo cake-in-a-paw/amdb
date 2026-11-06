@@ -37,6 +37,7 @@ import {
   fieldsOf,
   type Inverse,
   InverseSchema,
+  withoutAbsent,
 } from './apply';
 import { publicAuthor } from './author';
 import {
@@ -151,7 +152,8 @@ function resubmission(change: ChangeRow, edits: ResubmitInput): ChangeInput {
         op: 'create',
         kind: change.kind,
         ref: 'resubmitted',
-        fields: { ...fieldsOf(change.payload), ...edits.fields },
+        // A create has no old value to clear, so a null edit just leaves the field out.
+        fields: withoutAbsent({ ...fieldsOf(change.payload), ...edits.fields }),
       };
       break;
     case 'update':
@@ -505,6 +507,19 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       return db.transaction((tx) => store(tx, actor, owner, input.note, items));
     },
 
+    /** One change, with the submission it belongs to: visible to its author and to moderators; everyone else gets a 404. */
+    async getChange(actor: Actor, id: string) {
+      const found = await repo.getChangeWithAuthor(id);
+      if (!found || !canSee(actor, found)) throw notFound();
+      return found.change;
+    },
+
+    /** How many of the caller's pending edits touch an entry; none without an identity. */
+    async countMyPending(actor: Actor, entityId: string) {
+      const owner = ownerOf(actor);
+      return owner ? repo.countPending(owner, entityId) : 0;
+    },
+
     /** Visible to its author and to moderators; everyone else gets a 404. */
     async getSubmission(actor: Actor, id: string) {
       const found = await repo.getSubmission(id);
@@ -512,9 +527,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       return found;
     },
 
+    /** With no identity there is nothing of the caller's to list, so a visitor who never submitted needs no token. */
     async listMine(actor: Actor, query: { cursor?: string; limit: number }) {
       const owner = ownerOf(actor);
-      if (!owner) throw identityRequired();
+      if (!owner) return { items: [], nextCursor: null };
       const subs = await repo.listSubmissions(owner, decodeCursor(query.cursor), query.limit);
       return toPage(subs, query.limit, (s) => ({ createdAt: s.createdAt, id: s.id }));
     },

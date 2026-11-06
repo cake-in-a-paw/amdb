@@ -58,9 +58,13 @@ const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
 /** Fields whose null is a value (`subtype` is null for a book), not "absent". */
 const NULLABLE = new Set(['subtype']);
 
+/** Fields with their absent values (null, except where null is a value) left out. */
+export const withoutAbsent = (fields: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(fields).filter(([k, v]) => v !== null || NULLABLE.has(k)));
+
 /** A kind row as its zod field schema's input: derived columns dropped and absent values (null) left out. */
 const asInput = (row: Record<string, unknown>) =>
-  Object.fromEntries(Object.entries(row).filter(([k, v]) => !DERIVED.has(k) && (v !== null || NULLABLE.has(k))));
+  withoutAbsent(Object.fromEntries(Object.entries(row).filter(([k]) => !DERIVED.has(k))));
 
 function parseFields<T extends z.ZodType>(schema: T, input: Record<string, unknown>): z.output<T> {
   const parsed = schema.safeParse(input);

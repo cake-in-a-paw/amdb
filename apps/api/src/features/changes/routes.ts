@@ -6,11 +6,14 @@ import { clientIp, rateLimit } from '../../platform/http/rate-limit';
 import { reviewAuthor } from './author';
 import {
   ApproveInput,
+  ChangeDetailSchema,
   ChangeIdParam,
   ClaimedSchema,
   HistoryParams,
   HistoryQuery,
   HistorySchema,
+  MyPendingQuery,
+  MyPendingSchema,
   MySubmissionsQuery,
   MySubmissionsSchema,
   QueueQuery,
@@ -79,7 +82,22 @@ const mySubmissionsRoute = createRoute({
   method: 'get',
   path: '/api/me/submissions',
   request: { query: MySubmissionsQuery },
-  responses: { 200: json(MySubmissionsSchema), 400: json(ErrorSchema, 'No identity') },
+  // With no identity (signed out, no token), the list is empty.
+  responses: { 200: json(MySubmissionsSchema) },
+});
+
+const myPendingRoute = createRoute({
+  method: 'get',
+  path: '/api/me/pending',
+  request: { query: MyPendingQuery },
+  responses: { 200: json(MyPendingSchema) },
+});
+
+const getChangeRoute = createRoute({
+  method: 'get',
+  path: '/api/changes/{id}',
+  request: { params: ChangeIdParam },
+  responses: { 200: json(ChangeDetailSchema), 404: json(ErrorSchema, 'Not found') },
 });
 
 const queueRoute = createRoute({
@@ -237,6 +255,15 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
       },
       200,
     );
+  });
+
+  app.openapi(getChangeRoute, async (c) => {
+    const change = await changes.getChange(c.var.actor, c.req.valid('param').id);
+    return c.json({ ...changeView(change), submissionId: change.submissionId }, 200);
+  });
+
+  app.openapi(myPendingRoute, async (c) => {
+    return c.json({ count: await changes.countMyPending(c.var.actor, c.req.valid('query').entityId) }, 200);
   });
 
   app.openapi(mySubmissionsRoute, async (c) => {

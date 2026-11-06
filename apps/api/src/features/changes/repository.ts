@@ -323,6 +323,32 @@ export function changesRepository(db: DbOrTx) {
       return { submission, changes: rows };
     },
 
+    /**
+     * How many of the owner's pending edits touch an entry: as their target, or as either end of a
+     * relation they add or remove. A series or property link is recorded on its `from` end, so the
+     * `to` end is read from the payload (a relate) or the relation (an unrelate).
+     */
+    async countPending(owner: Owner, entityId: string): Promise<number> {
+      const [row] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(changes)
+        .innerJoin(submissions, eq(submissions.id, changes.submissionId))
+        .leftJoin(relations, eq(relations.id, changes.relationId))
+        .where(
+          and(
+            ownerCondition(owner),
+            eq(changes.status, 'pending'),
+            sql`${changes.op} <> 'create'`,
+            or(
+              eq(changes.entityId, entityId),
+              sql`${changes.payload}->>'to' = ${entityId}`,
+              eq(relations.toId, entityId),
+            ),
+          ),
+        );
+      return row?.count ?? 0;
+    },
+
     /** Newest first; fetches `limit` + 1 so the caller can tell whether another page exists. */
     async listSubmissions(owner: Owner, cursor: Cursor | null, limit: number) {
       const subs = await db

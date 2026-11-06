@@ -526,6 +526,124 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/changes/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            id: string;
+                            seq: number;
+                            /** @enum {string} */
+                            op: "create" | "update" | "relate" | "unrelate" | "merge";
+                            /** @enum {string} */
+                            kind: "work" | "creator" | "series" | "property" | "tag";
+                            /** Format: uuid */
+                            entityId: string | null;
+                            /** Format: uuid */
+                            relationId: string | null;
+                            /** @enum {string} */
+                            status: "pending" | "published" | "approved" | "rejected";
+                            reason: string | null;
+                            redacted: boolean;
+                            redactionReason: string | null;
+                            payload: {
+                                [key: string]: unknown;
+                            } | null;
+                            base: {
+                                [key: string]: unknown;
+                            } | null;
+                            redactedBaseFields: string[];
+                            dependsOn: string[];
+                            /** Format: uuid */
+                            submissionId: string;
+                        };
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/me/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query: {
+                    entityId: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            count: number;
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/me/submissions": {
         parameters: {
             query?: never;
@@ -573,21 +691,6 @@ export interface paths {
                                 }[];
                             }[];
                             nextCursor: string | null;
-                        };
-                    };
-                };
-                /** @description No identity */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": {
-                            error: {
-                                code: string;
-                                message: string;
-                                details?: unknown;
-                            };
                         };
                     };
                 };

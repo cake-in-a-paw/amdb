@@ -89,6 +89,13 @@ export const ChangeSchema = z.object({
   dependsOn: z.array(z.uuid()),
 });
 
+/** One change on its own, with the submission it belongs to. */
+export const ChangeDetailSchema = ChangeSchema.extend({ submissionId: z.uuid() });
+
+export const MyPendingQuery = z.object({ entityId: z.uuid() });
+/** How many of the caller's edits touching the entry are still waiting for a moderator. */
+export const MyPendingSchema = z.object({ count: z.number().int() });
+
 export const SubmissionDetailSchema = z.object({
   id: z.uuid(),
   note: z.string().nullable(),
@@ -188,7 +195,7 @@ export const RejectInput = z.object({ reason: z.string().trim().min(1).max(1000)
 export const ResubmitInput = z.object({
   /** A resubmit can add content, so it carries the CC0 agreement like a submit (constitution II). */
   cc0: z.literal(true),
-  /** Merged into a create's or update's fields. */
+  /** Merged into a create's or update's fields; null clears a field (a create then leaves it out). */
   fields: z.record(z.string(), z.unknown()).optional(),
   /** Merged into a relate's `data`. */
   data: z.record(z.string(), z.unknown()).optional(),
