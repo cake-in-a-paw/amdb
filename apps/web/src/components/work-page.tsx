@@ -158,21 +158,25 @@ export function WorkPage({ entity }: { entity: EntityView }) {
           />
         ))}
 
-        {relations.properties?.map(({ relationId, property }) => (
-          <RelatedWorks
-            key={relationId}
-            title={
-              <>
-                Also in{' '}
-                <Link to="/entities/$id" params={{ id: property.id }} className={headingLinkClass}>
-                  {property.title}
-                </Link>
-              </>
-            }
-            works={(propertyGroups.get(property.id) ?? []).map((entry) => ({ entry, detail: summaryDetail(entry) }))}
-            empty="No other works yet."
-          />
-        ))}
+        {relations.properties?.map(({ relationId, property }) => {
+          const works = propertyGroups.get(property.id) ?? [];
+          return (
+            <RelatedWorks
+              key={relationId}
+              title={
+                <>
+                  {/* "Also" only when there are others to be in it with. */}
+                  {works.length > 0 ? 'Also in' : 'In'}{' '}
+                  <Link to="/entities/$id" params={{ id: property.id }} className={headingLinkClass}>
+                    {property.title}
+                  </Link>
+                </>
+              }
+              works={works.map((entry) => ({ entry, detail: summaryDetail(entry) }))}
+              empty="No other works in the property yet."
+            />
+          );
+        })}
 
         {[...linkGroups].map(([label, links]) => (
           <RelatedWorks

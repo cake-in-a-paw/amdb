@@ -6,6 +6,7 @@ import { LoadMore } from '@/components/load-more';
 import { RedactDialog } from '@/components/redact-dialog';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
+import { authorName, record, valueText } from '@/lib/change-text';
 import { entityQueryKey, PAGE_SIZE } from '@/lib/entity';
 import { describeError } from '@/lib/errors';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
@@ -18,19 +19,6 @@ const rootRoute = getRouteApi('__root__');
 
 const historyQueryKey = (id: string) => ['history', id] as const;
 
-/** Who made a change: their handle, else "contributor" (signed in, no handle), else "anonymous". Never an id. */
-function authorName(author: Item['author']): string {
-  if (author === 'anonymous') return 'anonymous';
-  return author.handle ?? 'contributor';
-}
-
-/** A value from a change's fields, short enough for a line of history. */
-export function valueText(value: unknown): string {
-  if (value === null) return 'cleared';
-  const text = typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
-  return text.length > 280 ? `${text.slice(0, 280)}…` : text;
-}
-
 function FieldList({ fields }: { fields: Record<string, unknown> }) {
   return (
     <ul className="mt-1 text-sm">
@@ -42,9 +30,6 @@ function FieldList({ fields }: { fields: Record<string, unknown> }) {
     </ul>
   );
 }
-
-const record = (value: unknown): Record<string, unknown> =>
-  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 /** What a relate did, in words. History has the ids but not the names at the other end. */
 function describeRelate(payload: Record<string, unknown>): string {
@@ -189,6 +174,8 @@ export function HistoryList({ entityId }: { entityId: string }) {
   if (history.isError && !history.data)
     return <LoadError what="the history" error={history.error} onRetry={() => void history.refetch()} />;
   const items = history.data.pages.flatMap((page) => page.items);
+  // A revert is newer than what it reverts, so it is on a page already loaded: the API refuses a second revert.
+  const reverted = new Set(items.flatMap((item) => ('revertOf' in item && item.revertOf ? [item.revertOf] : [])));
   return (
     <section aria-labelledby="history-heading" className="py-6">
       <h2 id="history-heading" className="font-serif text-xl font-semibold">
@@ -203,7 +190,7 @@ export function HistoryList({ entityId }: { entityId: string }) {
               key={item.changeId}
               item={item}
               entityId={entityId}
-              canRevert={canRevert}
+              canRevert={canRevert && !reverted.has(item.changeId)}
               canRedact={canRedact}
             />
           ))}

@@ -117,6 +117,14 @@
   ):not(:disabled, [aria-disabled='true'], [data-disabled]) {
     cursor: pointer;
   }
+  /*
+   * Checkboxes and radios stay native (ADR 0004): the browser draws them, following
+   * `color-scheme` for the theme, filled with the binding green when checked, and the base ring
+   * above marks their focus. No class needed, so a new one can't miss it.
+   */
+  input:is([type='checkbox'], [type='radio']) {
+    accent-color: var(--primary);
+  }
   html {
     @apply font-sans;
     color-scheme: light dark;

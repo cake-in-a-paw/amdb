@@ -1,6 +1,6 @@
-import { screen, within } from '@testing-library/react';
-import { expect, test } from 'vitest';
-import { renderApp, seed } from './harness';
+import { screen, waitFor, within } from '@testing-library/react';
+import { expect, test, vi } from 'vitest';
+import { actors, publish, renderApp, seed } from './harness';
 
 test('the header search box goes to /search?q= on Enter', async () => {
   const { user, router } = await renderApp('/', { seed });
@@ -73,4 +73,41 @@ test('with no query it asks for one', async () => {
   await renderApp('/search');
 
   expect(screen.getByText('Type a title or a name to search.')).toBeInTheDocument();
+});
+
+test('a failed Load more keeps the results shown, says so, and loads on a second try', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      await publish(
+        contributor,
+        moderator,
+        Array.from({ length: 21 }, (_, i) => ({
+          op: 'create',
+          kind: 'work',
+          ref: `w${i}`,
+          fields: { mediaType: 'book', subtype: null, title: `Lantern ${String(i).padStart(2, '0')}` },
+        })),
+      );
+    },
+  });
+  const real = t.api.app.request.bind(t.api.app);
+  let failing = true;
+  vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    return failing && url.includes('/api/search') && url.includes('cursor=')
+      ? Promise.reject(new TypeError('Failed to fetch'))
+      : real(input, init);
+  });
+  await t.router.navigate({ to: '/search', search: { q: 'lantern' } });
+  const shown = async () => within(await screen.findByRole('region', { name: 'Works' })).getAllByRole('listitem');
+  expect(await shown()).toHaveLength(20);
+
+  await t.user.click(screen.getByRole('button', { name: 'Load more' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't reach AMDB");
+  expect(await shown()).toHaveLength(20);
+  failing = false;
+  await t.user.click(screen.getByRole('button', { name: 'Load more' }));
+  await waitFor(async () => expect(await shown()).toHaveLength(21));
 });

@@ -111,7 +111,13 @@ export async function renderApp<Seeded = undefined>(
         for (let hops = 0; hops < 5 && res.status === 308; hops++) {
           const location = res.headers.get('location');
           if (!location) break;
-          res = await api.app.request(location, { headers: input instanceof Request ? input.headers : init?.headers });
+          // Each hop carries the request's headers and its abort signal, as a browser's redirect does.
+          res = await api.app.request(
+            location,
+            input instanceof Request
+              ? { headers: input.headers, signal: input.signal }
+              : { headers: init?.headers, signal: init?.signal ?? null },
+          );
         }
         return res;
       },

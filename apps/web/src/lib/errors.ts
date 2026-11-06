@@ -93,6 +93,12 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
   }
 }
 
+/**
+ * The cause of a failure when it is known, else nothing: for after a sentence that already says
+ * what failed ("Couldn't load …"), where a generic "Something went wrong" would only repeat it.
+ */
+export const errorCause = (error: unknown): string => describeError(error, '');
+
 /** "1 minute" or "60 minutes": a `Retry-After` rounded up to whole minutes. */
 const minutes = (seconds: number) => {
   const n = Math.ceil(seconds / 60);

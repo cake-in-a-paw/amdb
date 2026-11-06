@@ -64,6 +64,19 @@ test.each(['moderator', 'admin'] as const)('a %s sees the Moderation link', asyn
   expect(await screen.findByRole('link', { name: 'Moderation' })).toHaveAttribute('href', '/moderation');
 });
 
+test.each([
+  ['contributor', false],
+  ['moderator', false],
+  ['admin', true],
+] as const)('a %s sees the Users link: %s', async (as, shown) => {
+  await renderApp('/', { as });
+  await screen.findByRole('button', { name: 'Account' });
+
+  const link = screen.queryByRole('link', { name: 'Users' });
+  if (shown) expect(link).toHaveAttribute('href', '/admin/users');
+  else expect(link).not.toBeInTheDocument();
+});
+
 test('the footer says the data is CC0', async () => {
   await renderApp('/');
 
