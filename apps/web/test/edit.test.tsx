@@ -216,22 +216,25 @@ test("an entry nobody edited has no notice, and neither has one whose edit was s
 test('a rejected-by-API edit keeps the draft and the form', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   const id = t.seeded.works.spiritedAway;
-  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  const route = { to: '/entities/$id/edit', params: { id } } as const;
+  const key = `edit.${id}.${t.session.userId}`;
+  await t.router.navigate(route);
   await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
-  await t.user.click(screen.getByLabelText(CC0));
-  const real = t.api.app.request.bind(t.api.app);
-  // A 400 from the API for the submission only: the way to make a valid form meet a refusal.
-  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
-    urlOf(input).endsWith('/api/submissions')
-      ? Response.json({ error: { code: 'invalid_fields', message: 'no' } }, { status: 400 })
-      : real(input, init),
-  );
+  await waitFor(() => expect(stored(key)).toContain('Sen to Chihiro'));
+  await t.router.navigate({ to: '/' });
+  // The draft gains a tag the catalog doesn't have: the form accepts it, the API refuses it.
+  const draft = JSON.parse(stored(key) ?? '') as { form: { tags: unknown[] } };
+  draft.form.tags.push({ entity: { id: crypto.randomUUID(), title: 'No such tag' } });
+  localStorage.setItem(`amdb.draft.${key}`, JSON.stringify(draft));
+  await t.router.navigate(route);
+  await t.user.click(await screen.findByLabelText(CC0));
 
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
+  expect(await screen.findByRole('alert')).toHaveTextContent("An entry named here doesn't exist (any more).");
   expect(screen.getByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
-  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).toContain('Sen to Chihiro'));
+  await waitFor(() => expect(stored(key)).toContain('Sen to Chihiro'));
+  expect(stored(key)).toContain('No such tag');
 });
 
 test("a merged id opens the winner's edit form", async () => {

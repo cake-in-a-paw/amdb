@@ -1,4 +1,4 @@
-import { act, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getAnonToken } from '@/lib/anon';
 import { moveDrafts, useDraft } from '@/lib/drafts';
@@ -356,20 +356,23 @@ describe("search's title and a saved draft", () => {
 });
 
 test('a 400 from the API keeps the draft and the form', async () => {
-  const t = await renderApp('/submit');
-  await fillBook(t, 'Rocannon’s World');
-  await t.user.click(screen.getByLabelText(CC0));
-  const real = t.api.app.request.bind(t.api.app);
-  // A 400 from the API for the submission only: the way to make a valid form meet a refusal.
-  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
-    urlOf(input).endsWith('/api/submissions')
-      ? Response.json({ error: { code: 'invalid_fields', message: 'no' } }, { status: 400 })
-      : real(input, init),
+  // A draft naming a tag the catalog doesn't have: the form accepts it, the API refuses it.
+  const ghost = { id: crypto.randomUUID(), title: 'No such tag' };
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      ...emptyForm(),
+      fields: { mediaType: 'book', title: 'Rocannon’s World' },
+      tags: [{ entity: ghost }],
+    }),
   );
+  const t = await renderApp('/submit');
+  await t.user.click(screen.getByLabelText(CC0));
 
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
+  expect(await screen.findByRole('alert')).toHaveTextContent("An entry named here doesn't exist (any more).");
   expect(screen.getByLabelText('Title')).toHaveValue('Rocannon’s World');
+  expect(within(screen.getByRole('list', { name: 'Tags' })).getByText('No such tag')).toBeInTheDocument();
   await waitFor(() => expect(stored()?.fields.title).toBe('Rocannon’s World'));
 });
