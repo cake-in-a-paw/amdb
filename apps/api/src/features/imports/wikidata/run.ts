@@ -361,14 +361,14 @@ export async function runWikidataImport(
 
   const fail = async (err: unknown) => {
     // The run page is public: an unexpected error's text (SQL, paths) goes to the operator's log only.
-    const known = err instanceof ApiError || err instanceof WikidataUnavailable;
-    if (!known)
+    const reportable = err instanceof ApiError || err instanceof WikidataUnavailable;
+    if (!reportable)
       log(`internal error in run ${runId}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
     try {
       await imports.finishRun(runId, {
         status: 'failed',
         stats,
-        error: known ? errorMessage(err) : "internal error (see the importer's log)",
+        error: reportable ? errorMessage(err) : "internal error (see the importer's log)",
       });
     } catch (finishErr) {
       // Not swallowed: the caller rethrows `err`, the error that actually stopped the run.

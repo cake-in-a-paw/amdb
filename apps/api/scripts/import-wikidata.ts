@@ -42,11 +42,14 @@ async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   const { db, close } = await openDb(url);
-  // Ctrl-C or a SIGTERM finishes the run as failed ("interrupted") after the current work; a second one quits at once.
+  // Ctrl-C or a SIGTERM finishes the run as failed ("interrupted") after the current work; a second one
+  // quits at once and leaves the run `running`.
   const controller = new AbortController();
   const onSignal = () => {
     if (controller.signal.aborted) process.exit(130);
-    log('interrupting after the current work (press again to quit now)');
+    log(
+      'interrupting after the current work (press again to quit now; the run then stays running and must be closed by hand, see docs/import.md)',
+    );
     controller.abort();
   };
   process.on('SIGINT', onSignal);
