@@ -178,7 +178,7 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
 
   return (
     <>
-      <ConflictNotice conflicts={conflicts} />
+      <ConflictNotice conflicts={conflicts} kind={kind} />
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
         {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
         <fieldset disabled={send.isPending} className="grid min-w-0 gap-8">

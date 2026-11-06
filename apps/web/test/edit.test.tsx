@@ -428,6 +428,43 @@ test("a background refetch while the form is open sends only the contributor's e
   expect(stored(`edit.${id}.${t.session.userId}`)).toBeNull();
 });
 
+test('a credit the contributor changed and someone else removed meanwhile is kept as new, and they are told', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.selectOptions(await screen.findByLabelText('Role for Hayao Miyazaki'), 'writer');
+
+  const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
+    relations: { creators: { relationId: string }[] };
+  };
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.creators[0]?.relationId }]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+  const posts = watchSubmissions(t);
+
+  expect(await screen.findByText(/changed since you started editing.*check credits\./)).toBeInTheDocument();
+  expect(screen.getByLabelText('Role for Hayao Miyazaki')).toHaveValue('writer');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes.map((c) => c.op)).toEqual(['relate']);
+});
+
+test("a tag's kind is named as the form names it in the conflict notice", async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.tags.fantasy;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.selectOptions(await screen.findByLabelText('Tag kind'), 'Theme');
+
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [
+    { op: 'update', kind: 'tag', entityId: id, fields: { kind: 'content_warning' } },
+  ]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+
+  expect(await screen.findByText(/changed since you started editing.*check tag kind\./)).toBeInTheDocument();
+});
+
 test('a background refetch that changes a field the contributor edited says so', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   const id = t.seeded.works.spiritedAway;

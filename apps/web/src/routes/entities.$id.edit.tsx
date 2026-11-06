@@ -82,7 +82,7 @@ function EditForm({ entity, identity }: { entity: EntityView; identity: string }
         A moderator reviews every change before it appears. Only what you change is sent. Your draft is saved in this
         browser as you type.
       </p>
-      <ConflictNotice conflicts={conflicts} />
+      <ConflictNotice conflicts={conflicts} kind={entity.kind} />
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
         {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
         <fieldset disabled={submit.isPending} className="grid min-w-0 gap-8">
