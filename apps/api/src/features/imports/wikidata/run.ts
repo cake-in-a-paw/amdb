@@ -257,7 +257,9 @@ export async function runWikidataImport(
       }
       const batch = candidates.slice(start, start + batchSize);
       await remember(batch.map((c) => c.qid));
-      const fresh = batch.filter((c) => !known.has(c.qid));
+      // A reverted work loses its live wikidata id, so `known` can't see it; it still counts as present.
+      const retired = await imports.findRetiredWikidataIds(batch.map((c) => c.qid).filter((q) => !known.has(q)));
+      const fresh = batch.filter((c) => !known.has(c.qid) && !retired.has(c.qid));
       const fetched = await fetchEntities(fresh.map((c) => c.qid));
       const records = new Map<string, WorkRecord | { skip: 'no_title' }>();
       for (const c of fresh) {

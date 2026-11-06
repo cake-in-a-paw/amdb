@@ -675,3 +675,29 @@ it('if recording the failure fails too, the original error is the one thrown', a
     if (!closed) await t.close();
   }
 });
+
+it('a work a moderator reverted (its wikidata id, then its create) is never re-imported', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'Undone') });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const workId = (await workIdByTitle(t.db, 'Undone'))!;
+    const rows = await t.db
+      .select({ id: changesTable.id, op: changesTable.op })
+      .from(changesTable)
+      .where(eq(changesTable.entityId, workId));
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    // The external id first: a create can't be reverted while its relations stand.
+    for (const op of ['relate', 'create'] as const) {
+      const change = rows.find((r) => r.op === op);
+      const res = await mod.post(`/api/changes/${change!.id}/revert`);
+      expect(res.status, await res.clone().text()).toBe(200);
+    }
+
+    const second = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(second.stats).toMatchObject({ imported: 0, skipped: expect.objectContaining({ present: 1 }) });
+    expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(1);
+  } finally {
+    await t.close();
+  }
+});

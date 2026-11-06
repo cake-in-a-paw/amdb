@@ -30,6 +30,11 @@ export function createImportsService(db: Db) {
       return repo.findByWikidataIds(qids);
     },
 
+    /** Candidates a moderator reverted out of AMDB; a run treats them as present so the revert sticks. */
+    async findRetiredWikidataIds(qids: string[]) {
+      return repo.findRetiredWikidataIds(qids);
+    },
+
     async databaseBytes() {
       return repo.databaseBytes();
     },

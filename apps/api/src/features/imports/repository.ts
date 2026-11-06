@@ -1,5 +1,5 @@
 import type { EntityKind, ImportRunStatus, ImportSource } from '@amdb/shared';
-import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { entities, importRuns, relations } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 
@@ -62,6 +62,28 @@ export function importsRepository(db: DbOrTx) {
         );
       // `value` is set on every external_id relation; the filter on scheme guarantees it here.
       return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, { id: r.id, kind: r.kind, live: r.live }] as const] : [])));
+    },
+
+    /**
+     * The QIDs among `qids` that a retracted or removed entity once held on an external id that has
+     * since been removed: a moderator reverted the work (its id, then its create). Read-only.
+     */
+    async findRetiredWikidataIds(qids: string[]): Promise<Set<string>> {
+      if (qids.length === 0) return new Set();
+      const rows = await db
+        .selectDistinct({ qid: relations.value })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            inArray(relations.value, qids),
+            isNotNull(relations.removedByChange),
+            or(isNotNull(entities.removedAt), isNotNull(entities.retractedByChange)),
+          ),
+        );
+      return new Set(rows.flatMap((r) => (r.qid ? [r.qid] : [])));
     },
 
     /** The database's size on disk, as the size cap measures it. */
