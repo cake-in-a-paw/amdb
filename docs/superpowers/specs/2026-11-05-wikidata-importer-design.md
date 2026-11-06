@@ -68,14 +68,17 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 
 ## How it writes
 
-- Each run is an `import_runs` row (source, parameters, evidence URL, start, finish, status,
-  counts). Its submissions are authored by the run, not a user or a token, and their changes are
+- Each run is an `import_runs` row (source, parameters, evidence URL and its check date, start,
+  finish, status, counts). One run at a time: a second one is refused while one is `running`, and
+  an interrupt (Ctrl-C, SIGTERM) finishes a run as `failed`, "interrupted". Its submissions are authored by the run, not a user or a token, and their changes are
   stored as `approved` and applied at once (§6.2: no per-record queue). History shows them as a
   Wikidata import; moderators revert or correct them like any change.
 - One submission per work: the work's create plus the creates and relations it needs, so one
   bad item never blocks another.
-- **Re-runs are additive.** A work whose QID is already in AMDB is skipped, so a second run imports
-  only what the first didn't. Refreshing fields a run already wrote, and deciding what happens
+- **Re-runs are additive.** A work whose QID is already in AMDB, or was reverted or removed from
+  it, is skipped, so a second run imports only what the first didn't and a revert sticks. A
+  candidate AMDB holds as another kind (say, a series) is skipped as `held_as_other`. Works win: no
+  discovered candidate, even one past `--limit`, is created as a creator, series or property. Refreshing fields a run already wrote, and deciding what happens
   when a refresh disagrees with a human edit, is left to a later importer version.
 - A work link whose target isn't in AMDB yet is kept for the end of the run and added then if the
   target arrived.
@@ -86,7 +89,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
   is public).
 - Requests are serial. Query service: one query at a time, under its 60-second limit. Entity API:
   at most 2 requests a second, `maxlag=5`.
-- Query-service requests time out at 65 seconds (its own limit is 60); entity API requests at 30 seconds. A 429 or 503 waits for `Retry-After` (or 5 s, then 10 s,
+- Query-service requests time out at 65 seconds (its own limit is 60); entity API requests at 30 seconds. A 429, 502, 503 or 504 waits for `Retry-After` (or 5 s, then 10 s,
   then 20 s), up to 5 tries. A source that stays down ends the run as `failed` with the reason; work
   already committed stays.
 

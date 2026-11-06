@@ -11,6 +11,8 @@ const SPARQL_TIMEOUT_MS = 65_000;
 const MAX_TRIES = 5;
 const MAX_WAIT_MS = 120_000;
 const BACKOFF_MS = [5000, 10_000, 20_000, 40_000];
+/** Rate limited, or a gateway/upstream hiccup (the query service's proxy answers 502/504 under load). */
+const RETRY_STATUSES = new Set([429, 502, 503, 504]);
 
 export class WikidataUnavailable extends Error {
   constructor(
@@ -99,7 +101,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
           headers: { 'User-Agent': USER_AGENT, ...headers },
           signal: timeoutSignal(timeoutMs),
         });
-        if (res.status === 429 || res.status === 503) {
+        if (RETRY_STATUSES.has(res.status)) {
           lastStatus = res.status;
           await discard(res);
         } else if (!res.ok) {

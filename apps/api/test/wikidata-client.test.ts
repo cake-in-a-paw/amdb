@@ -80,6 +80,17 @@ describe('wikidata client', () => {
     expect(sleeps).toEqual([5000, 10_000, 20_000, 40_000]);
   });
 
+  it('retries a 502 and a 504 like a 503, then succeeds', async () => {
+    const { client, sleeps, calls } = harness([
+      new Response('', { status: 502 }),
+      new Response('', { status: 504, headers: { 'retry-after': '2' } }),
+      json(sparqlBody),
+    ]);
+    await expect(client.sparql('q')).resolves.toHaveLength(1);
+    expect(calls).toHaveLength(3);
+    expect(sleeps).toEqual([5000, 2000]);
+  });
+
   it('throws WikidataUnavailable immediately on other non-2xx', async () => {
     const { client, calls } = harness([new Response('nope', { status: 400 })]);
     const err = await client.sparql('q').catch((e: unknown) => e);
