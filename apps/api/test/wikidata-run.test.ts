@@ -2,7 +2,7 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import { runWikidataImport } from '../src/features/imports/wikidata/run.js';
-import { creators, importRuns, relations, tags, works } from '../src/platform/db/schema';
+import { changes as changesTable, creators, importRuns, relations, tags, works } from '../src/platform/db/schema';
 import { setupTest } from './helpers/setup';
 
 const FILM_CLASS = 'Q11424';
@@ -324,16 +324,25 @@ it('limit takes the most-linked candidates first', async () => {
   }
 });
 
+/** Takes an entity down the way an admin's legal or abuse removal does: by redacting its create. */
+async function removeEntity(t: Awaited<ReturnType<typeof setupTest>>, createChangeId: string) {
+  const admin = t.as({ kind: 'user', userId: await t.createUser({ role: 'admin' }) });
+  const res = await admin.post(`/api/admin/changes/${createChangeId}/redact`, { reason: 'Abuse', removeEntity: true });
+  expect(res.status, await res.clone().text()).toBe(200);
+}
+
 it('a work whose references don’t fit is counted invalid and logged, and the next work still goes in', async () => {
   const t = await setupTest();
   try {
-    // Q500 is already a creator, so a film naming it as its series can't be planned (kind_mismatch).
-    await t.importSubmission([
-      { op: 'create', kind: 'creator', ref: 'c', fields: { kind: 'person', name: 'Not A Series' } },
+    // Q500's creator was removed (legal or abuse removal), which keeps its wikidata id, so a film
+    // naming it as director can't be planned (unknown_entity).
+    const { changes } = await t.importSubmission([
+      { op: 'create', kind: 'creator', ref: 'c', fields: { kind: 'person', name: 'Taken Down' } },
       { op: 'relate', type: 'external_id', from: { ref: 'c' }, data: { scheme: 'wikidata', value: 'Q500' } },
     ]);
+    await removeEntity(t, changes[0]!.id);
     const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
-      Q1: film('Q1', 'Broken', { series: { qid: 'Q500', ordinal: '1' } }),
+      Q1: film('Q1', 'Broken', { director: 'Q500' }),
       Q2: film('Q2', 'Fine'),
     });
     const lines: string[] = [];
@@ -343,9 +352,95 @@ it('a work whose references don’t fit is counted invalid and logged, and the n
     );
     expect(result.status).toBe('finished');
     expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 1 }) });
-    expect(lines.some((l) => l.includes('Q1') && l.includes('kind_mismatch'))).toBe(true);
+    expect(lines.some((l) => l.includes('Q1') && l.includes('unknown_entity'))).toBe(true);
     expect(await workIdByTitle(t.db, 'Broken')).toBeUndefined();
     expect(await workIdByTitle(t.db, 'Fine')).toBeDefined();
+  } finally {
+    await t.close();
+  }
+});
+
+it('a reference AMDB already holds as another kind is dropped, and the work still goes in', async () => {
+  const t = await setupTest();
+  try {
+    // Q400 is already a work, so a film naming it as its series keeps everything but that link.
+    const first = fakeWikidata(ranked('Q400'), { Q400: film('Q400', 'The Saga') });
+    await runWikidataImport({ db: t.db, client: first.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const second = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Episode One', { series: { qid: 'Q400', ordinal: '1' }, director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: second.client, measureBytes: bytes(), today: TODAY },
+      OPTS,
+    );
+    expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 0 }) });
+    expect(await workIdByTitle(t.db, 'Episode One')).toBeDefined();
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([]);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'work_creator'))).toHaveLength(1);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a genre whose slug belongs to a retracted tag is dropped, not recreated', async () => {
+  const t = await setupTest();
+  try {
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const { changes } = await t.importSubmission([
+      { op: 'create', kind: 'tag', ref: 'g', fields: { kind: 'genre', name: 'Drama', slug: 'drama' } },
+    ]);
+    const res = await mod.post(`/api/changes/${changes[0]!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Tearjerker', { genres: ['Q300', 'Q302'] }),
+      Q300: thing('Q300', 'drama film'),
+      Q302: thing('Q302', 'comedy film'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 0 }) });
+    expect((await t.db.select({ slug: tags.slug }).from(tags)).map((r) => r.slug).toSorted()).toEqual([
+      'comedy',
+      'drama',
+    ]);
+    const tagLinks = await t.db.select({ toId: relations.toId }).from(relations).where(eq(relations.type, 'work_tag'));
+    const [comedy] = await t.db.select({ id: tags.entityId }).from(tags).where(eq(tags.slug, 'comedy'));
+    expect(tagLinks).toEqual([{ toId: comedy!.id }]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a final-pass link that can’t be added is counted in linksFailed and logged', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2', 'Q3'), {
+      Q1: film('Q1', 'Part Two', { follows: 'Q2' }),
+      Q2: film('Q2', 'Part One'),
+      Q3: film('Q3', 'Unrelated'),
+    });
+    // Mid-run, once Part One is in, a moderator takes it down: the deferred link then has no live target.
+    let removed = false;
+    const measureBytes = async () => {
+      const [row] = await t.db.select({ id: works.entityId }).from(works).where(eq(works.title, 'Part One'));
+      if (row && !removed) {
+        removed = true;
+        const [create] = await t.db
+          .select({ id: changesTable.id })
+          .from(changesTable)
+          .where(and(eq(changesTable.entityId, row.id), eq(changesTable.op, 'create')));
+        await removeEntity(t, create!.id);
+      }
+      return 1000;
+    };
+    const lines: string[] = [];
+    const result = await runWikidataImport(
+      { db: t.db, client, measureBytes, today: TODAY, log: (l) => lines.push(l) },
+      { ...OPTS, batchSize: 1 },
+    );
+    expect(result.status).toBe('finished');
+    expect(result.stats).toMatchObject({ imported: 3, linksAdded: 0, linksFailed: 1 });
+    expect(lines.some((l) => l.includes('Q2') && l.includes('unknown_entity'))).toBe(true);
   } finally {
     await t.close();
   }

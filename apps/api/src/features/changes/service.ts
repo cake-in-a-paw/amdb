@@ -546,9 +546,16 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       });
     },
 
-    /** The tag holding `slug`, so an importer can reuse it instead of creating a duplicate. */
-    async tagIdBySlug(slug: string): Promise<string | null> {
-      return repo.findTagBySlug(slug);
+    /**
+     * The tag holding `slug` (its merge winner), so an importer can reuse it instead of creating a
+     * duplicate. `live` is false for a retracted or removed tag: the slug is still taken, but nothing
+     * can be related to it.
+     */
+    async tagBySlug(slug: string): Promise<{ id: string; live: boolean } | null> {
+      const holder = await repo.findTagBySlug(slug);
+      if (!holder) return null;
+      const id = await resolveWinner(db, holder);
+      return { id, live: (await repo.findEntity(id)) !== null };
     },
 
     /** One change, with the submission it belongs to: visible to its author and to moderators; everyone else gets a 404. */

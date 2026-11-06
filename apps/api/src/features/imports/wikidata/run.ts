@@ -22,6 +22,8 @@ export type WikidataImportStats = {
   skipped: Record<SkipReason, number>;
   /** Work links added in the final pass, once their target had arrived. */
   linksAdded: number;
+  /** Final-pass links that couldn't be added (their work was imported all the same). */
+  linksFailed: number;
   bytesStart: number;
   bytesEnd: number;
   bytesPerWork: number;
@@ -87,6 +89,7 @@ export async function runWikidataImport(
     imported: 0,
     skipped: { present: 0, no_title: 0, duplicate_external_id: 0, missing: 0, invalid: 0 },
     linksAdded: 0,
+    linksFailed: 0,
     bytesStart: 0,
     bytesEnd: 0,
     bytesPerWork: 0,
@@ -94,10 +97,11 @@ export async function runWikidataImport(
   };
 
   // Run-local memory: entities by QID (found in AMDB or created by this run), fetched reference
-  // items (null when Wikidata didn't return one), and genre tags by slug.
+  // items (null when Wikidata didn't return one), and genre tags by slug (null for a slug held by a
+  // retracted or removed tag, which can't be reused or recreated).
   const known = new Map<string, Known>();
   const refEntities = new Map<string, WikidataEntity | null>();
-  const tagIds = new Map<string, string>();
+  const tagIds = new Map<string, string | null>();
   const deferred: DeferredLink[] = [];
 
   async function fetchEntities(qids: string[]) {
@@ -123,7 +127,8 @@ export async function runWikidataImport(
     const nextRef = () => `r${creates.length}`;
     const entityRef = (qid: string, kind: RefKind): EntityRef | null => {
       const found = known.get(qid);
-      if (found) return { id: found.id };
+      // Held as another kind (say, a series item imported as a work): drop the reference, keep the work.
+      if (found) return found.kind === kind ? { id: found.id } : null;
       const already = local.get(qid);
       if (already) return already;
       const entity = refEntities.get(qid);
@@ -147,11 +152,13 @@ export async function runWikidataImport(
       // Two genres can share a slug ("drama film", "drama"); the work gets the tag once.
       if (!tag || slugs.has(tag.slug)) return null;
       slugs.add(tag.slug);
-      const id = tagIds.get(tag.slug) ?? (await changes.tagIdBySlug(tag.slug));
-      if (id) {
-        tagIds.set(tag.slug, id);
-        return { id };
+      if (!tagIds.has(tag.slug)) {
+        const holder = await changes.tagBySlug(tag.slug);
+        if (holder) tagIds.set(tag.slug, holder.live ? holder.id : null);
       }
+      const id = tagIds.get(tag.slug);
+      if (id === null) return null;
+      if (id) return { id };
       const ref = nextRef();
       created.push({ index: creates.length, slug: tag.slug });
       creates.push({ op: 'create', kind: 'tag', ref, fields: { kind: 'genre', name: tag.name, slug: tag.slug } });
@@ -296,7 +303,7 @@ export async function runWikidataImport(
         stats.linksAdded++;
       } catch (err) {
         if (!isItemError(err)) throw err;
-        // Logged, not counted: `skipped` counts candidates, and this link's work was imported.
+        stats.linksFailed++;
         log(`skipped link ${link.fromId} → ${link.toQid}: ${err.code} (${err.message})`);
       }
     }
