@@ -52,35 +52,33 @@ const toSummary = (s: SummaryRow): Summary => ({
 export function createCatalogService(db: Db) {
   const repo = catalogRepository(db);
 
-  /** A work's other works through each shared creator, series and property (three queries). */
+  /** A work's other works through each shared creator, series and property: one query per kind of hub, then one for every summary. */
   async function related(workId: string, creators: Summary[], series: Summary[], properties: Summary[]) {
-    const groups = async (type: Parameters<typeof repo.worksOfHubs>[0], hubs: Summary[]) => {
-      const pairs = await repo.worksOfHubs(
+    const pairsOf = (type: Parameters<typeof repo.worksOfHubs>[0], hubs: Summary[]) =>
+      repo.worksOfHubs(
         type,
         hubs.map((h) => h.id),
         workId,
         RELATED_LIMIT,
       );
-      const summaries = new Map(
-        (await repo.summaries([...new Set(pairs.map((p) => p.workId))])).map((s): [string, Summary] => [
-          s.id,
-          toSummary(s),
-        ]),
-      );
-      return hubs.flatMap((hub) => {
+    const [creatorPairs, seriesPairs, propertyPairs] = await Promise.all([
+      pairsOf('work_creator', creators),
+      pairsOf('series_work', series),
+      pairsOf('property_work', properties),
+    ]);
+    const workIds = [...creatorPairs, ...seriesPairs, ...propertyPairs].map((p) => p.workId);
+    const summaries = new Map(
+      (await repo.summaries([...new Set(workIds)])).map((s): [string, Summary] => [s.id, toSummary(s)]),
+    );
+    const groups = (hubs: Summary[], pairs: typeof creatorPairs) =>
+      hubs.flatMap((hub) => {
         const works = pairs.filter((p) => p.hubId === hub.id).flatMap((p) => summaries.get(p.workId) ?? []);
         return works.length ? [{ hub, works }] : [];
       });
-    };
-    const [byCreator, bySeries, byProperty] = await Promise.all([
-      groups('work_creator', creators),
-      groups('series_work', series),
-      groups('property_work', properties),
-    ]);
     return {
-      byCreator: byCreator.map(({ hub, works }) => ({ creator: hub, works })),
-      bySeries: bySeries.map(({ hub, works }) => ({ series: hub, works })),
-      byProperty: byProperty.map(({ hub, works }) => ({ property: hub, works })),
+      byCreator: groups(creators, creatorPairs).map(({ hub, works }) => ({ creator: hub, works })),
+      bySeries: groups(series, seriesPairs).map(({ hub, works }) => ({ series: hub, works })),
+      byProperty: groups(properties, propertyPairs).map(({ hub, works }) => ({ property: hub, works })),
     };
   }
 
