@@ -62,7 +62,12 @@ export function buildEdit(entity: EntityView, form: EntryForm): ChangeInput[] {
   if (kind !== 'work') return changes;
 
   const credits = rowChanges(original.credits, form.credits, (a, b) => a.role === b.role);
-  const series = rowChanges(original.series, form.series, (a, b) => a.position.trim() === b.position.trim());
+  // By number, as it is sent: "03" is the position 3 the entry holds, not a new one.
+  const series = rowChanges(
+    original.series,
+    form.series,
+    (a, b) => Number(a.position.trim()) === Number(b.position.trim()),
+  );
   const properties = rowChanges(original.properties, form.properties, () => true);
   const tags = rowChanges(original.tags, form.tags, () => true);
   const links = rowChanges(original.links, form.links, (a, b) => a.linkType === b.linkType);

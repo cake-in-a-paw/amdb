@@ -1,5 +1,7 @@
 import { expect, test } from 'vitest';
-import { diffFields } from '@/lib/diff';
+import { buildEdit, diffFields } from '@/lib/diff';
+import type { EntityView } from '@/lib/entity';
+import { formFromEntity } from '@/lib/entity-form';
 
 test('only the changed keys come back', () => {
   expect(diffFields({ title: 'A', releaseYear: 2001 }, { title: 'A', releaseYear: 2002 })).toEqual({
@@ -21,6 +23,22 @@ test('nested attributes are compared by value, and sent whole when one differs',
     attributes: { runtimeMin: 95, episodes: 2 },
   });
   expect(diffFields({ attributes: { runtimeMin: 90 } }, {})).toEqual({ attributes: null });
+});
+
+test('a series position written differently but meaning the same number is no change', () => {
+  const series = { id: '00000000-0000-4000-8000-000000000002', title: 'Earthsea' };
+  // Only what formFromEntity reads: the full view is the API's, and this test needs none of the rest.
+  const entity = {
+    id: '00000000-0000-4000-8000-000000000001',
+    kind: 'work',
+    fields: { mediaType: 'book', subtype: null, title: 'A Wizard of Earthsea' },
+    relations: { series: [{ series, position: 3, relationId: '00000000-0000-4000-8000-000000000003' }] },
+  } as unknown as EntityView;
+  const form = formFromEntity(entity);
+
+  for (const position of ['03', ' 3 ', '3.0']) {
+    expect(buildEdit(entity, { ...form, series: form.series.map((s) => ({ ...s, position })) })).toEqual([]);
+  }
 });
 
 test('equal records give nothing', () => {
