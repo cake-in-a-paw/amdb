@@ -599,7 +599,7 @@ it('fetches references in chunks of at most 50 ids', async () => {
   }
 });
 
-it('any other error finishes the run failed with its message and is rethrown', async () => {
+it('any other error finishes the run failed with a generic message, logs the detail, and is rethrown', async () => {
   const t = await setupTest();
   try {
     const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'One') });
@@ -608,16 +608,19 @@ it('any other error finishes the run failed with its message and is rethrown', a
       if (++calls === 2) throw new Error('disk gone');
       return 1000;
     };
-    await expect(runWikidataImport({ db: t.db, client, measureBytes, today: TODAY }, OPTS)).rejects.toThrow(
-      'disk gone',
-    );
+    const lines: string[] = [];
+    await expect(
+      runWikidataImport({ db: t.db, client, measureBytes, today: TODAY, log: (l) => lines.push(l) }, OPTS),
+    ).rejects.toThrow('disk gone');
+    // The run page is public; internal detail goes to the operator's log only.
+    expect(lines.some((l) => l.includes('disk gone'))).toBe(true);
     const [{ id: runId }] = (await t.db.select({ id: importRuns.id }).from(importRuns)) as [{ id: string }];
     const run = (await (await t.as({ kind: 'none' }).get(`/api/import-runs/${runId}`)).json()) as {
       status: string;
       error: string | null;
       finishedAt: string | null;
     };
-    expect(run).toMatchObject({ status: 'failed', error: 'disk gone' });
+    expect(run).toMatchObject({ status: 'failed', error: "internal error (see the importer's log)" });
     expect(run.finishedAt).not.toBeNull();
   } finally {
     await t.close();
