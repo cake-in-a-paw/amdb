@@ -1,6 +1,6 @@
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render, screen, waitFor, within } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { expect, onTestFinished, test, vi } from 'vitest';
 import { getAnonToken, peekAnonToken } from '@/lib/anon';
 import { createAppRouter } from '@/router';
 import { renderApp } from './harness';
@@ -147,7 +147,7 @@ test('a failed claim says so, and Try again hands the submissions over', async (
   await signInByEmail(t);
 
   expect(await screen.findByRole('alert')).toHaveTextContent(
-    "Couldn't move the submissions you made before signing in to your account.",
+    "Couldn't check this browser for anything you submitted before signing in.",
   );
   expect(peekAnonToken()).toBe(token);
   expect(localStorage.getItem('amdb.anon.claimed')).toBeNull();
@@ -160,6 +160,41 @@ test('a failed claim says so, and Try again hands the submissions over', async (
   expect(fault.claims()).toHaveLength(2);
   expect(await owned(t, submission.id)).toBe(true);
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('with storage blocked, a second Try again during a claim in flight sends nothing more', async () => {
+  const t = await renderApp('/');
+  // Storage can't hold the token or mark it claimed, so only the in-memory guard stops a second send.
+  for (const method of ['getItem', 'setItem', 'removeItem'] as const) {
+    vi.spyOn(Storage.prototype, method).mockImplementation(() => {
+      throw new DOMException('blocked', 'SecurityError');
+    });
+  }
+  // Before the setup file's cleanup touches localStorage.
+  onTestFinished(() => {
+    vi.restoreAllMocks();
+  });
+  await submitAnonymously(t);
+  const request = t.api.app.request.bind(t.api.app);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let sent = 0;
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) => {
+    if (!urlOf(input).includes('claim-anonymous')) return request(input, init);
+    sent++;
+    if (sent === 1) return new Response('{}', { status: 500 });
+    await held;
+    return request(input, init);
+  });
+
+  await signInByEmail(t);
+  await screen.findByRole('alert');
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+  release();
+
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(sent).toBe(2);
 });
 
 test('a failed claim is tried again on the next load', async () => {
