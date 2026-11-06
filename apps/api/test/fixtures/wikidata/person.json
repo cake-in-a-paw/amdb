@@ -1,0 +1,5 @@
+{
+  "id": "Q200",
+  "labels": { "en": { "language": "en", "value": "Jane Director" } },
+  "claims": { "P31": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P31", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q5" } } } }] }
+}

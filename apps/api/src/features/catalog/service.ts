@@ -113,6 +113,11 @@ export function createCatalogService(db: Db) {
       const outgoing = (type: string) => rels.filter((r) => r.type === type && r.fromId === id);
       const incoming = (type: string) => rels.filter((r) => r.type === type && r.toId === id);
 
+      const externalIds = () =>
+        outgoing('external_id').flatMap((r) =>
+          r.scheme && r.value ? [{ relationId: r.id, scheme: r.scheme, value: r.value }] : [],
+        );
+
       const relations: EntityView['relations'] = {};
       switch (entity.kind) {
         case 'work':
@@ -147,9 +152,7 @@ export function createCatalogService(db: Db) {
                   ];
             });
           relations.tags = outgoing('work_tag').map((r) => ({ relationId: r.id, tag: summary(r.toId) }));
-          relations.externalIds = outgoing('external_id').flatMap((r) =>
-            r.scheme && r.value ? [{ relationId: r.id, scheme: r.scheme, value: r.value }] : [],
-          );
+          relations.externalIds = externalIds();
           relations.related = await related(
             id,
             relations.creators.map((c) => c.creator),
@@ -164,6 +167,7 @@ export function createCatalogService(db: Db) {
             ...(r.role === null ? {} : { role: r.role }),
             ...position(r.position),
           }));
+          relations.externalIds = externalIds();
           break;
         case 'series':
           relations.works = byPosition(
@@ -173,9 +177,11 @@ export function createCatalogService(db: Db) {
               ...position(r.position),
             })),
           );
+          relations.externalIds = externalIds();
           break;
         case 'property':
           relations.works = outgoing('property_work').map((r) => ({ relationId: r.id, work: summary(r.toId) }));
+          relations.externalIds = externalIds();
           break;
         case 'tag':
           relations.works = incoming('work_tag').map((r) => ({ relationId: r.id, work: summary(r.fromId) }));

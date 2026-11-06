@@ -11,6 +11,7 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc -p .",
+    "import:wikidata": "tsx scripts/import-wikidata.ts",
     "openapi:dump": "tsx scripts/dump-openapi.ts",
     "db:generate": "drizzle-kit generate",
     "db:custom": "drizzle-kit generate --custom"

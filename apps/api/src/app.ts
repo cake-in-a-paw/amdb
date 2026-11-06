@@ -5,6 +5,8 @@ import { createCatalogService } from './features/catalog/service';
 import { holdAll, type ReviewPolicy } from './features/changes/review-policy';
 import { changesRoutes } from './features/changes/routes';
 import { createChangesService } from './features/changes/service';
+import { importsRoutes } from './features/imports/routes';
+import { createImportsService } from './features/imports/service';
 import { resolveActor } from './features/users/middleware';
 import { usersRoutes } from './features/users/routes';
 import { createUsersService } from './features/users/service';
@@ -69,6 +71,7 @@ export function createApp(deps: AppDeps) {
     }),
   );
   app.route('/', catalogRoutes(createCatalogService(deps.db)));
+  app.route('/', importsRoutes(createImportsService(deps.db)));
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 

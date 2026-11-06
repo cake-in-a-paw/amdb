@@ -4,6 +4,8 @@ import type {
   CreatorKind,
   EntityKind,
   IdScheme,
+  ImportRunStatus,
+  ImportSource,
   Lifecycle,
   MediaType,
   RelationType,
@@ -17,6 +19,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  date,
   customType,
   index,
   integer,
@@ -221,16 +224,45 @@ export const tags = pgTable('tags', {
 
 // --- History ---
 
+/** One run of an importer: what it read, under which license, and how it ended. */
+export const importRuns = pgTable(
+  'import_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    source: text('source').$type<ImportSource>().notNull(),
+    params: jsonb('params').$type<Record<string, unknown>>().notNull(),
+    /** The evidence that the source is CC0. */
+    licenseUrl: text('license_url').notNull(),
+    /** The day someone last confirmed `licenseUrl` still says CC0. */
+    licenseCheckedOn: date('license_checked_on', { mode: 'string' }).notNull(),
+    status: text('status').$type<ImportRunStatus>().notNull(),
+    stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
+    error: text('error'),
+    startedAt: ts('started_at').notNull().defaultNow(),
+    finishedAt: ts('finished_at'),
+  },
+  (t) => [
+    check('import_runs_status', sql`${t.status} IN ('running', 'finished', 'failed', 'capped')`),
+    check('import_runs_finished', sql`(${t.status} = 'running') = (${t.finishedAt} IS NULL)`),
+    // One run at a time: two concurrent runs would race on the same QIDs.
+    uniqueIndex('import_runs_one_running')
+      .on(t.status)
+      .where(sql`${t.status} = 'running'`),
+  ],
+);
+
 export const submissions = pgTable(
   'submissions',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     authorUserId: uuid('author_user_id').references(() => users.id),
     anonHash: text('anon_hash'),
+    /** Set when an import run wrote the submission. */
+    importRunId: uuid('import_run_id').references(() => importRuns.id),
     note: text('note'),
     createdAt: ts('created_at').notNull().defaultNow(),
   },
-  (t) => [check('submissions_one_author', sql`(${t.authorUserId} IS NOT NULL) <> (${t.anonHash} IS NOT NULL)`)],
+  (t) => [check('submissions_one_author', sql`num_nonnulls(${t.authorUserId}, ${t.anonHash}, ${t.importRunId}) = 1`)],
 );
 
 export const changes = pgTable(

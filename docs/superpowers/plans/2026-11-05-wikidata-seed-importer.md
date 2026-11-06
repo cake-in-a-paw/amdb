@@ -292,3 +292,28 @@
   5. Upgrade to Railway Pro and grow the volume before the projection passes 3.5 GB.
 - [ ] **Step 4: Run** `pnpm check` at the root. Expect PASS. Then run the real `pnpm --filter @amdb/api import:wikidata --dry-run --limit 20` against live Wikidata, and expect the counts and 3 sane records. This is the first contact with the real source. Fix the mapping if the samples are wrong, and add the case to Task 5's tests.
 - [ ] **Step 5: Commit** `feat(api): import:wikidata CLI and runbook`.
+
+---
+
+## Deferred follow-ups (2026-11-06)
+
+Set aside during review, none blocking. The ones that matter before a large `--limit` come first.
+
+- A hard-killed run (kill -9, a dropped connection, a second Ctrl-C) stays `running` and blocks the
+  next run until it's closed by hand (docs/import.md). A CLI flag to close a stale run would help.
+- `importSubmission` checks the run is `running` before its transaction, not inside it: one extra
+  round trip per work over the public proxy.
+- The CLI's signal wiring and the dry run's entity-chunking loop have no automated test (checked by
+  hand).
+- `GET /api/import-runs/{id}` for a `running` run (`finishedAt: null`) is no longer tested.
+- `tagBySlug` ignores the tag's kind, so a genre can attach to a human-made non-genre tag with the
+  same slug.
+- The web `authorName` declares its own author union instead of the generated type.
+- The client: concurrent calls aren't serialized (the runner is serial by contract); two ids
+  redirecting to one item drop one; a 400 is reported as "unavailable"; a final
+  `WikidataUnavailable` carries no `cause`; one cast lacks its own why-comment.
+- Discovery accepts negative or fractional sitelink counts from the service (the query's floor
+  excludes them in practice).
+- `candidateQids` includes candidates later skipped, so their references are dropped too, and it
+  also filters genre QIDs.
+- The architecture test's "no catalog writes" check for the imports repository is a heuristic.

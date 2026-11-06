@@ -661,7 +661,8 @@
                                 },
                                 "position": {
                                   "type": "integer",
-                                  "minimum": 1
+                                  "minimum": 1,
+                                  "maximum": 2147483647
                                 },
                                 "linkType": {
                                   "type": "string",
@@ -969,6 +970,11 @@
                       "nullable": true,
                       "format": "uuid"
                     },
+                    "importRunId": {
+                      "type": "string",
+                      "nullable": true,
+                      "format": "uuid"
+                    },
                     "changes": {
                       "type": "array",
                       "items": {
@@ -1083,6 +1089,7 @@
                     "note",
                     "createdAt",
                     "authorUserId",
+                    "importRunId",
                     "changes"
                   ]
                 }
@@ -1638,6 +1645,33 @@
                                     "required": [
                                       "userId",
                                       "handle"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "importRun": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                          },
+                                          "source": {
+                                            "type": "string",
+                                            "enum": [
+                                              "wikidata"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "source"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "importRun"
                                     ]
                                   }
                                 ]
@@ -2742,13 +2776,41 @@
                                     "required": [
                                       "handle"
                                     ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "importRun": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                          },
+                                          "source": {
+                                            "type": "string",
+                                            "enum": [
+                                              "wikidata"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "source"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "importRun"
+                                    ]
                                   }
                                 ]
                               },
                               "source": {
                                 "type": "string",
                                 "enum": [
-                                  "human"
+                                  "human",
+                                  "import"
                                 ]
                               },
                               "appliedAt": {
@@ -2816,6 +2878,33 @@
                                     },
                                     "required": [
                                       "handle"
+                                    ]
+                                  },
+                                  {
+                                    "type": "object",
+                                    "properties": {
+                                      "importRun": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                          },
+                                          "source": {
+                                            "type": "string",
+                                            "enum": [
+                                              "wikidata"
+                                            ]
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "source"
+                                        ]
+                                      }
+                                    },
+                                    "required": [
+                                      "importRun"
                                     ]
                                   }
                                 ]
@@ -4210,6 +4299,131 @@
           },
           "400": {
             "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/import-runs/{id}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "source": {
+                      "type": "string",
+                      "enum": [
+                        "wikidata"
+                      ]
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "running",
+                        "finished",
+                        "failed",
+                        "capped"
+                      ]
+                    },
+                    "params": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    },
+                    "licenseUrl": {
+                      "type": "string"
+                    },
+                    "licenseCheckedOn": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "stats": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "nullable": true
+                      }
+                    },
+                    "error": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "startedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "finishedAt": {
+                      "type": "string",
+                      "nullable": true,
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "source",
+                    "status",
+                    "params",
+                    "licenseUrl",
+                    "licenseCheckedOn",
+                    "stats",
+                    "error",
+                    "startedAt",
+                    "finishedAt"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
             "content": {
               "application/json": {
                 "schema": {

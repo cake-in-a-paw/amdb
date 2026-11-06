@@ -7,6 +7,7 @@ import { RedactDialog } from '@/components/redact-dialog';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { authorName, record, valueText } from '@/lib/change-text';
+import { AuthorName } from '@/components/author-name';
 import { entityQueryKey, PAGE_SIZE } from '@/lib/entity';
 import { describeError } from '@/lib/errors';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
@@ -116,7 +117,9 @@ function HistoryItem({
   return (
     <li className="border-b border-border py-3">
       <p className="flex flex-wrap items-baseline gap-x-2 text-sm text-muted-foreground">
-        <span className="font-medium text-foreground">{authorName(item.author)}</span>
+        <span className="font-medium text-foreground">
+          <AuthorName author={item.author} />
+        </span>
         <time dateTime={item.appliedAt}>
           {new Date(item.appliedAt).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
         </time>

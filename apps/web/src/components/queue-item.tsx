@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { ApiError, unwrap } from '@/lib/api';
 import { entityQueryOptions } from '@/lib/entity';
 import { describeError, isApiCode } from '@/lib/errors';
-import { authorName, record, valueText } from '@/lib/change-text';
+import { record, valueText } from '@/lib/change-text';
+import { AuthorName } from '@/components/author-name';
 import { fieldLabel } from '@/lib/labels';
 import { linkClass } from '@/lib/styles';
 
@@ -134,7 +135,10 @@ export function QueueItem({
     <li id={changeAnchor(change.id)} tabIndex={-1} className="border-b border-border py-4">
       <p className="flex flex-wrap items-baseline gap-x-3 text-sm text-muted-foreground">
         <span>
-          From <span className="font-medium text-foreground">{authorName(entry.submission.author)}</span>
+          From{' '}
+          <span className="font-medium text-foreground">
+            <AuthorName author={entry.submission.author} />
+          </span>
         </span>
         <span>Waiting {ageText(entry.ageSeconds)}</span>
       </p>

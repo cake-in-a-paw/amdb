@@ -22,6 +22,7 @@ test('an author is a handle, else "contributor", else "anonymous"', () => {
   expect(authorName({ handle: 'ghibli_fan' })).toBe('ghibli_fan');
   expect(authorName({ handle: null })).toBe('contributor');
   expect(authorName('anonymous')).toBe('anonymous');
+  expect(authorName({ importRun: { id: 'r', source: 'wikidata' } })).toBe('Wikidata import');
 });
 
 test('a value reads as text, null as "cleared", and a long one is cut at 280 characters', () => {

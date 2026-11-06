@@ -1,8 +1,11 @@
 /** Words for a change, shared by the history and the moderation queue. */
 
-/** Who made a change: their handle, else "contributor" (signed in, no handle), else "anonymous". Never an id. */
-export function authorName(author: 'anonymous' | { handle: string | null }): string {
+/** Who made a change: their handle, else "contributor" (signed in, no handle), else "anonymous"; an import is named for its source. Never an id. */
+export function authorName(
+  author: 'anonymous' | { handle: string | null } | { importRun: { id: string; source: string } },
+): string {
   if (author === 'anonymous') return 'anonymous';
+  if ('importRun' in author) return 'Wikidata import';
   return author.handle ?? 'contributor';
 }
 

@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi';
-import { ChangeOp, ChangeStatus, EntityKind, IdScheme, RelationType, WorkLinkType } from '@amdb/shared';
+import { ChangeOp, ChangeStatus, EntityKind, IdScheme, ImportSource, RelationType, WorkLinkType } from '@amdb/shared';
 import { PageQuery } from '../../platform/http/pagination';
 
 /** An entity named by id, or by the `ref` of a create earlier in the same submission. */
@@ -27,7 +27,8 @@ export const ChangeInput = z.discriminatedUnion('op', [
     data: z
       .object({
         role: z.string(),
-        position: z.number().int().min(1),
+        // `relations.position` is a Postgres integer.
+        position: z.number().int().min(1).max(2147483647),
         linkType: WorkLinkType,
         scheme: IdScheme,
         value: z.string(),
@@ -100,8 +101,10 @@ export const SubmissionDetailSchema = z.object({
   id: z.uuid(),
   note: z.string().nullable(),
   createdAt: z.iso.datetime(),
-  /** The account that submitted it; null for an anonymous submission, whose token is never shown. */
+  /** The account that submitted it; null for an anonymous or import-run submission (an anonymous token is never shown). */
   authorUserId: z.uuid().nullable(),
+  /** The import run that wrote it; null for a contributor's submission. */
+  importRunId: z.uuid().nullable(),
   changes: z.array(ChangeSchema),
 });
 
@@ -161,13 +164,21 @@ export const QueueQuery = z.object(PageQuery);
 /** The decoded queue cursor: the last item's (createdAt, submissionId, seq). */
 export const QueueCursor = z.object({ createdAt: z.iso.datetime(), submissionId: z.uuid(), seq: z.number().int() });
 
-/** Who made a change, publicly: a handle if they chose one, else nothing that identifies them. */
-export const AuthorSchema = z.union([z.literal('anonymous'), z.object({ handle: z.string().nullable() })]);
+/** An import run as a change's author; `GET /api/import-runs/{id}` has its license evidence. */
+const ImportRunAuthor = z.object({ importRun: z.object({ id: z.uuid(), source: ImportSource }) });
+
+/** Who made a change, publicly: an import run, a handle if they chose one, else nothing that identifies them. */
+export const AuthorSchema = z.union([
+  z.literal('anonymous'),
+  z.object({ handle: z.string().nullable() }),
+  ImportRunAuthor,
+]);
 
 /** Who made a change, as moderators see it: the account id as well. */
 export const ReviewAuthorSchema = z.union([
   z.literal('anonymous'),
   z.object({ userId: z.uuid(), handle: z.string().nullable() }),
+  ImportRunAuthor,
 ]);
 
 export const QueueSchema = z.object({
@@ -236,7 +247,8 @@ export const HistoryItemSchema = z.union([
     /** The change's fields; for a revert, `{ revertOf }`. */
     payload: z.record(z.string(), z.unknown()),
     author: AuthorSchema,
-    source: z.literal('human'),
+    /** `import` when an import run wrote the change; `author` names the run. */
+    source: z.enum(['human', 'import']),
     appliedAt: z.iso.datetime(),
     revertOf: z.uuid().nullable(),
   }),
