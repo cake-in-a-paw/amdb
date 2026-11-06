@@ -29,7 +29,27 @@ const ok = (r: ReturnType<typeof mapWork>): WorkRecord => {
 };
 const fieldsOf = (claims: Record<string, Claim[]>) => ok(mapWork(withClaims(claims), FILM, TODAY)).fields;
 
+const start = (t: string, precision: number): Claim => ({
+  rank: 'normal',
+  mainsnak: { snaktype: 'value', property: 'P580', datavalue: { value: { time: t, precision } } },
+});
+
 describe('mapWork', () => {
+  it('falls back to the earliest P580 start time when there is no P577', () => {
+    const f = fieldsOf({
+      P580: [start('+1995-10-04T00:00:00Z', 11), start('+1994-04-01T00:00:00Z', 11)],
+    });
+    expect(f).toMatchObject({ releaseYear: 1994, releaseMonth: 4, releaseDay: 1, lifecycle: 'released' });
+  });
+
+  it('prefers P577 over P580', () => {
+    const f = fieldsOf({
+      P577: [time('+2001-05-17T00:00:00Z', 11)],
+      P580: [start('+1990-01-01T00:00:00Z', 11)],
+    });
+    expect(f).toMatchObject({ releaseYear: 2001 });
+  });
+
   it('maps a film fixture', () => {
     const r = ok(mapWork(fixture('film'), FILM, TODAY));
     expect(r.fields).toEqual({

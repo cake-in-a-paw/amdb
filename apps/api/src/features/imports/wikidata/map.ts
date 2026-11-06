@@ -112,14 +112,17 @@ function parseTime(snak: Snak): ParsedDate | null {
 
 const dateKey = (d: ParsedDate) => d.year * 10000 + (d.month ?? 0) * 100 + (d.day ?? 0);
 
-function earliestDate(entity: WikidataEntity): ParsedDate | null {
+function earliestOf(entity: WikidataEntity, property: string): ParsedDate | null {
   let best: ParsedDate | null = null;
-  for (const { snak } of valueSnaks(entity, 'P577')) {
+  for (const { snak } of valueSnaks(entity, property)) {
     const d = parseTime(snak);
     if (d && (!best || dateKey(d) < dateKey(best))) best = d;
   }
   return best;
 }
+
+/** Publication date (P577), else the start time (P580) that series carry instead. */
+const earliestDate = (entity: WikidataEntity) => earliestOf(entity, 'P577') ?? earliestOf(entity, 'P580');
 
 /** Compares the date's whole precision period with today (UTC): wholly before → released, wholly after → upcoming. */
 function lifecycleFor(date: ParsedDate | null, today: Date): Lifecycle {

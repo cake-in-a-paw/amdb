@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { discover } from '../src/features/imports/wikidata/discover.js';
 import type { SparqlRow } from '../src/features/imports/wikidata/client.js';
-import type { WikidataClient } from '../src/features/imports/wikidata/client.js';
+import { type WikidataClient, WikidataUnavailable } from '../src/features/imports/wikidata/client.js';
 
 const FILM = 'Q11424';
 const ANIME_FILM = 'Q20650540';
@@ -43,13 +43,29 @@ describe('wikidata discover', () => {
     expect(out).toEqual([{ qid: 'Q1', sitelinks: 40, mediaType: 'film_tv', subtype: 'anime_film' }]);
   });
 
-  it('the query names the class, the English-label filter and the sitelink floor', async () => {
+  it('the query names the class and the sitelink floor, with no label join', async () => {
     const { client, queries } = fake({});
     await discover(client, { classes: ['Q7725634'], minSitelinks: 25 });
     expect(queries).toHaveLength(1);
     expect(queries[0]).toContain('wdt:P31 wd:Q7725634');
-    expect(queries[0]).toContain('FILTER(LANG(?l)="en")');
+    expect(queries[0]).not.toContain('rdfs:label');
+    expect(queries[0]).not.toContain('LANG(');
     expect(queries[0]).toContain('FILTER(?sl >= 25)');
+  });
+
+  it('names the class when its query fails', async () => {
+    const client = {
+      async sparql() {
+        throw new WikidataUnavailable('Wikidata unavailable after 5 tries', 0, 'https://q/x');
+      },
+      async entities() {
+        return {};
+      },
+    } satisfies WikidataClient;
+    const err = await discover(client, { classes: [FILM], minSitelinks: 5 }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(WikidataUnavailable);
+    expect(err).toMatchObject({ status: 0, url: 'https://q/x' });
+    expect((err as Error).message).toMatch(/Q11424.*after 5 tries/);
   });
 
   it('maps literary works to books with no subtype', async () => {

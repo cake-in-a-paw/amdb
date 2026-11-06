@@ -36,13 +36,13 @@ const harness = (responses: Array<Response | (() => Response)>) => {
 const sparqlBody = { results: { bindings: [{ item: { type: 'uri', value: 'http://www.wikidata.org/entity/Q1' } }] } };
 
 describe('wikidata client', () => {
-  it('sends the AMDB User-Agent and a 30 s timeout signal on every request', async () => {
+  it('sends the AMDB User-Agent and a 65 s timeout for queries and 30 s for entities', async () => {
     const { client, calls, timeouts } = harness([json(sparqlBody), json({ entities: {} })]);
     const rows = await client.sparql('SELECT ?item WHERE {}');
     await client.entities(['Q1']);
     expect(rows).toEqual([{ item: 'http://www.wikidata.org/entity/Q1' }]);
     expect(calls).toHaveLength(2);
-    expect(timeouts).toEqual([30_000, 30_000]);
+    expect(timeouts).toEqual([65_000, 30_000]);
     for (const c of calls) {
       const headers = new Headers(c.init?.headers);
       expect(headers.get('user-agent')).toBe(UA);

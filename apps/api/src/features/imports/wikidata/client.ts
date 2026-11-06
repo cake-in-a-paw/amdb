@@ -5,7 +5,9 @@ const SPARQL_URL = 'https://query.wikidata.org/sparql';
 const ENTITY_URL = 'https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&maxlag=5';
 const MAX_IDS = 50;
 const MIN_GAP_MS = 500;
-const TIMEOUT_MS = 30_000;
+const ENTITY_TIMEOUT_MS = 30_000;
+// The query service enforces its own 60 s limit; this one only guards against a hang past it.
+const SPARQL_TIMEOUT_MS = 65_000;
 const MAX_TRIES = 5;
 const MAX_WAIT_MS = 120_000;
 const BACKOFF_MS = [5000, 10_000, 20_000, 40_000];
@@ -83,7 +85,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
   };
 
   // Serial by contract (callers await each call); returns the parsed JSON body.
-  async function request(url: string, headers: Record<string, string>): Promise<unknown> {
+  async function request(url: string, headers: Record<string, string>, timeoutMs: number): Promise<unknown> {
     let lastStatus = 0;
     for (let attempt = 0; attempt < MAX_TRIES; attempt++) {
       if (lastStart !== undefined) {
@@ -96,7 +98,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       try {
         res = await deps.fetch(url, {
           headers: { 'User-Agent': USER_AGENT, ...headers },
-          signal: timeoutSignal(TIMEOUT_MS),
+          signal: timeoutSignal(timeoutMs),
         });
         if (res.status === 429 || res.status === 503) {
           lastStatus = res.status;
@@ -133,7 +135,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
     async sparql(query) {
       const url = `${SPARQL_URL}?${new URLSearchParams({ query, format: 'json' })}`;
       // Shape is fixed by the SPARQL results JSON spec; we only read bindings.
-      const body = (await request(url, { Accept: 'application/sparql-results+json' })) as {
+      const body = (await request(url, { Accept: 'application/sparql-results+json' }, SPARQL_TIMEOUT_MS)) as {
         results?: { bindings?: Array<Record<string, { value: string }>> };
       } | null;
       if (!body?.results?.bindings)
@@ -151,7 +153,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       });
       // Shape follows wbgetentities; `missing` marks absent entities, `redirects` a followed redirect.
       const url = `${ENTITY_URL}&${params}`;
-      const body = (await request(url, {})) as {
+      const body = (await request(url, {}, ENTITY_TIMEOUT_MS)) as {
         entities?: Record<string, WikidataEntity & { missing?: unknown; redirects?: { from: string; to: string } }>;
       } | null;
       if (!body?.entities) throw new WikidataUnavailable('Wikidata returned an unexpected entities body', 200, url);

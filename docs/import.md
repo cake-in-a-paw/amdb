@@ -24,6 +24,8 @@ The stats print as one JSON line on stdout and progress on stderr. Exit 0 for `f
 pnpm --filter @amdb/api import:wikidata --dry-run --limit 20
 ```
 
+Discovery runs one query per class; the film query takes about 20 seconds, so expect a wait.
+
 Verify: counts (candidates, mapped, skipped) and three sample records that look right.
 
 ## 2. Import 1,000 into a local Postgres

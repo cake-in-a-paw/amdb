@@ -1,5 +1,5 @@
 import type { MediaType, Subtype } from '@amdb/shared';
-import type { WikidataClient } from './client.js';
+import { type WikidataClient, WikidataUnavailable } from './client.js';
 
 export interface Candidate {
   qid: string;
@@ -23,9 +23,9 @@ export const CLASSES: readonly WikidataClass[] = [
   { qid: 'Q7725634', mediaType: 'book', subtype: null },
 ];
 
+// No English-label join: it makes the film query exceed the 60 s limit; mapWork skips unlabeled items.
 const query = (classQid: string, minSitelinks: number) =>
-  `SELECT ?item ?sl WHERE { ?item wdt:P31 wd:${classQid}; wikibase:sitelinks ?sl; rdfs:label ?l. ` +
-  `FILTER(LANG(?l)="en") FILTER(?sl >= ${minSitelinks}) }`;
+  `SELECT ?item ?sl WHERE { ?item wdt:P31 wd:${classQid}; wikibase:sitelinks ?sl. FILTER(?sl >= ${minSitelinks}) }`;
 
 const qidNumber = (qid: string) => Number(qid.slice(1));
 
@@ -40,7 +40,16 @@ export async function discover(
   const byQid = new Map<string, Candidate>();
   // Serial: the client is serial by contract. Earlier (higher-precedence) classes win duplicates.
   for (const cls of wanted) {
-    for (const row of await client.sparql(query(cls.qid, opts.minSitelinks))) {
+    let rows;
+    try {
+      rows = await client.sparql(query(cls.qid, opts.minSitelinks));
+    } catch (err) {
+      // Name the class so the operator knows which query failed.
+      if (err instanceof WikidataUnavailable)
+        throw new WikidataUnavailable(`${cls.qid}: ${err.message}`, err.status, err.url);
+      throw err;
+    }
+    for (const row of rows) {
       const qid = row.item?.split('/').pop() ?? '';
       const sitelinks = Number(row.sl);
       if (!/^Q\d+$/.test(qid) || !row.sl || !Number.isFinite(sitelinks)) continue;
