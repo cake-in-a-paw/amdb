@@ -202,6 +202,9 @@ and tuning, so the design must make it easy to change.
 
 ### 6.2 Seed imports
 
+> **Amended 2026-11-05 (owner):** books are seeded from Wikidata for now, and Open Library is
+> deferred until it states CC0. See `2026-11-05-wikidata-importer-design.md`.
+
 - **Seed size.** Import English-only items: Wikidata film, TV and anime items with an
   English label, and Open Library works with English-language editions. No hosting budget is
   set. Size the infrastructure for that subset, but load in batches so a larger import later
