@@ -174,6 +174,8 @@ export function HistoryList({ entityId }: { entityId: string }) {
   if (history.isError && !history.data)
     return <LoadError what="the history" error={history.error} onRetry={() => void history.refetch()} />;
   const items = history.data.pages.flatMap((page) => page.items);
+  // A revert is newer than what it reverts, so it is on a page already loaded: the API refuses a second revert.
+  const reverted = new Set(items.flatMap((item) => ('revertOf' in item && item.revertOf ? [item.revertOf] : [])));
   return (
     <section aria-labelledby="history-heading" className="py-6">
       <h2 id="history-heading" className="font-serif text-xl font-semibold">
@@ -188,7 +190,7 @@ export function HistoryList({ entityId }: { entityId: string }) {
               key={item.changeId}
               item={item}
               entityId={entityId}
-              canRevert={canRevert}
+              canRevert={canRevert && !reverted.has(item.changeId)}
               canRedact={canRedact}
             />
           ))}

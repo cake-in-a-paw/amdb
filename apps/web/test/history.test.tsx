@@ -125,6 +125,21 @@ test('reverting adds a revert to the history and updates the entry', async () =>
   expect(screen.queryByText('2017')).not.toBeInTheDocument();
 });
 
+test('a change already reverted offers no Revert, since the API would refuse it', async () => {
+  const { user, list, items } = await open('moderator');
+  expect(within(list).getAllByRole('button', { name: /^Revert/ })).toHaveLength(3);
+
+  // The year edit, third from the top.
+  await user.click(within(items[2]!).getByRole('button', { name: /^Revert/ }));
+  expect(await within(list).findByText('Reverted an earlier change')).toBeInTheDocument();
+
+  // Now: the revert (which can't be reverted), the anonymous edit, the redacted one, the reverted
+  // year edit and the create; only the anonymous edit and the create still offer it.
+  await waitFor(() => expect(within(list).getAllByRole('button', { name: /^Revert/ })).toHaveLength(2));
+  const yearEdit = Array.from(list.children).find((li) => li.textContent?.includes('2017')) as HTMLElement;
+  expect(within(yearEdit).queryByRole('button', { name: /^Revert/ })).not.toBeInTheDocument();
+});
+
 test('a revert the API refuses is explained in words', async () => {
   const { user, list } = await open('moderator');
 
@@ -138,6 +153,42 @@ test('a revert the API refuses is explained in words', async () => {
   const alert = await screen.findByRole('alert');
   expect(alert).toHaveTextContent("Other entries or later changes build on this, so it can't be undone yet.");
   expect(alert).not.toHaveTextContent('has_dependents');
+});
+
+test('a failed Load more keeps the first page, says so, and loads on a second try', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const created = await publish(contributor, moderator, [
+        { op: 'create', kind: 'work', ref: 'w', fields: { mediaType: 'book', subtype: null, title: 'Long Tale' } },
+      ]);
+      const id = created.changes[0]?.entityId;
+      if (!id) throw new Error('the create made no entity');
+      // Twenty edits, one at a time (each is made against the last): with the create, a page and one more.
+      for (let i = 0; i < 20; i++) await publish(contributor, moderator, [update(id, { releaseYear: 1900 + i })]);
+      return id;
+    },
+  });
+  const real = t.api.app.request.bind(t.api.app);
+  let failing = true;
+  vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    return failing && url.includes('/history') && url.includes('cursor=')
+      ? Promise.reject(new TypeError('Failed to fetch'))
+      : real(input, init);
+  });
+  await t.router.navigate({ to: '/entities/$id/history', params: { id: t.seeded } });
+  const list = await screen.findByRole('list', { name: 'History' });
+  expect(list.children).toHaveLength(20);
+
+  await t.user.click(screen.getByRole('button', { name: 'Load more' }));
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't reach AMDB");
+  expect(screen.getByRole('list', { name: 'History' }).children).toHaveLength(20);
+  failing = false;
+  await t.user.click(screen.getByRole('button', { name: 'Load more' }));
+  await waitFor(() => expect(screen.getByRole('list', { name: 'History' }).children).toHaveLength(21));
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
 test('a failed history load says so and Try again loads it', async () => {
