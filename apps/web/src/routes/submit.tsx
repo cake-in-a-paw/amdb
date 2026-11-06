@@ -28,8 +28,10 @@ export const Route = createFileRoute('/submit')({
   validateSearch: (raw: Record<string, unknown>): { title?: string } =>
     typeof raw.title === 'string' && raw.title.trim() ? { title: raw.title.trim() } : {},
   // Who is signed in decides which draft opens; read it first so the form shows at once. A failure
-  // is left to the page, which treats it as signed out.
-  loader: ({ context }) => context.queryClient.ensureQueryData(meQueryOptions(context.api)).catch(() => null),
+  // is left to the page, which treats it as signed out; no retries here, so a failing API never
+  // holds the page blank through the backoff.
+  loader: ({ context }) =>
+    context.queryClient.ensureQueryData({ ...meQueryOptions(context.api), retry: false }).catch(() => null),
   component: Submit,
 });
 

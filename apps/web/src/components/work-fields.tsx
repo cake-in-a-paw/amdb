@@ -205,7 +205,7 @@ function WorkRelations({
     <>
       <Section title="Credits">
         {/* Always there, so a message written into it is announced. */}
-        <p role="status" className="text-sm empty:hidden">
+        <p role="status" className="text-sm empty:sr-only">
           {reassigned}
         </p>
         {mediaType ? (
