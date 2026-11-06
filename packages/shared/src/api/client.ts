@@ -4,7 +4,11 @@ import type { paths } from './schema';
 export type { components, paths } from './schema';
 
 export interface ApiClientOptions {
-  /** Prefix for every path. Defaults to the page's origin, so `/api/...` stays same-origin. */
+  /**
+   * Prefix for every path. Defaults to the page's origin, so `/api/...` stays same-origin. Outside a
+   * browser there is no origin and the default is `''`, which leaves a bare path that `fetch` can't
+   * resolve: callers there (tests, scripts) pass a base URL or a `fetch` that resolves paths itself.
+   */
   baseUrl?: string;
   /** Injected in tests; defaults to the global `fetch`. */
   fetch?: typeof fetch;

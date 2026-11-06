@@ -26,11 +26,22 @@ it('calls headers() on every request and sends what it returns', async () => {
   expect(seen.map((r) => r.headers.get('x-amdb-anon'))).toEqual(['anon-1', 'anon-2']);
 });
 
-it('sends no extra header when headers() returns none or is omitted', async () => {
-  const a = recorder();
-  await createApiClient({ baseUrl: 'http://amdb.test', fetch: a.fetch, headers: () => ({}) }).GET('/api/health');
-  const b = recorder();
-  await createApiClient({ baseUrl: 'http://amdb.test', fetch: b.fetch }).GET('/api/health');
-  expect(a.seen[0]?.headers.has('x-amdb-anon')).toBe(false);
-  expect(b.seen[0]?.headers.has('x-amdb-anon')).toBe(false);
+it('adds exactly what headers() returns, and nothing when it returns none or is omitted', async () => {
+  const send = async (headers?: () => Record<string, string>) => {
+    const { seen, fetch } = recorder();
+    await createApiClient({ baseUrl: 'http://amdb.test', fetch, ...(headers ? { headers } : {}) }).GET('/api/health');
+    const [request] = seen;
+    if (!request) throw new Error('no request was sent');
+    return Object.fromEntries(request.headers);
+  };
+
+  const plain = await send();
+  expect(await send(() => ({}))).toEqual(plain);
+  expect(await send(() => ({ 'x-amdb-anon': 'anon-1' }))).toEqual({ ...plain, 'x-amdb-anon': 'anon-1' });
+});
+
+it('has no origin to default to outside a browser, so a relative request fails there', async () => {
+  // Node has no `location`: the base URL is '' and a bare path isn't a URL a Request accepts.
+  expect(globalThis.location).toBeUndefined();
+  await expect(createApiClient({ fetch: recorder().fetch }).GET('/api/health')).rejects.toThrow();
 });
