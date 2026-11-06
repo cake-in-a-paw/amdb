@@ -58,8 +58,12 @@ const MAY_IMPORT_CATALOG_TABLES = [
   'features/changes/repository.ts',
   // Read-only: checked below.
   'features/catalog/repository.ts',
+  // Reads which entities hold a wikidata id; it writes only import_runs, so it is checked per table below.
+  'features/imports/repository.ts',
 ];
 const READ_ONLY = ['features/catalog/repository.ts'];
+/** Files that write their own tables but only read the catalog: no insert/update/delete names a catalog table. */
+const CATALOG_READ_ONLY = ['features/imports/repository.ts'];
 
 /** Catalog table names a source file imports from `platform/db/schema`, whether named or via a namespace import. */
 export function catalogTablesImported(source: string, resolveSpec: (spec: string) => string): string[] {
@@ -110,5 +114,13 @@ describe('catalog writes (constitution VIII)', () => {
       if (!tsFiles.includes(f)) continue;
       expect(readFileSync(f, 'utf8')).not.toMatch(/\.(insert|update|delete)\(/);
     }
+  });
+  it('a repository that only reads the catalog never writes a catalog table', () => {
+    const writes = new RegExp(`\\.(insert|update|delete)\\(\\s*(${CATALOG_TABLES.join('|')})\\b`);
+    for (const path of CATALOG_READ_ONLY) {
+      expect(readFileSync(join(src, path), 'utf8')).not.toMatch(writes);
+    }
+    expect('db.update(relations)').toMatch(writes);
+    expect('db.update(importRuns)').not.toMatch(writes);
   });
 });

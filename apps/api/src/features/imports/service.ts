@@ -19,6 +19,15 @@ export function createImportsService(db: Db) {
       await repo.finishRun(id, { status: outcome.status, stats: outcome.stats, error: outcome.error ?? null });
     },
 
+    /** The entities already holding these QIDs, so a run can skip present works and reuse references. */
+    async findByWikidataIds(qids: string[]) {
+      return repo.findByWikidataIds(qids);
+    },
+
+    async databaseBytes() {
+      return repo.databaseBytes();
+    },
+
     /** Public: a run is the evidence behind the changes it wrote. */
     async getRun(id: string) {
       const run = await repo.getRun(id);

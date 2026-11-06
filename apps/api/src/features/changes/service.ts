@@ -546,6 +546,11 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       });
     },
 
+    /** The tag holding `slug`, so an importer can reuse it instead of creating a duplicate. */
+    async tagIdBySlug(slug: string): Promise<string | null> {
+      return repo.findTagBySlug(slug);
+    },
+
     /** One change, with the submission it belongs to: visible to its author and to moderators; everyone else gets a 404. */
     async getChange(actor: Actor, id: string) {
       const found = await repo.getChangeWithAuthor(id);

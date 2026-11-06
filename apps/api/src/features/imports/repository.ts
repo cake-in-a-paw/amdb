@@ -1,6 +1,6 @@
-import type { ImportRunStatus, ImportSource } from '@amdb/shared';
-import { eq } from 'drizzle-orm';
-import { importRuns } from '../../platform/db/schema';
+import type { EntityKind, ImportRunStatus, ImportSource } from '@amdb/shared';
+import { and, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { entities, importRuns, relations } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 
 export type ImportRunRow = typeof importRuns.$inferSelect;
@@ -29,6 +29,34 @@ export function importsRepository(db: DbOrTx) {
     async getRun(id: string): Promise<ImportRunRow | null> {
       const [row] = await db.select().from(importRuns).where(eq(importRuns.id, id));
       return row ?? null;
+    },
+
+    /** Who holds each QID as an active `wikidata` external id, by QID. Read-only on the catalog. */
+    async findByWikidataIds(qids: string[]): Promise<Map<string, { id: string; kind: EntityKind }>> {
+      if (qids.length === 0) return new Map();
+      const rows = await db
+        .select({ qid: relations.value, id: entities.id, kind: entities.kind })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            inArray(relations.value, qids),
+            isNull(relations.removedByChange),
+          ),
+        );
+      // `value` is set on every external_id relation; the filter on scheme guarantees it here.
+      return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, { id: r.id, kind: r.kind }] as const] : [])));
+    },
+
+    /** The database's size on disk, as the size cap measures it. */
+    async databaseBytes(): Promise<number> {
+      const [row] = await db
+        .select({ bytes: sql<string>`pg_database_size(current_database())::text` })
+        .from(sql`(SELECT 1) AS one`);
+      if (!row) throw new Error('pg_database_size returned no row');
+      return Number(row.bytes);
     },
   };
 }
