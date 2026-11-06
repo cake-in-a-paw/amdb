@@ -656,7 +656,8 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
       });
       return {
         items: items.map(({ change: c, authorUserId, authorHandle, importRunId, importSource }) => {
-          const author = publicAuthor(authorUserId, authorHandle, runOf(importRunId, importSource));
+          const run = runOf(importRunId, importSource);
+          const author = publicAuthor(authorUserId, authorHandle, run);
           if (c.redactedAt) {
             return {
               changeId: c.id,
@@ -674,7 +675,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             // Without `submitted`: what a moderator edited out of a contributor's original stays out of public view.
             payload: fieldsOf(c.payload),
             author,
-            source: 'human' as const,
+            source: run ? ('import' as const) : ('human' as const),
             appliedAt: (c.appliedAt ?? c.createdAt).toISOString(),
             revertOf: typeof revertOf === 'string' ? revertOf : null,
           };

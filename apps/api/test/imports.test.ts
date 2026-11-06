@@ -46,10 +46,13 @@ it('an imported submission is live at once, attributed to its run in public hist
     expect((await anon.get(`/api/entities/${id}`)).status).toBe(200);
 
     const history = (await (await anon.get(`/api/entities/${id}/history`)).json()) as {
-      items: { changeId: string; author: unknown }[];
+      items: { changeId: string; author: unknown; source: string }[];
     };
     expect(history.items.map((i) => i.changeId).toSorted()).toEqual(changes.map((c) => c.id).toSorted());
-    for (const item of history.items) expect(item.author).toEqual({ importRun: { id: runId, source: 'wikidata' } });
+    for (const item of history.items) {
+      expect(item.author).toEqual({ importRun: { id: runId, source: 'wikidata' } });
+      expect(item.source).toBe('import');
+    }
 
     for (const c of changes) {
       const res = await mod.get(`/api/changes/${c.id}`);

@@ -244,7 +244,8 @@ export const HistoryItemSchema = z.union([
     /** The change's fields; for a revert, `{ revertOf }`. */
     payload: z.record(z.string(), z.unknown()),
     author: AuthorSchema,
-    source: z.literal('human'),
+    /** `import` when an import run wrote the change; `author` names the run. */
+    source: z.enum(['human', 'import']),
     appliedAt: z.iso.datetime(),
     revertOf: z.uuid().nullable(),
   }),

@@ -2802,7 +2802,8 @@
                               "source": {
                                 "type": "string",
                                 "enum": [
-                                  "human"
+                                  "human",
+                                  "import"
                                 ]
                               },
                               "appliedAt": {

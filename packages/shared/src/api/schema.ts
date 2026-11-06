@@ -1402,7 +1402,7 @@ export interface paths {
                                     };
                                 };
                                 /** @enum {string} */
-                                source: "human";
+                                source: "human" | "import";
                                 /** Format: date-time */
                                 appliedAt: string;
                                 /** Format: uuid */
