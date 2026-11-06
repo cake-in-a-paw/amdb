@@ -88,12 +88,23 @@ test('removing a tag sends an unrelate with its relation id', async () => {
     relations: { tags: { relationId: string }[] };
   };
 
-  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
   await waitFor(async () => expect(await posts()).toHaveLength(1));
   expect((await posts())[0]?.changes).toEqual([{ op: 'unrelate', relationId: entity.relations.tags[0]?.relationId }]);
+});
+
+test('each Remove button names its row and its section', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  // The film is part of the property "Howl's Moving Castle" and adapted from the book of that name.
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.howlsMovingCastle } });
+
+  await screen.findByLabelText('Title');
+  expect(screen.getByRole('button', { name: 'Remove Hayao Miyazaki, Director, from credits' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: "Remove Howl's Moving Castle from properties" })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: "Remove Howl's Moving Castle from related works" })).toBeInTheDocument();
 });
 
 test('adding a creator sends a relate for it', async () => {
@@ -339,7 +350,7 @@ test('a relation the contributor removed and someone else removed too sends no u
   await reopenAfter(
     t,
     async () => {
-      await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+      await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
     },
     async ({ contributor, moderator }) => {
       const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
@@ -412,7 +423,7 @@ test('removing a link someone else already removed says so, instead of "Try agai
   const t = await renderApp('/', { as: 'contributor', seed });
   const id = t.seeded.works.spiritedAway;
   await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
-  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
   // Someone else removes the same tag; the form hasn't read the entry again.
   const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
     relations: { tags: { relationId: string }[] };

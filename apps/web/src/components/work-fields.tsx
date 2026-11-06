@@ -138,8 +138,23 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** One picked entry: its name, the control that goes with it (a role, a position), and Remove. */
-function PickedRow({ entity, onRemove, children }: { entity: Picked; onRemove: () => void; children?: ReactNode }) {
+/**
+ * One picked entry: its name, the control that goes with it (a role, a position), and Remove,
+ * named for the row and its section (`from`), since one entry can be in several sections or twice in one.
+ */
+function PickedRow({
+  entity,
+  from,
+  detail,
+  onRemove,
+  children,
+}: {
+  entity: Picked;
+  from: string;
+  detail?: string;
+  onRemove: () => void;
+  children?: ReactNode;
+}) {
   return (
     <li className="flex flex-wrap items-end gap-3 border-b border-border/70 py-2">
       <span className="min-h-11 flex-1 content-center font-serif">
@@ -147,7 +162,12 @@ function PickedRow({ entity, onRemove, children }: { entity: Picked; onRemove: (
         {'ref' in entity && <span className="ml-2 font-sans text-sm text-muted-foreground">(new)</span>}
       </span>
       {children}
-      <Button type="button" variant="ghost" onClick={onRemove} aria-label={`Remove ${entity.title}`}>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={onRemove}
+        aria-label={`Remove ${entity.title}${detail ? `, ${detail},` : ''} from ${from}`}
+      >
         Remove
       </Button>
     </li>
@@ -167,7 +187,13 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
           <>
             <ul aria-label="Credits">
               {value.credits.map((c, i) => (
-                <PickedRow key={i} entity={c.entity} onRemove={() => set({ credits: without(value.credits, i) })}>
+                <PickedRow
+                  key={i}
+                  entity={c.entity}
+                  from="credits"
+                  detail={roleLabel(c.role)}
+                  onRemove={() => set({ credits: without(value.credits, i) })}
+                >
                   <Field name={`credits.${i}.role`} label={`Role for ${c.entity.title}`} errors={errors}>
                     <select
                       {...fieldProps(`credits.${i}.role`, errors)}
@@ -201,7 +227,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Series">
         <ul aria-label="Series">
           {value.series.map((s, i) => (
-            <PickedRow key={i} entity={s.entity} onRemove={() => set({ series: without(value.series, i) })}>
+            <PickedRow
+              key={i}
+              entity={s.entity}
+              from="series"
+              onRemove={() => set({ series: without(value.series, i) })}
+            >
               <Field name={`series.${i}.position`} label={`Position in ${s.entity.title}`} errors={errors}>
                 <input
                   {...fieldProps(`series.${i}.position`, errors)}
@@ -226,7 +257,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
         <p className="text-sm text-muted-foreground">A franchise or story world this belongs to.</p>
         <ul aria-label="Properties">
           {value.properties.map((p, i) => (
-            <PickedRow key={i} entity={p.entity} onRemove={() => set({ properties: without(value.properties, i) })} />
+            <PickedRow
+              key={i}
+              entity={p.entity}
+              from="properties"
+              onRemove={() => set({ properties: without(value.properties, i) })}
+            />
           ))}
         </ul>
         <RelationPicker
@@ -239,7 +275,7 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Tags">
         <ul aria-label="Tags">
           {value.tags.map((tag, i) => (
-            <PickedRow key={i} entity={tag.entity} onRemove={() => set({ tags: without(value.tags, i) })} />
+            <PickedRow key={i} entity={tag.entity} from="tags" onRemove={() => set({ tags: without(value.tags, i) })} />
           ))}
         </ul>
         <RelationPicker kind="tag" label="Find a tag" onPick={(entity) => set({ tags: [...value.tags, { entity }] })} />
@@ -248,7 +284,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Related works">
         <ul aria-label="Related works">
           {value.links.map((l, i) => (
-            <PickedRow key={i} entity={l.entity} onRemove={() => set({ links: without(value.links, i) })}>
+            <PickedRow
+              key={i}
+              entity={l.entity}
+              from="related works"
+              onRemove={() => set({ links: without(value.links, i) })}
+            >
               <Field name={`links.${i}.linkType`} label={`How this relates to ${l.entity.title}`} errors={errors}>
                 <select
                   {...fieldProps(`links.${i}.linkType`, errors)}
