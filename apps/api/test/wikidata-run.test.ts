@@ -2,7 +2,15 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import { runWikidataImport } from '../src/features/imports/wikidata/run.js';
-import { changes as changesTable, creators, importRuns, relations, tags, works } from '../src/platform/db/schema';
+import {
+  changes as changesTable,
+  creators,
+  importRuns,
+  relations,
+  series,
+  tags,
+  works,
+} from '../src/platform/db/schema';
 import { setupTest } from './helpers/setup';
 
 const FILM_CLASS = 'Q11424';
@@ -513,7 +521,7 @@ it('a candidate Wikidata doesn’t return is counted missing; one without an Eng
       candidates: 3,
       imported: 1,
       stoppedAt: 3,
-      skipped: { present: 0, no_title: 1, duplicate_external_id: 0, missing: 1, invalid: 0 },
+      skipped: { present: 0, held_as_other: 0, no_title: 1, duplicate_external_id: 0, missing: 1, invalid: 0 },
     });
   } finally {
     await t.close();
@@ -697,6 +705,58 @@ it('a work a moderator reverted (its wikidata id, then its create) is never re-i
     const second = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
     expect(second.stats).toMatchObject({ imported: 0, skipped: expect.objectContaining({ present: 1 }) });
     expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(1);
+  } finally {
+    await t.close();
+  }
+});
+
+it('works win across runs: a discovered candidate beyond the limit is not created as a series, and a later run imports it as a work', async () => {
+  const t = await setupTest();
+  try {
+    // Q1 names Q9 as its series; both are discovered, Q1 ranks first.
+    const { client } = fakeWikidata(ranked('Q1', 'Q9'), {
+      Q1: film('Q1', 'Episode One', { series: { qid: 'Q9', ordinal: '1' } }),
+      Q9: film('Q9', 'The Saga'),
+    });
+    const first = await runWikidataImport(
+      { db: t.db, client, measureBytes: bytes(), today: TODAY },
+      { ...OPTS, limit: 1 },
+    );
+    expect(first.stats).toMatchObject({ candidates: 1, imported: 1 });
+    expect(await t.db.select().from(series)).toEqual([]);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([]);
+
+    const second = await runWikidataImport(
+      { db: t.db, client, measureBytes: bytes(), today: TODAY },
+      { ...OPTS, limit: 2 },
+    );
+    expect(second.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ present: 1 }) });
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'The Saga'))!)).toEqual(['wikidata:Q9']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a candidate AMDB already holds as another kind is skipped as held_as_other and logged', async () => {
+  const t = await setupTest();
+  try {
+    // Someone added Q9 as a series before Wikidata's class put it among the works.
+    await t.importSubmission([
+      { op: 'create', kind: 'series', ref: 's', fields: { title: 'The Saga' } },
+      { op: 'relate', type: 'external_id', from: { ref: 's' }, data: { scheme: 'wikidata', value: 'Q9' } },
+    ]);
+    const { client } = fakeWikidata(ranked('Q9'), { Q9: film('Q9', 'The Saga') });
+    const lines: string[] = [];
+    const result = await runWikidataImport(
+      { db: t.db, client, measureBytes: bytes(), today: TODAY, log: (l) => lines.push(l) },
+      OPTS,
+    );
+    expect(result.stats).toMatchObject({
+      imported: 0,
+      skipped: expect.objectContaining({ present: 0, held_as_other: 1 }),
+    });
+    expect(lines.some((l) => l.includes('Q9') && l.includes('series'))).toBe(true);
+    expect(await t.db.select().from(works)).toEqual([]);
   } finally {
     await t.close();
   }

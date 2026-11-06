@@ -15,7 +15,14 @@ const LICENSE_CHECKED_ON = '2026-11-05';
 /** The entity API's per-request cap (the client rejects more). */
 const MAX_IDS = 50;
 
-export type SkipReason = 'present' | 'no_title' | 'duplicate_external_id' | 'missing' | 'invalid';
+export type SkipReason =
+  | 'present'
+  /** AMDB already holds the QID as a creator, series, property or tag: it isn't turned into a work. */
+  | 'held_as_other'
+  | 'no_title'
+  | 'duplicate_external_id'
+  | 'missing'
+  | 'invalid';
 
 export type WikidataImportStats = {
   /** Candidates after `limit`. */
@@ -90,7 +97,7 @@ export async function runWikidataImport(
   const stats: WikidataImportStats = {
     candidates: 0,
     imported: 0,
-    skipped: { present: 0, no_title: 0, duplicate_external_id: 0, missing: 0, invalid: 0 },
+    skipped: { present: 0, held_as_other: 0, no_title: 0, duplicate_external_id: 0, missing: 0, invalid: 0 },
     linksAdded: 0,
     linksFailed: 0,
     bytesStart: 0,
@@ -106,7 +113,10 @@ export async function runWikidataImport(
   const refEntities = new Map<string, WikidataEntity | null>();
   const tagIds = new Map<string, string | null>();
   const deferred: DeferredLink[] = [];
-  /** Every candidate in this run (after `limit`). */
+  /**
+   * Every discovered candidate, before `limit`: works win, so none becomes a reference even when this
+   * run stops short of it. Includes candidates later skipped (their references are dropped too).
+   */
   let candidateQids = new Set<string>();
 
   async function fetchEntities(qids: string[]) {
@@ -244,9 +254,10 @@ export async function runWikidataImport(
 
   async function importCandidates() {
     stats.bytesStart = await measure();
-    const candidates = (await discover(deps.client, opts)).slice(0, opts.limit);
+    const discovered = await discover(deps.client, opts);
+    candidateQids = new Set(discovered.map((c) => c.qid));
+    const candidates = discovered.slice(0, opts.limit);
     stats.candidates = candidates.length;
-    candidateQids = new Set(candidates.map((c) => c.qid));
     log(`${candidates.length} candidates`);
 
     for (let start = 0; start < candidates.length; start += batchSize) {
@@ -285,7 +296,12 @@ export async function runWikidataImport(
 
       for (const [i, c] of batch.entries()) {
         const record = records.get(c.qid);
-        if (fresh.every((f) => f.qid !== c.qid)) stats.skipped.present++;
+        const held = known.get(c.qid);
+        // A removed holder of any kind counts as present: a removal must stick.
+        if (held?.live && held.kind !== 'work') {
+          stats.skipped.held_as_other++;
+          log(`skipped ${c.qid}: held as a ${held.kind}`);
+        } else if (fresh.every((f) => f.qid !== c.qid)) stats.skipped.present++;
         else if (!record) stats.skipped.missing++;
         else if ('skip' in record) stats.skipped[record.skip]++;
         else await importWork(record);
