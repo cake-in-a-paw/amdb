@@ -2,6 +2,7 @@ import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
 import { ChangeStatus } from '@/components/change-status';
+import { LoadError } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { meQueryOptions } from '@/lib/me';
@@ -31,8 +32,10 @@ function describeChange(change: Change) {
 function MySubmissions() {
   const { api } = Route.useRouteContext();
   const me = useQuery(meQueryOptions(api));
-  // Anonymous visitors see what their browser's token submitted, so wait to learn which this is.
-  const identity = me.isPending ? null : (me.data?.id ?? 'anonymous');
+  // Anonymous visitors see what their browser's token submitted, so wait to learn which this is. A
+  // failed lookup isn't an answer: treating it as signed out would show a signed-in person the
+  // anonymous view.
+  const identity = me.isPending || me.isError ? null : (me.data?.id ?? 'anonymous');
   const submissions = useInfiniteQuery({
     queryKey: ['my-submissions', identity],
     enabled: identity !== null,
@@ -55,7 +58,9 @@ function MySubmissions() {
           to keep them with an account.
         </p>
       )}
-      {submissions.isPending ? (
+      {me.isError ? (
+        <LoadError what="your account" error={me.error} onRetry={() => void me.refetch()} />
+      ) : submissions.isPending ? (
         <p role="status" className="mt-4 text-muted-foreground">
           Loading your submissions…
         </p>

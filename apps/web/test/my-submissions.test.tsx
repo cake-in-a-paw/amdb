@@ -65,7 +65,7 @@ test('signing in claims the anonymous submissions exactly once and rotates the t
   await t.router.navigate({ to: '/me/submissions' });
   const list = await screen.findByRole('list', { name: 'Your submissions' });
   expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
-  expect(submission.id).toBeTruthy();
+  expect(within(list).getByText('from the couch')).toBeInTheDocument();
   // The new account owns it: the old token no longer sees it.
   const old = await t.api.as({ kind: 'anon', token: token! }).get(`/api/submissions/${submission.id}`);
   expect(old.status).toBe(404);
@@ -152,26 +152,50 @@ test('a rejected change shows its reason and a Fix and resubmit link', async () 
   );
 });
 
-test('published and approved changes read plainly', async () => {
+test('an approved change reads plainly', async () => {
   const t = await renderApp('/', { as: 'contributor' });
   const me = t.api.as({ kind: 'user', userId: t.session.userId! });
   const created = await me.post('/api/submissions', { cc0: true, changes: [film('Arrival')] });
   const body = (await created.json()) as { changes: { id: string; status: string }[] };
-  if (body.changes[0]!.status === 'pending') {
-    const mod = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
-    expect((await mod.post(`/api/changes/${body.changes[0]!.id}/approve`)).status).toBe(200);
-  }
+  // The app's review policy holds every change for a moderator.
+  expect(body.changes[0]?.status).toBe('pending');
+  const mod = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  expect((await mod.post(`/api/changes/${body.changes[0]!.id}/approve`)).status).toBe(200);
 
   await t.router.navigate({ to: '/me/submissions' });
 
   const list = await screen.findByRole('list', { name: 'Your submissions' });
-  expect(await within(list).findByText(/^(Published|Approved)/)).toBeInTheDocument();
+  expect(await within(list).findByText('Approved')).toBeInTheDocument();
+  expect(within(list).queryByText('Waiting for review')).not.toBeInTheDocument();
 });
 
 test('with nothing submitted, the page invites a first contribution', async () => {
   await renderApp('/me/submissions', { as: 'contributor' });
 
   expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+});
+
+test('a failed account lookup says so instead of showing the anonymous view', async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  const request = t.api.app.request.bind(t.api.app);
+  let failing = true;
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    failing && new URL(urlOf(input), 'http://amdb.test').pathname === '/api/me'
+      ? Promise.reject(new TypeError('offline'))
+      : request(input, init),
+  );
+  // Forget the account the shell loaded, so the page has to ask again.
+  t.router.options.context.queryClient.removeQueries({ queryKey: ['me'] });
+
+  await t.router.navigate({ to: '/me/submissions' });
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your account");
+  expect(screen.queryByText(/kept in this browser/)).not.toBeInTheDocument();
+  expect(screen.queryByText('You haven’t submitted anything yet.')).not.toBeInTheDocument();
+  failing = false;
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+  expect(screen.queryByText(/kept in this browser/)).not.toBeInTheDocument();
 });
 
 test('a failed load says so and can retry', async () => {
