@@ -1,6 +1,6 @@
 # 0005. Railway deployment: production only, as code
 
-- **Status:** proposed
+- **Status:** accepted (2026-11-05, after the first deploy's smoke test)
 - **Date:** 2026-11-03
 
 ## Context
@@ -44,7 +44,12 @@ stop being read on 2026-12-01.
 Every push to `main` reaches production once CI passes, so `main` must stay releasable until a
 `dev` environment exists. Railway's config can't register custom domains, so the domain is
 registered with `railway domain` on the linked `app` service, which needs the service to exist.
-The runbook (docs/deploy.md step 3) plans first and, if the plan refuses the domain, applies once,
-registers it and applies again. Secrets are set by hand and are not in
+Both `plan` and `apply` refuse a config that lists it, so the runbook (docs/deploy.md step 3)
+applies once without the domain, registers it, restores it and applies again. Secrets are set by hand and are not in
 git. Turning on the Cloudflare proxy later requires `TRUSTED_PROXY_HOPS=2` in the same change.
 Revisit this when moderators start working real data.
+
+The first deploy (2026-11-05) passed the smoke test: health, TLS, email-code, Google and GitHub
+sign-in, an anonymous submission approved by an admin, and the pending-edits notice. The record
+was confirmed DNS-only (`dig` returns Railway's CNAME target), but separate anonymous rate-limit
+buckets for two networks were not tested.

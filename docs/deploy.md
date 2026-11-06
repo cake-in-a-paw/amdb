@@ -63,8 +63,8 @@ app's origin, so `https://amdb.ty-pe.com` must be a trusted origin. It is: `WEB_
 `trustedOrigins` in `platform/auth/auth.ts`.
 
 - Google (Cloud Console, APIs and Services, Credentials, OAuth client ID, Web application):
-  authorized redirect URI `https://amdb.ty-pe.com/api/auth/callback/google`. Add the origin
-  `https://amdb.ty-pe.com` as an authorized JavaScript origin.
+  authorized redirect URI `https://amdb.ty-pe.com/api/auth/callback/google`. No JavaScript
+  origin is needed: the sign-in is a server-side redirect.
 - GitHub (Settings, Developer settings, OAuth Apps): homepage `https://amdb.ty-pe.com`,
   callback `https://amdb.ty-pe.com/api/auth/callback/github`. A GitHub OAuth app allows one
   callback URL, so this app is for production only; local development uses its own.

@@ -61,4 +61,11 @@ Still open, with the reason:
 
 ## Verify on the first real deploy
 
-- Task 11: ⚠️ carried → Step 5: `railway config plan` acceptance of preserve() on absent vars and of the domain; ADR's 2026-12-01 legacy-config date.
+Checked on the first deploy (2026-11-05):
+- `railway config plan` accepted `preserve()` on variables that didn't exist yet.
+- It refused the custom domain, and so did `apply`. docs/deploy.md step 3 and ADR 0005 now describe the path that worked.
+- `railway domain … --service app` and `railway redeploy --service app` worked as written.
+- The 2026-12-01 legacy-config date doesn't apply: the project uses `.railway/railway.ts`, not `railway.json`.
+- ADR 0005 is accepted.
+- docs/deploy.md step 4 no longer asks for a Google JavaScript origin.
+- The owner didn't run the two-network rate-limit test.
