@@ -185,6 +185,12 @@ describe('focus ring and themes', () => {
     expect(css).toMatch(/:root\s*\{[^}]*--ring:\s*var\(--ink\);/);
   });
 
+  test('every native checkbox and radio takes the primary color, from the base layer', () => {
+    expect(css).toMatch(
+      /@layer base\s*\{[\s\S]*input:is\(\[type='checkbox'\], \[type='radio'\]\)\s*\{\s*accent-color:\s*var\(--primary\);/,
+    );
+  });
+
   test('the tokens have a dark set, and dark: utilities follow the same media query', () => {
     expect(css).toMatch(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{[^}]*--paper:/);
     expect(css).toMatch(/@custom-variant dark \(@media \(prefers-color-scheme: dark\)\);/);
