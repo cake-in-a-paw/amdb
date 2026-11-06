@@ -37,7 +37,7 @@ export function EntryForm({
                   value={kind}
                   checked={value.kind === kind}
                   onChange={() => onChange({ ...value, kind })}
-                  className="size-5 accent-primary"
+                  className="size-5"
                 />
                 {kindLabels[kind].singular}
               </label>

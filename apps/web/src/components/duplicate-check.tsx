@@ -5,7 +5,7 @@ import type { EntityKind, MediaType } from '@amdb/shared';
 import { summaryDetail } from '@/components/entry-row';
 import { unwrap } from '@/lib/api';
 import { useDebounced } from '@/lib/debounce';
-import { describeError } from '@/lib/errors';
+import { errorCause } from '@/lib/errors';
 import { linkClass } from '@/lib/styles';
 
 const rootRoute = getRouteApi('__root__');
@@ -60,7 +60,7 @@ export function DuplicateCheck({
           Checking for duplicates…
         </p>
       ) : query.isError ? (
-        <p className="text-muted-foreground">Couldn't check for duplicates. {describeError(query.error, '')}</p>
+        <p className="text-muted-foreground">Couldn't check for duplicates. {errorCause(query.error)}</p>
       ) : existing.length === 0 && query.data.pending.length === 0 ? (
         <p className="text-muted-foreground">No similar entries in the catalog.</p>
       ) : (

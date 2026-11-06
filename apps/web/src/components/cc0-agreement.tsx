@@ -11,7 +11,7 @@ export function Cc0Agreement({ checked, onChange }: { checked: boolean; onChange
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
           aria-describedby="cc0-explained"
-          className="size-5 shrink-0 accent-primary"
+          className="size-5 shrink-0"
         />
         I release this contribution into the public domain (CC0)
       </label>

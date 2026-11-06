@@ -7,7 +7,7 @@ import { fieldClass } from '@/components/form-fields';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { useDebounced } from '@/lib/debounce';
-import { describeError } from '@/lib/errors';
+import { errorCause } from '@/lib/errors';
 import { creatorKindLabels, kindLabels, tagKindLabels } from '@/lib/labels';
 import { fieldErrors, toFields, type FormErrors, type Picked } from '@/lib/submission';
 
@@ -97,7 +97,7 @@ export function RelationPicker({
             </p>
           ) : results.isError ? (
             <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
-              <p>Couldn't search. {describeError(results.error, '')}</p>
+              <p>Couldn't search. {errorCause(results.error)}</p>
               <Button type="button" variant="outline" onClick={() => void results.refetch()}>
                 Try again
               </Button>
