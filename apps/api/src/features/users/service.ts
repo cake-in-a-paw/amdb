@@ -29,6 +29,7 @@ export function createUsersService(db: DbOrTx, getSession: (headers: Headers) =>
     async setHandle(actor: Actor, handle: string | null) {
       if (actor.kind !== 'user') throw unauthenticated();
       const lowered = handle === null ? null : handle.toLowerCase();
+      // Widened because includes() on the literal tuple only accepts its own members, not an arbitrary string.
       if (lowered !== null && (RESERVED_HANDLES as readonly string[]).includes(lowered)) {
         throw badRequest('handle_reserved', 'That handle is reserved');
       }
@@ -50,11 +51,16 @@ export function createUsersService(db: DbOrTx, getSession: (headers: Headers) =>
     /** Admin only; everyone else, and unknown users, get a 404 so the endpoint doesn't show itself. */
     async setRole(actor: Actor, id: string, role: Role) {
       if (!isAdmin(actor)) throw notFound();
-      // Demoting yourself is allowed only while another admin remains, so the site always has one.
-      if (actor.kind === 'user' && actor.userId === id && role !== 'admin' && (await repo.countOtherAdmins(id)) === 0) {
-        throw conflict('last_admin', 'You are the only admin; make someone else an admin first');
-      }
-      const updated = await repo.setRole(id, role);
+      // The site must always keep an admin. The check runs against locked admin rows in the same transaction
+      // as the update, so two admins demoting each other at once can't both pass it.
+      const updated = await db.transaction(async (tx) => {
+        const txRepo = usersRepository(tx);
+        const admins = await txRepo.lockAdminIds();
+        if (role !== 'admin' && admins.length === 1 && admins[0] === id) {
+          throw conflict('last_admin', 'You are the only admin; make someone else an admin first');
+        }
+        return txRepo.setRole(id, role);
+      });
       if (!updated) throw notFound();
       return updated;
     },
