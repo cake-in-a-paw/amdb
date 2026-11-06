@@ -1,26 +1,20 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
-import { ChangeDiff, record, type QueueEntry, type Titles } from '@/components/change-diff';
+import { ChangeDiff, type QueueEntry, type Titles } from '@/components/change-diff';
 import { EditApproveDialog } from '@/components/edit-approve-dialog';
 import { RejectDialog } from '@/components/reject-dialog';
 import { Button } from '@/components/ui/button';
 import { ApiError, unwrap } from '@/lib/api';
 import { entityQueryOptions } from '@/lib/entity';
 import { describeError, isApiCode } from '@/lib/errors';
+import { authorName, record, valueText } from '@/lib/change-text';
 import { fieldLabel } from '@/lib/labels';
-import { valueText } from '@/components/history-list';
 import { linkClass } from '@/lib/styles';
 
 const rootRoute = getRouteApi('__root__');
 
 /** The anchor id of a queue item, so a message can point at another item. */
 export const changeAnchor = (changeId: string) => `change-${changeId}`;
-
-/** Who submitted: their handle, else "contributor" (signed in, no handle), else "anonymous". Never an id. */
-export function authorName(author: QueueEntry['submission']['author']): string {
-  if (author === 'anonymous') return 'anonymous';
-  return author.handle ?? 'contributor';
-}
 
 /** How long a change has waited, in the largest whole unit. */
 export function ageText(seconds: number): string {

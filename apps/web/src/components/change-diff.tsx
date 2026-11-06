@@ -2,8 +2,8 @@ import { useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
 import { Button } from '@/components/ui/button';
+import { record, valueText } from '@/lib/change-text';
 import { describeError } from '@/lib/errors';
-import { valueText } from '@/components/history-list';
 import { entityQueryOptions, entityTitle } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
@@ -13,9 +13,6 @@ export type QueueEntry = Queue['items'][number];
 export type QueuedChange = QueueEntry['change'];
 
 const rootRoute = getRouteApi('__root__');
-
-export const record = (value: unknown): Record<string, unknown> =>
-  typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
 
 /** What the queue knows without asking: entry titles by id, from the creates waiting in it. */
 export type Titles = ReadonlyMap<string, string>;
