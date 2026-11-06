@@ -18,6 +18,19 @@ Flags (all optional):
 The stats print as one JSON line on stdout and progress on stderr. Exit 0 for `finished` or
 `capped`, 1 for `failed` or any error.
 
+One run at a time: a second run started while one is `running` stops at once with "another import
+run is already running". Ctrl-C (or SIGTERM) stops a run after the work in hand and records it as
+`failed` with the error `interrupted`; what it committed stays, and a later run carries on. A
+second Ctrl-C quits at once.
+
+If a run died without finishing (the process was killed, or the connection dropped), its row stays
+`running` and blocks the next run. Once you are sure it isn't running, close it by hand:
+
+```sql
+UPDATE import_runs SET status = 'failed', finished_at = now(), error = 'died'
+WHERE id = '<run id>' AND status = 'running';
+```
+
 ## 1. Dry run locally
 
 ```sh
@@ -42,6 +55,15 @@ Verify: `status` is `finished`, and the works look right in the app.
 
 Do not run this without the owner saying so at that moment.
 
+The importer applies pending migrations from the checkout it runs in, so run it from a clean
+checkout of the exact `main` commit Railway has deployed, after that deploy has finished (an older
+checkout would miss migrations, a newer one would apply ones the deployed app doesn't know):
+
+```sh
+git fetch origin && git switch --detach <deployed commit> && git status   # must be clean
+pnpm install --frozen-lockfile
+```
+
 `railway run --service postgres` runs a local command with the Postgres service's variables. Its
 `DATABASE_URL` is the private network address, which a laptop can't reach, so point the importer at
 `DATABASE_PUBLIC_URL` inside the child shell (the single quotes keep the URL out of your shell and
@@ -50,6 +72,9 @@ history):
 ```sh
 railway run --service postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm --filter @amdb/api import:wikidata --limit N'
 ```
+
+If the project has more than one environment, add `-e production` to `railway run`. The public
+proxy adds a round trip to every query, so a run is much slower than step 2's local one.
 
 Pick N from step 2 so that the current size plus `N * bytesPerWork` stays under 70% of the volume.
 
