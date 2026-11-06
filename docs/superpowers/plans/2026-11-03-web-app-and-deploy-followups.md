@@ -7,6 +7,38 @@ Minor findings from plan 2's reviews that were deferred, kept here so they outli
 - Resubmits carry the CC0 agreement: the resubmit API requires `cc0: true`, and the resubmit page shows a notice by its button instead of a second checkbox.
 - Public authors carry no account id: history shows `{ handle }` or `'anonymous'`, so a contributor without a handle can't be linked across edits. The moderation queue keeps `userId` so moderators can follow one contributor.
 
+## Cleanup (2026-11-05)
+
+The deferred minors below for Tasks 1–10 and the final review were worked on branch
+`cleanup/plan-2-minors`: each was fixed, given a test, found already done, or left with a reason.
+A whole-branch review then found three more problems: a failed `/api/me` was read as signed out
+(which could open another person's anonymous draft), the `/submit` loader still waited out
+retries, and a background refetch error could replace a loaded list. A stuck claim alert and a
+traversal test that never reached the static handler were also found. All five are fixed. The
+Task 11 items and "Verify on the first real deploy" wait on the owner's live smoke test.
+
+Still open, with the reason:
+
+- **Needs an API change:**
+  - The pending-edits notice misses series-only and property-only edits and reads only the newest 50; `/api/me/submissions` has no `to` end and no filter by entry.
+  - `changeQueryOptions` pages My submissions up to 10 times; there is no author-readable `GET /api/changes/{id}`.
+  - Clearing an optional field on a resubmitted create gives a generic 400; the create resubmit should drop `null` edits.
+  - Reads send an anonymous token; `/api/me/submissions` with no token is a 400, not an empty list.
+- **Rare, costly to close:**
+  - An anonymous write in flight when a claim rotates the token lands under the old token.
+  - Two tags swapping slugs in one submission is refused at submit.
+  - An external-id move held for moderation must be approved unrelate-first.
+- **Won't fix:**
+  - The 0008 backfill already ran, on an empty table; runtime normalization strips every `\p{M}`.
+  - Per-test PGlite boot cost.
+  - The a11y floor test checks classes, because jsdom does no layout.
+  - Duplicate-check and relation rows keep `key={i}`; they hold no per-row state.
+  - The `spyOn` transport fault: `app.request` is the client's injected seam.
+  - The backdate helper's table names.
+- **Live behavior change to know:**
+  - Drafts are now kept per contributor. Pre-existing drafts are adopted by whoever opens the page first.
+  - A signed-out draft goes to the account that signs in, if that account has none.
+
 ## Deferred minors
 
 - **Task 1:** last-admin guard is check-then-act outside a transaction (constitution X); uncommented `as readonly string[]` cast on RESERVED_HANDLES (IX); import order in changes/routes.ts; no 400 test for missing/non-string handle.
