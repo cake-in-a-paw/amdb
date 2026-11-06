@@ -1,7 +1,10 @@
 // Pure mapping from a Wikidata entity to an AMDB work record. No I/O; the importer writes the result.
-import type { IdScheme, Lifecycle, MediaType, Subtype } from '@amdb/shared';
+import type { CreatorRole, IdScheme, Lifecycle, MediaType, Subtype } from '@amdb/shared';
 import type { Claim, Snak, WikidataEntity } from './client.js';
 import type { Candidate } from './discover.js';
+
+type FilmTvRole = (typeof CreatorRole.film_tv.options)[number];
+type BookRole = (typeof CreatorRole.book.options)[number];
 
 export interface WorkRecord {
   qid: string;
@@ -17,7 +20,7 @@ export interface WorkRecord {
     lifecycle: Lifecycle;
     attributes?: { runtimeMin?: number; episodes?: number; pageCount?: number };
   };
-  creators: { qid: string; role: string }[];
+  creators: { qid: string; role: FilmTvRole | BookRole }[];
   series: { qid: string; position: number }[];
   franchises: string[];
   genres: string[];
@@ -28,7 +31,7 @@ export interface WorkRecord {
 const MAX_TITLE = 500;
 const MAX_DESCRIPTION = 5000;
 
-const FILM_TV_ROLES: Record<string, string> = {
+const FILM_TV_ROLES: Record<string, FilmTvRole> = {
   P57: 'director',
   P58: 'writer',
   P170: 'creator',
@@ -36,7 +39,7 @@ const FILM_TV_ROLES: Record<string, string> = {
   P86: 'composer',
   P272: 'studio',
 };
-const BOOK_ROLES: Record<string, string> = {
+const BOOK_ROLES: Record<string, BookRole> = {
   P50: 'author',
   P110: 'illustrator',
   P655: 'translator',
@@ -269,11 +272,12 @@ export function mapRef(entity: WikidataEntity): {
 
 const GENRE_SUFFIX = / (film|television series|television program|novel|literature)$/;
 
-export function genreTag(label: string): { name: string; slug: string } {
+/** Null when nothing slug-able is left (e.g. a non-Latin label), so the importer can skip the tag. */
+export function genreTag(label: string): { name: string; slug: string } | null {
   const name = label.trim().replace(GENRE_SUFFIX, '');
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
-  return { name, slug };
+  return slug ? { name, slug } : null;
 }

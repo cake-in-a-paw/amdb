@@ -162,3 +162,109 @@ describe('mapRef and genreTag', () => {
     expect(genreTag('drama')).toEqual({ name: 'drama', slug: 'drama' });
   });
 });
+
+// Claim builders for the bad-data guards.
+const str = (property: string, value: string): Claim => ({
+  mainsnak: { snaktype: 'value', property, datavalue: { value } },
+});
+const qty = (amount: string, unit = '1'): Claim => ({
+  mainsnak: { snaktype: 'value', datavalue: { value: { amount, unit } } },
+});
+const mono = (text: string, language: string): Claim => ({
+  mainsnak: { snaktype: 'value', datavalue: { value: { text, language } } },
+});
+const minutes = (amount: string, unit: string): Claim => qty(amount, `http://www.wikidata.org/entity/${unit}`);
+const book = (claims: Record<string, Claim[]>) => ok(mapWork(withClaims(claims), BOOK, TODAY));
+
+describe('mapWork bad-data guards', () => {
+  it('isbn13: drops ISBN-10 and garbage, normalizes spaces and hyphens, dedupes', () => {
+    const ids = (...v: string[]) => book({ P212: v.map((x) => str('P212', x)) }).externalIds;
+    expect(ids('0-306-40615-2', 'not an isbn', '978030640615X')).toEqual([{ scheme: 'wikidata', value: 'Q1' }]);
+    expect(ids('978 0 306 40615 7', '978-0-306-40615-7')).toEqual([
+      { scheme: 'wikidata', value: 'Q1' },
+      { scheme: 'isbn13', value: '9780306406157' },
+    ]);
+  });
+
+  it('imdb: only tt ids; duplicate ids are deduped', () => {
+    const r = book({
+      P345: [str('P345', 'nm0000001'), str('P345', 'tt1'), str('P345', 'tt1')],
+      P648: [str('P648', 'OL1W'), str('P648', 'OL1W')],
+    });
+    expect(r.externalIds).toEqual([
+      { scheme: 'wikidata', value: 'Q1' },
+      { scheme: 'imdb', value: 'tt1' },
+      { scheme: 'openlibrary', value: 'OL1W' },
+    ]);
+  });
+
+  it('omits a description over 5000 characters (work and mapRef)', () => {
+    const long = 'd'.repeat(5001);
+    const entity: WikidataEntity = {
+      id: 'Q1',
+      labels: { en: { value: 'Thing' } },
+      descriptions: { en: { value: long } },
+    };
+    expect(ok(mapWork(entity, FILM, TODAY)).fields.description).toBeUndefined();
+    expect(mapRef(entity)).toEqual({ name: 'Thing', kind: 'organization' });
+    const edge = { ...entity, descriptions: { en: { value: 'd'.repeat(5000) } } };
+    expect(ok(mapWork(edge, FILM, TODAY)).fields.description).toHaveLength(5000);
+  });
+
+  it('attributes follow the mediaType', () => {
+    expect(fieldsOf({ P1104: [qty('300')] }).attributes).toBeUndefined();
+    expect(book({ P1113: [qty('12')] }).fields.attributes).toBeUndefined();
+    expect(book({ P2047: [minutes('90', 'Q7727')] }).fields.attributes).toBeUndefined();
+    expect(fieldsOf({ P1113: [qty('12')] }).attributes).toEqual({ episodes: 12 });
+    expect(book({ P1104: [qty('0')] }).fields.attributes).toBeUndefined();
+    expect(book({ P1104: [qty('12.5')] }).fields.attributes).toBeUndefined();
+  });
+
+  it('a release year outside 1..9999 drops the date', () => {
+    expect(fieldsOf({ P577: [time('+10000-01-01T00:00:00Z', 11)] }).releaseYear).toBeUndefined();
+    expect(fieldsOf({ P577: [time('+0000-00-00T00:00:00Z', 9)] }).releaseYear).toBeUndefined();
+    expect(fieldsOf({ P577: [time('+9999-01-01T00:00:00Z', 11)] }).releaseYear).toBe(9999);
+  });
+
+  it('runtime: rounds to whole minutes; zero, negative and sub-half-minute give none', () => {
+    const rt = (amount: string, unit: string) => fieldsOf({ P2047: [minutes(amount, unit)] }).attributes;
+    expect(rt('+20', 'Q11574')).toBeUndefined();
+    expect(rt('-90', 'Q7727')).toBeUndefined();
+    expect(rt('+0', 'Q7727')).toBeUndefined();
+    expect(rt('+5430', 'Q11574')).toEqual({ runtimeMin: 91 });
+  });
+
+  it('a day-precision date equal to today is unknown', () => {
+    expect(fieldsOf({ P577: [time('+2026-11-05T00:00:00Z', 11)] }).lifecycle).toBe('unknown');
+    expect(fieldsOf({ P577: [time('+2026-11-04T00:00:00Z', 11)] }).lifecycle).toBe('released');
+    expect(fieldsOf({ P577: [time('+2026-11-06T00:00:00Z', 11)] }).lifecycle).toBe('upcoming');
+  });
+
+  it('originalTitle skips English, same-as-title and over-long text', () => {
+    const orig = (...c: Claim[]) => fieldsOf({ P1476: c }).originalTitle;
+    expect(orig(mono('Le Truc', 'en'))).toBeUndefined();
+    expect(orig(mono('Thing', 'fr'))).toBeUndefined();
+    expect(orig(mono('x'.repeat(501), 'fr'))).toBeUndefined();
+    expect(orig(mono('Thing', 'fr'), mono('Chose', 'fr'))).toBe('Chose');
+  });
+
+  it('ignores snaks that are not values', () => {
+    const noValue: Claim = { mainsnak: { snaktype: 'novalue', property: 'P577' } };
+    expect(fieldsOf({ P577: [noValue] }).releaseYear).toBeUndefined();
+  });
+});
+
+describe('mapRef and genreTag edge cases', () => {
+  it('mapRef: a label over 500 characters is null', () => {
+    expect(mapRef({ id: 'Q9', labels: { en: { value: 'x'.repeat(501) } } })).toBeNull();
+  });
+
+  it('genreTag: other suffixes, one suffix only, punctuation trimmed, empty slug is null', () => {
+    expect(genreTag('news television program')).toEqual({ name: 'news', slug: 'news' });
+    expect(genreTag('fantasy literature')).toEqual({ name: 'fantasy', slug: 'fantasy' });
+    expect(genreTag('war film film')).toEqual({ name: 'war film', slug: 'war-film' });
+    expect(genreTag('  (noir)! film')).toEqual({ name: '(noir)!', slug: 'noir' });
+    expect(genreTag('аниме')).toBeNull();
+    expect(genreTag('аниме film')).toBeNull();
+  });
+});
