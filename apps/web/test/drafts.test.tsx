@@ -143,6 +143,65 @@ test('a submission that never reaches the API keeps the draft and the form', asy
   await waitFor(() => expect(stored()?.fields.title).toBe('Always Coming Home'));
 });
 
+/** Holds the submission POST (or the resubmit) until the returned function is called; other requests go through. */
+function holdSubmission(t: Awaited<ReturnType<typeof renderApp>>, path: RegExp) {
+  const real = t.api.app.request.bind(t.api.app);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) => {
+    const method = input instanceof Request ? input.method : (init?.method ?? 'GET');
+    if (method === 'POST' && path.test(urlOf(input))) await held;
+    return real(input, init);
+  });
+  return release;
+}
+
+test('while a submission is in flight the form is read-only, so nothing typed then is lost', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed });
+  await fillBook(t, 'The Telling');
+  await t.user.click(screen.getByLabelText(CC0));
+  const release = holdSubmission(t, /\/api\/submissions$/);
+
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(await screen.findByRole('button', { name: 'Submitting…' })).toBeDisabled();
+  expect(screen.getByLabelText('Title')).toBeDisabled();
+  expect(screen.getByLabelText('Find a creator')).toBeDisabled();
+  release();
+  expect(await screen.findByText('New work: The Telling')).toBeInTheDocument();
+});
+
+test('while an edit or a resubmit is in flight its form is read-only too', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+  await t.user.click(screen.getByLabelText(CC0));
+  const release = holdSubmission(t, /\/api\/submissions$/);
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  expect(await screen.findByRole('button', { name: 'Submitting…' })).toBeDisabled();
+  expect(screen.getByLabelText(/^Original title/)).toBeDisabled();
+  release();
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.works.spiritedAway}`));
+
+  const author = t.api.as({ kind: 'user', userId: t.session.userId ?? '' });
+  const moderator = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  const made = await author.post('/api/submissions', {
+    cc0: true,
+    changes: [{ op: 'create', kind: 'series', ref: 's', fields: { title: 'Hainish Cycle' } }],
+  });
+  const changeId = ((await made.json()) as { changes: { id: string }[] }).changes[0]?.id ?? '';
+  expect((await moderator.post(`/api/changes/${changeId}/reject`, { reason: 'Spelling.' })).status).toBe(200);
+  vi.restoreAllMocks();
+  const releaseResubmit = holdSubmission(t, /\/resubmit$/);
+  await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: changeId } });
+  await t.user.type(await screen.findByLabelText('Title'), ' (novels)');
+  await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
+  expect(await screen.findByRole('button', { name: 'Resubmitting…' })).toBeDisabled();
+  expect(screen.getByLabelText('Title')).toBeDisabled();
+  releaseResubmit();
+  await waitFor(() => expect(t.router.state.location.pathname).toBe('/me/submissions'));
+});
+
 test('only a 201 clears the draft', async () => {
   const t = await renderApp('/submit');
   await fillBook(t, 'The Word for World Is Forest');

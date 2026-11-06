@@ -100,25 +100,28 @@ function Submit() {
       <p className="mt-3 text-muted-foreground">
         A moderator reviews every change before it appears. Your draft is saved in this browser as you type.
       </p>
-      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
-        <EntryForm value={form} onChange={setForm} errors={errors} />
-        <NoteField id="submit-note" value={form.note} onChange={(note) => setForm({ ...form, note })} />
-        <Cc0Agreement checked={cc0} onChange={setCc0} />
-        {submit.isError && (
-          <div role="alert" className="flex flex-wrap items-center gap-x-3 text-destructive">
-            <p>{describeSubmitError(submit.error)}</p>
-            {existingId && (
-              <Link to="/entities/$id" params={{ id: existingId }} className={linkClass}>
-                See that entry
-              </Link>
-            )}
+      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
+        {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
+        <fieldset disabled={submit.isPending} className="grid min-w-0 gap-8">
+          <EntryForm value={form} onChange={setForm} errors={errors} />
+          <NoteField id="submit-note" value={form.note} onChange={(note) => setForm({ ...form, note })} />
+          <Cc0Agreement checked={cc0} onChange={setCc0} />
+          {submit.isError && (
+            <div role="alert" className="flex flex-wrap items-center gap-x-3 text-destructive">
+              <p>{describeSubmitError(submit.error)}</p>
+              {existingId && (
+                <Link to="/entities/$id" params={{ id: existingId }} className={linkClass}>
+                  See that entry
+                </Link>
+              )}
+            </div>
+          )}
+          <div>
+            <Button type="submit" disabled={!cc0 || submit.isPending}>
+              {submit.isPending ? 'Submitting…' : 'Submit for review'}
+            </Button>
           </div>
-        )}
-        <div>
-          <Button type="submit" disabled={!cc0 || submit.isPending}>
-            {submit.isPending ? 'Submitting…' : 'Submit for review'}
-          </Button>
-        </div>
+        </fieldset>
       </form>
     </div>
   );

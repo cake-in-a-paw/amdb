@@ -179,41 +179,44 @@ function FieldsFix({ change, base }: { change: ChangeDetail; base: Record<string
   return (
     <>
       <ConflictNotice conflicts={conflicts} />
-      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
-        {base ? (
-          <EntryForm
-            value={form}
-            onChange={setForm}
-            errors={errors}
-            entityId={change.entityId ?? undefined}
-            lockKind
-            lockMediaType={change.op === 'update'}
-            relations={false}
-          />
-        ) : (
-          <p>This change has no fields to edit here. You can send it to the moderators again as it was.</p>
-        )}
-        {send.isError && (
-          <p role="alert" className="text-destructive">
-            {describeResubmitError(send.error)}
-          </p>
-        )}
-        <div className="grid gap-2">
-          <p id="resubmit-cc0" className="text-sm text-muted-foreground">
-            Resubmitting releases your changes into the public domain (CC0), like your first submission.
-          </p>
-          <div className="flex flex-wrap items-center gap-x-4">
-            <Button type="submit" disabled={send.isPending} aria-describedby="resubmit-cc0">
-              {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
-            </Button>
-            <a
-              href="https://creativecommons.org/publicdomain/zero/1.0/"
-              className="inline-flex min-h-11 min-w-11 items-center text-sm text-primary underline underline-offset-4"
-            >
-              What CC0 means
-            </a>
+      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
+        {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
+        <fieldset disabled={send.isPending} className="grid min-w-0 gap-8">
+          {base ? (
+            <EntryForm
+              value={form}
+              onChange={setForm}
+              errors={errors}
+              entityId={change.entityId ?? undefined}
+              lockKind
+              lockMediaType={change.op === 'update'}
+              relations={false}
+            />
+          ) : (
+            <p>This change has no fields to edit here. You can send it to the moderators again as it was.</p>
+          )}
+          {send.isError && (
+            <p role="alert" className="text-destructive">
+              {describeResubmitError(send.error)}
+            </p>
+          )}
+          <div className="grid gap-2">
+            <p id="resubmit-cc0" className="text-sm text-muted-foreground">
+              Resubmitting releases your changes into the public domain (CC0), like your first submission.
+            </p>
+            <div className="flex flex-wrap items-center gap-x-4">
+              <Button type="submit" disabled={send.isPending} aria-describedby="resubmit-cc0">
+                {send.isPending ? 'Resubmitting…' : 'Resubmit for review'}
+              </Button>
+              <a
+                href="https://creativecommons.org/publicdomain/zero/1.0/"
+                className="inline-flex min-h-11 min-w-11 items-center text-sm text-primary underline underline-offset-4"
+              >
+                What CC0 means
+              </a>
+            </div>
           </div>
-        </div>
+        </fieldset>
       </form>
     </>
   );

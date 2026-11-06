@@ -76,37 +76,40 @@ function EditForm({ entity }: { entity: EntityView }) {
         browser as you type.
       </p>
       <ConflictNotice conflicts={conflicts} />
-      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
-        <EntryForm
-          value={form}
-          onChange={setForm}
-          errors={errors}
-          entityId={entity.id}
-          lockKind
-          lockMediaType
-          headingLevel={3}
-        />
-        <NoteField id="edit-note" value={form.note} onChange={(next) => setForm({ ...form, note: next })} />
-        <Cc0Agreement checked={cc0} onChange={setCc0} />
-        {submit.isError && (
-          <p role="alert" className="text-destructive">
-            {describeSubmitError(submit.error)}
-          </p>
-        )}
-        <div className="flex flex-wrap items-center gap-4">
-          <Button
-            type="submit"
-            disabled={!cc0 || changes.length === 0 || submit.isPending}
-            aria-describedby={changes.length === 0 ? 'edit-nothing' : undefined}
-          >
-            {submit.isPending ? 'Submitting…' : 'Submit for review'}
-          </Button>
-          {changes.length === 0 && (
-            <p id="edit-nothing" className="text-sm text-muted-foreground">
-              Nothing has changed yet.
+      <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
+        {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
+        <fieldset disabled={submit.isPending} className="grid min-w-0 gap-8">
+          <EntryForm
+            value={form}
+            onChange={setForm}
+            errors={errors}
+            entityId={entity.id}
+            lockKind
+            lockMediaType
+            headingLevel={3}
+          />
+          <NoteField id="edit-note" value={form.note} onChange={(next) => setForm({ ...form, note: next })} />
+          <Cc0Agreement checked={cc0} onChange={setCc0} />
+          {submit.isError && (
+            <p role="alert" className="text-destructive">
+              {describeSubmitError(submit.error)}
             </p>
           )}
-        </div>
+          <div className="flex flex-wrap items-center gap-4">
+            <Button
+              type="submit"
+              disabled={!cc0 || changes.length === 0 || submit.isPending}
+              aria-describedby={changes.length === 0 ? 'edit-nothing' : undefined}
+            >
+              {submit.isPending ? 'Submitting…' : 'Submit for review'}
+            </Button>
+            {changes.length === 0 && (
+              <p id="edit-nothing" className="text-sm text-muted-foreground">
+                Nothing has changed yet.
+              </p>
+            )}
+          </div>
+        </fieldset>
       </form>
     </div>
   );
