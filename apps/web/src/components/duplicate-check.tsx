@@ -14,18 +14,20 @@ const rootRoute = getRouteApi('__root__');
  * Entries like the one being added, asked of `/api/duplicates` 300ms after typing stops: ones
  * already in the catalog (each with a way to edit it instead), and pending creates, which show
  * only their title, type and year. Advice only; it never blocks the form. `excludeId` is the entry
- * being edited, so it doesn't flag itself.
+ * being edited, so it doesn't flag itself. `level` is its heading's, one below the page's own.
  */
 export function DuplicateCheck({
   kind,
   title,
   mediaType,
   excludeId,
+  level = 2,
 }: {
   kind: EntityKind;
   title: string;
   mediaType?: MediaType;
-  excludeId?: string;
+  excludeId?: string | undefined;
+  level?: 2 | 3 | undefined;
 }) {
   const { api } = rootRoute.useRouteContext();
   const id = useId();
@@ -44,13 +46,15 @@ export function DuplicateCheck({
       ),
   });
 
+  const Heading = level === 2 ? 'h2' : 'h3';
+  const Subheading = level === 2 ? 'h3' : 'h4';
   const existing = query.data?.existing.filter((entry) => entry.id !== excludeId) ?? [];
   if (settled === '') return null;
   return (
     <section aria-labelledby={`${id}-heading`} aria-live="polite" className="text-sm">
-      <h3 id={`${id}-heading`} className="sr-only">
+      <Heading id={`${id}-heading`} className="sr-only">
         Possible duplicates
-      </h3>
+      </Heading>
       {query.isPending ? (
         <p role="status" className="text-muted-foreground">
           Checking for duplicates…
@@ -63,9 +67,9 @@ export function DuplicateCheck({
         <div className="grid gap-3 rounded-md border border-border bg-card p-3">
           {existing.length > 0 && (
             <div>
-              <h4 id={`${id}-existing`} className="font-medium">
+              <Subheading id={`${id}-existing`} className="font-medium">
                 Already in the catalog
-              </h4>
+              </Subheading>
               <ul aria-labelledby={`${id}-existing`}>
                 {existing.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-baseline gap-x-3">
@@ -83,7 +87,7 @@ export function DuplicateCheck({
           )}
           {query.data.pending.length > 0 && (
             <div>
-              <h4 className="font-medium">Waiting for a moderator</h4>
+              <Subheading className="font-medium">Waiting for a moderator</Subheading>
               <ul aria-label="Pending review">
                 {query.data.pending.map((entry, i) => (
                   <li key={i} className="flex min-h-11 flex-wrap items-baseline gap-x-3 py-1">

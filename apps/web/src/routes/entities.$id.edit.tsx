@@ -77,7 +77,15 @@ function EditForm({ entity }: { entity: EntityView }) {
       </p>
       <ConflictNotice conflicts={conflicts} />
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8 grid gap-8">
-        <EntryForm value={form} onChange={setForm} errors={errors} entityId={entity.id} lockKind lockMediaType />
+        <EntryForm
+          value={form}
+          onChange={setForm}
+          errors={errors}
+          entityId={entity.id}
+          lockKind
+          lockMediaType
+          headingLevel={3}
+        />
         <NoteField id="edit-note" value={form.note} onChange={(next) => setForm({ ...form, note: next })} />
         <Cc0Agreement checked={cc0} onChange={setCc0} />
         {submit.isError && (

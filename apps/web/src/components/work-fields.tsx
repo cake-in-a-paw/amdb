@@ -30,6 +30,8 @@ export interface WorkOptions {
   lockMediaType?: boolean | undefined;
   /** Show the relation sections (credits, series and so on); a rejected create's fields have none. */
   relations?: boolean | undefined;
+  /** The duplicate check's heading level: one below the heading the form sits under. */
+  headingLevel?: 2 | 3 | undefined;
 }
 
 const monthOptions = Object.fromEntries(
@@ -59,6 +61,7 @@ export function WorkFields({
   entityId,
   lockMediaType = false,
   relations = true,
+  headingLevel,
 }: Props & WorkOptions) {
   const props = { value, onChange, errors };
   const mediaType = asMediaType(value.fields.mediaType);
@@ -103,6 +106,7 @@ export function WorkFields({
           title={value.fields.title ?? ''}
           mediaType={mediaType ?? undefined}
           excludeId={entityId}
+          level={headingLevel}
         />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
       </div>

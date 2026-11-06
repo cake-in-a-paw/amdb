@@ -92,6 +92,28 @@ test('no matches says so, and a failed check says so without blocking the form',
   expect(screen.getByLabelText('Title')).toBeEnabled();
 });
 
+/** The heading levels in the page's main region, in order. */
+const headingLevels = () =>
+  within(screen.getByRole('main'))
+    .getAllByRole('heading')
+    .map((h) => Number(h.tagName.slice(1)));
+
+test('the duplicate check sits one heading level below the page it is on', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed: withPendingAmelie });
+  await t.user.selectOptions(screen.getByLabelText('Media type'), 'film_tv');
+  await t.user.type(screen.getByLabelText('Title'), 'amelie');
+  await screen.findByRole('list', { name: 'Pending review' });
+  expect(headingLevels()).toEqual([1, 2, 3, 3]);
+
+  // The edit form is a level down already: the entry's title, then "Edit this entry".
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  const title = await screen.findByLabelText('Title');
+  await t.user.clear(title);
+  await t.user.type(title, 'amelie');
+  await screen.findByRole('list', { name: 'Pending review' });
+  expect(headingLevels()).toEqual([1, 2, 3, 4, 4]);
+});
+
 test('a tag name is checked too: the duplicate check accepts kind=tag', async () => {
   const t = await renderApp('/submit', { as: 'contributor', seed });
 
