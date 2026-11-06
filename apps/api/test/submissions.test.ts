@@ -405,6 +405,57 @@ describe('duplicate tag slugs and external ids', () => {
     }
   });
 
+  it('moving an external id to another work in one submission (unrelate, then relate) is accepted and applies', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const made = await publish(author, mod, [work, extId('tt2543164')]);
+      const wrong = made.changes[0]!.entityId!;
+      const view = (await (await author.get(`/api/entities/${wrong}`)).json()) as {
+        relations: { externalIds: { relationId: string }[] };
+      };
+      const moved = await publish(author, mod, [
+        { op: 'unrelate', relationId: view.relations.externalIds[0]!.relationId },
+        work,
+        extId('tt2543164'),
+      ]);
+      const right = moved.changes[1]!.entityId!;
+      const ids = async (id: string) =>
+        (
+          (await (await author.get(`/api/entities/${id}`)).json()) as {
+            relations: { externalIds: { value: string }[] };
+          }
+        ).relations.externalIds;
+      expect(await ids(wrong)).toEqual([]);
+      expect(await ids(right)).toMatchObject([{ value: 'tt2543164' }]);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('a tag update to a slug another tag holds is 409 duplicate_slug; keeping its own slug is fine', async () => {
+    const t = await setupTest();
+    try {
+      const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const made = await publish(author, mod, [tag('noir', 'a'), tag('drama', 'b')]);
+      const [noir, drama] = made.changes.map((c) => c.entityId!);
+      const update = (slug: string) => ({
+        op: 'update',
+        kind: 'tag',
+        entityId: drama,
+        fields: { kind: 'genre', name: 'Drama', slug },
+      });
+      const res = await author.post('/api/submissions', submission([update('noir')]));
+      expect(res.status).toBe(409);
+      expect(await res.json()).toMatchObject({ error: { code: 'duplicate_slug', details: { existingId: noir } } });
+      expect((await author.post('/api/submissions', submission([update('drama')]))).status).toBe(201);
+    } finally {
+      await t.close();
+    }
+  });
+
   it('approving a tag whose slug appeared meanwhile is 409 duplicate_slug, and the change stays pending', async () => {
     const t = await setupTest();
     try {
