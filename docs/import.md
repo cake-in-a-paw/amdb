@@ -42,10 +42,13 @@ Verify: `status` is `finished`, and the works look right in the app.
 
 Do not run this without the owner saying so at that moment.
 
-Get the public database URL: `railway run --service postgres` gives `DATABASE_PUBLIC_URL`. Then:
+`railway run --service postgres` runs a local command with the Postgres service's variables. Its
+`DATABASE_URL` is the private network address, which a laptop can't reach, so point the importer at
+`DATABASE_PUBLIC_URL` inside the child shell (the single quotes keep the URL out of your shell and
+history):
 
 ```sh
-DATABASE_URL=$DATABASE_PUBLIC_URL pnpm --filter @amdb/api import:wikidata --limit N
+railway run --service postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm --filter @amdb/api import:wikidata --limit N'
 ```
 
 Pick N from step 2 so that the current size plus `N * bytesPerWork` stays under 70% of the volume.
