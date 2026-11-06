@@ -48,7 +48,9 @@ test('a full release date shows the day too', async () => {
           },
         },
       ]);
-      return made.changes[0]?.entityId ?? '';
+      const id = made.changes[0]?.entityId;
+      if (!id) throw new Error('the create made no entity');
+      return id;
     },
   });
   await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded } });
