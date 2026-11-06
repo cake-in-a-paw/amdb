@@ -331,19 +331,15 @@ async function removeEntity(t: Awaited<ReturnType<typeof setupTest>>, createChan
   expect(res.status, await res.clone().text()).toBe(200);
 }
 
-it('a work whose references don’t fit is counted invalid and logged, and the next work still goes in', async () => {
+it('a work that fails planning is counted invalid and logged, and the next work still goes in', async () => {
   const t = await setupTest();
   try {
-    // Q500's creator was removed (legal or abuse removal), which keeps its wikidata id, so a film
-    // naming it as director can't be planned (unknown_entity).
-    const { changes } = await t.importSubmission([
-      { op: 'create', kind: 'creator', ref: 'c', fields: { kind: 'person', name: 'Taken Down' } },
-      { op: 'relate', type: 'external_id', from: { ref: 'c' }, data: { scheme: 'wikidata', value: 'Q500' } },
-    ]);
-    await removeEntity(t, changes[0]!.id);
+    // Crafted: Wikidata caps labels at 250 characters, but genreTag doesn't, so a 600-character
+    // genre label maps fine and then fails the tag's field rules (invalid_fields).
     const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
-      Q1: film('Q1', 'Broken', { director: 'Q500' }),
+      Q1: film('Q1', 'Broken', { genres: ['Q300'] }),
       Q2: film('Q2', 'Fine'),
+      Q300: thing('Q300', 'x'.repeat(600)),
     });
     const lines: string[] = [];
     const result = await runWikidataImport(
@@ -352,9 +348,65 @@ it('a work whose references don’t fit is counted invalid and logged, and the n
     );
     expect(result.status).toBe('finished');
     expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 1 }) });
-    expect(lines.some((l) => l.includes('Q1') && l.includes('unknown_entity'))).toBe(true);
+    expect(lines.some((l) => l.includes('Q1') && l.includes('invalid_fields'))).toBe(true);
     expect(await workIdByTitle(t.db, 'Broken')).toBeUndefined();
     expect(await workIdByTitle(t.db, 'Fine')).toBeDefined();
+  } finally {
+    await t.close();
+  }
+});
+
+it('a reference to a removed creator is dropped, not recreated, and the work still goes in', async () => {
+  const t = await setupTest();
+  try {
+    // A legal or abuse removal keeps the creator's wikidata id, and the removal must stick.
+    const { changes } = await t.importSubmission([
+      { op: 'create', kind: 'creator', ref: 'c', fields: { kind: 'person', name: 'Taken Down' } },
+      { op: 'relate', type: 'external_id', from: { ref: 'c' }, data: { scheme: 'wikidata', value: 'Q500' } },
+    ]);
+    await removeEntity(t, changes[0]!.id);
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Survivor', { director: 'Q500' }),
+      Q500: person('Q500', 'Taken Down'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 0 }) });
+    expect(await workIdByTitle(t.db, 'Survivor')).toBeDefined();
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'work_creator'))).toEqual([]);
+    expect((await t.db.select({ n: count() }).from(creators))[0]!.n).toBe(1);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a link to a removed work is dropped, and a removed work is never re-imported', async () => {
+  const t = await setupTest();
+  try {
+    const first = fakeWikidata(ranked('Q2'), { Q2: film('Q2', 'Part One') });
+    await runWikidataImport({ db: t.db, client: first.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [create] = await t.db
+      .select({ id: changesTable.id })
+      .from(changesTable)
+      .where(and(eq(changesTable.entityId, (await workIdByTitle(t.db, 'Part One'))!), eq(changesTable.op, 'create')));
+    await removeEntity(t, create!.id);
+
+    const second = fakeWikidata(ranked('Q2', 'Q1'), {
+      Q1: film('Q1', 'Part Two', { follows: 'Q2' }),
+      Q2: film('Q2', 'Part One'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: second.client, measureBytes: bytes(), today: TODAY },
+      OPTS,
+    );
+    expect(result.stats).toMatchObject({
+      imported: 1,
+      linksAdded: 0,
+      linksFailed: 0,
+      skipped: expect.objectContaining({ present: 1, invalid: 0 }),
+    });
+    expect(await workIdByTitle(t.db, 'Part Two')).toBeDefined();
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'work_link'))).toEqual([]);
+    expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(2);
   } finally {
     await t.close();
   }

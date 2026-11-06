@@ -50,7 +50,7 @@ export interface RunOptions {
   batchSize?: number;
 }
 
-type Known = { id: string; kind: EntityKind };
+type Known = { id: string; kind: EntityKind; live: boolean };
 type RefKind = 'creator' | 'series' | 'property';
 
 /** A work link whose target wasn't in AMDB when its work went in. */
@@ -127,8 +127,9 @@ export async function runWikidataImport(
     const nextRef = () => `r${creates.length}`;
     const entityRef = (qid: string, kind: RefKind): EntityRef | null => {
       const found = known.get(qid);
-      // Held as another kind (say, a series item imported as a work): drop the reference, keep the work.
-      if (found) return found.kind === kind ? { id: found.id } : null;
+      // Removed, or held as another kind (say, a series item imported as a work): drop the reference,
+      // keep the work. A removed entity is never recreated: its wikidata id is still taken.
+      if (found) return found.live && found.kind === kind ? { id: found.id } : null;
       const already = local.get(qid);
       if (already) return already;
       const entity = refEntities.get(qid);
@@ -189,8 +190,8 @@ export async function runWikidataImport(
       if (qid === rec.qid) continue;
       const target = known.get(qid);
       if (!target) later.push({ toQid: qid, linkType });
-      // A link is garnish: one to something that isn't a work is dropped, not allowed to sink the work.
-      else if (target.kind === 'work')
+      // A link is garnish: one to a removed entity or a non-work is dropped, not allowed to sink the work.
+      else if (target.live && target.kind === 'work')
         relates.push({ op: 'relate', type: 'work_link', from: work, to: { id: target.id }, data: { linkType } });
     }
     return { changes: [...creates, ...relates], created, later };
@@ -204,7 +205,7 @@ export async function runWikidataImport(
       const entityId = result.changes[key.index]?.entityId;
       if (!entityId) throw new Error(`importSubmission returned no entity for change ${key.index + 1}`);
       if ('slug' in key) tagIds.set(key.slug, entityId);
-      else known.set(key.qid, { id: entityId, kind: key.kind });
+      else known.set(key.qid, { id: entityId, kind: key.kind, live: true });
     }
     const workId = result.changes[0]?.entityId;
     // Checked in the loop above: change 0 is the work's create.
@@ -289,7 +290,7 @@ export async function runWikidataImport(
     await remember([...new Set(deferred.map((l) => l.toQid))].filter((q) => !known.has(q)));
     for (const link of deferred) {
       const target = known.get(link.toQid);
-      if (target?.kind !== 'work') continue;
+      if (!target?.live || target.kind !== 'work') continue;
       try {
         await changes.importSubmission(runId, [
           {

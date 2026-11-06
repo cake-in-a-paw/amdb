@@ -31,11 +31,19 @@ export function importsRepository(db: DbOrTx) {
       return row ?? null;
     },
 
-    /** Who holds each QID as an active `wikidata` external id, by QID. Read-only on the catalog. */
-    async findByWikidataIds(qids: string[]): Promise<Map<string, { id: string; kind: EntityKind }>> {
+    /**
+     * Who holds each QID as an active `wikidata` external id, by QID. `live` is false for a removed
+     * or retracted entity, which keeps its id (a removal must stick). Read-only on the catalog.
+     */
+    async findByWikidataIds(qids: string[]): Promise<Map<string, { id: string; kind: EntityKind; live: boolean }>> {
       if (qids.length === 0) return new Map();
       const rows = await db
-        .select({ qid: relations.value, id: entities.id, kind: entities.kind })
+        .select({
+          qid: relations.value,
+          id: entities.id,
+          kind: entities.kind,
+          live: sql<boolean>`${entities.removedAt} IS NULL AND ${entities.retractedByChange} IS NULL`,
+        })
         .from(relations)
         .innerJoin(entities, eq(entities.id, relations.fromId))
         .where(
@@ -47,7 +55,7 @@ export function importsRepository(db: DbOrTx) {
           ),
         );
       // `value` is set on every external_id relation; the filter on scheme guarantees it here.
-      return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, { id: r.id, kind: r.kind }] as const] : [])));
+      return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, { id: r.id, kind: r.kind, live: r.live }] as const] : [])));
     },
 
     /** The database's size on disk, as the size cap measures it. */
