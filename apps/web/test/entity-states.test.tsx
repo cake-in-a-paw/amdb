@@ -38,6 +38,37 @@ test("a merged id's history lands on the winner's history", async () => {
   expect(await screen.findByRole('heading', { level: 1, name: 'Winner' })).toBeInTheDocument();
 });
 
+test("a merged id keeps the address's query and fragment on the winner", async () => {
+  const t = await renderApp('/', { seed: merged });
+
+  t.router.history.push(`/entities/${t.seeded.loser}/history?from=search#latest`);
+
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.winner}/history`));
+  expect(t.router.state.location.search).toEqual({ from: 'search' });
+  expect(t.router.state.location.hash).toBe('latest');
+});
+
+test('an id merged into an entry that was merged in turn lands on the last winner', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [book('a', 'First'), book('b', 'Middle'), book('c', 'Last')]);
+      const [first, middle, last] = made.changes.map((change) => {
+        if (!change.entityId) throw new Error('a create made no entity');
+        return change.entityId;
+      });
+      await publish(contributor, moderator, [{ op: 'merge', kind: 'work', from: first, into: middle }]);
+      await publish(contributor, moderator, [{ op: 'merge', kind: 'work', from: middle, into: last }]);
+      return { first: first ?? '', last: last ?? '' };
+    },
+  });
+
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.first } });
+
+  expect(await screen.findByRole('heading', { level: 1, name: 'Last' })).toBeInTheDocument();
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.last}`));
+});
+
 test('a removed id says the entry was removed and shows no fields', async () => {
   const t = await renderApp('/', {
     seed: async (api) => {

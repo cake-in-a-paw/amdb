@@ -26,10 +26,13 @@ function EntityLayout() {
     if (!winnerId || !entity.data) return;
     queryClient.setQueryData(entityQueryKey(winnerId), entity.data);
     // Replace, not push: Back shouldn't land on the dead id and bounce forward again.
-    // A page under the entry (its history, its edit form) stays on that page for the winner.
+    // A page under the entry (its history, its edit form) stays on that page for the winner, and
+    // the address keeps its query and fragment.
     void router.navigate({
       to: onHistory ? '/entities/$id/history' : onEdit ? '/entities/$id/edit' : '/entities/$id',
       params: { id: winnerId },
+      search: true,
+      hash: true,
       replace: true,
     });
   }, [winnerId, entity.data, onHistory, onEdit, queryClient, router]);
