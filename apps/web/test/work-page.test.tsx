@@ -82,6 +82,27 @@ test('a work lists more by its creator and others in its property', async () => 
   ).toHaveAttribute('href', `/entities/${t.seeded.works.howlsNovel}`);
 });
 
+test('the only work in a property says it is in it, not "also" in it', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        { op: 'create', kind: 'work', ref: 'w', fields: { mediaType: 'book', subtype: null, title: 'Alone' } },
+        { op: 'create', kind: 'property', ref: 'p', fields: { title: 'Solo Saga' } },
+        { op: 'relate', type: 'property_work', from: { ref: 'p' }, to: { ref: 'w' }, data: {} },
+      ]);
+      const id = made.changes[0]?.entityId;
+      if (!id) throw new Error('the create made no entity');
+      return id;
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded } });
+
+  const property = await screen.findByRole('region', { name: 'In Solo Saga' });
+  expect(property).toHaveTextContent('No other works in the property yet.');
+  expect(screen.queryByRole('region', { name: /^Also in/ })).not.toBeInTheDocument();
+});
+
 test('a work in a series says where it stands and lists the rest of the series', async () => {
   const t = await page((s) => s.works.howlsNovel);
 
