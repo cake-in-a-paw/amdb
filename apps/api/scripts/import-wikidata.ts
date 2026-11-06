@@ -43,10 +43,16 @@ async function main() {
   if (!url) throw new Error('DATABASE_URL is not set');
   const { db, close } = await openDb(url);
   // Ctrl-C or a SIGTERM finishes the run as failed ("interrupted") after the current work; a second one
-  // quits at once and leaves the run `running`.
+  // quits at once and leaves the run `running`. pnpm and tsx relay a terminal's Ctrl-C, so one press can
+  // arrive twice within milliseconds: only a repeat at least 2 s later counts as a second press.
   const controller = new AbortController();
+  let firstSignalAt: number | undefined;
   const onSignal = () => {
-    if (controller.signal.aborted) process.exit(130);
+    if (firstSignalAt !== undefined) {
+      if (Date.now() - firstSignalAt >= 2000) process.exit(130);
+      return;
+    }
+    firstSignalAt = Date.now();
     log(
       'interrupting after the current work (press again to quit now; the run then stays running and must be closed by hand, see docs/import.md)',
     );

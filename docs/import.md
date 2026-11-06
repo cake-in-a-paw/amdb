@@ -16,17 +16,20 @@ Flags (all optional):
 | `--dry-run`        |                 | Fetch and map only; writes nothing, no `DATABASE_URL`|
 
 The stats print as one JSON line on stdout and progress on stderr. Exit 0 for `finished` or
-`capped`, 1 for `failed` or any error.
+`capped`, 1 for `failed` or any error, 130 after a second Ctrl-C.
 
 One run at a time: a second run started while one is `running` stops at once with "another import
 run is already running". Ctrl-C (or SIGTERM) stops a run after the work in hand and records it as
 `failed` with the error `interrupted`; what it committed stays, and a later run carries on. The
 stop waits for the request in hand, which can take minutes while Wikidata is retrying. A second
-Ctrl-C quits at once, but then the run is never finished: close it as below.
+Ctrl-C (at least 2 seconds after the first) quits at once, but then the run is never finished:
+close it as below.
 
 If a run died without finishing (a second Ctrl-C, the process was killed, or the connection
 dropped), its row stays
-`running` and blocks the next run. Once you are sure it isn't running, close it by hand:
+`running` and blocks the next run. Once you are sure it isn't running, close it by hand. The run id
+is in the "already running" refusal, or `SELECT id, started_at FROM import_runs WHERE status = 'running';`.
+On production, `railway connect postgres` opens a psql session.
 
 ```sql
 UPDATE import_runs SET status = 'failed', finished_at = now(), error = 'died'
