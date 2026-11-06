@@ -142,6 +142,40 @@ test('the fields follow the kind: a tag has a kind, a name and a slug', async ()
   expect(await screen.findByText('New tag: Found family')).toBeInTheDocument();
 });
 
+test('a credit role that no longer fits the media type is changed, and the contributor is told', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed });
+  await t.user.selectOptions(screen.getByLabelText('Media type'), 'film_tv');
+  await pick(t, 'Find a creator', 'miyazaki', 'Hayao Miyazaki');
+  expect(screen.getByLabelText('Role for Hayao Miyazaki')).toHaveValue('director');
+  // The region is there before anything is said in it, so the message is announced.
+  const status = within(screen.getByRole('group', { name: 'Credits' })).getByRole('status');
+  expect(status).toBeEmptyDOMElement();
+
+  await t.user.selectOptions(screen.getByLabelText('Media type'), 'Book');
+
+  expect(screen.getByLabelText('Role for Hayao Miyazaki')).toHaveValue('author');
+  expect(status).toHaveTextContent('Director isn’t a role for a book, so Hayao Miyazaki is now Author. Check it.');
+});
+
+test('switching between a creator and a tag does not carry the kind across', async () => {
+  const t = await renderApp('/submit', { as: 'contributor' });
+
+  await t.user.click(screen.getByRole('radio', { name: 'Creator' }));
+  await t.user.selectOptions(screen.getByLabelText('Person or organization'), 'Person');
+  await t.user.click(screen.getByRole('radio', { name: 'Tag' }));
+  await t.user.type(screen.getByLabelText('Name'), 'Found family');
+  await t.user.type(screen.getByLabelText('Slug'), 'found-family');
+  await t.user.click(screen.getByLabelText('I release this contribution into the public domain (CC0)'));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  // The creator's "person" is no tag kind: "Choose…" shows, and the form asks for one before sending.
+  expect(screen.getByLabelText('Tag kind')).toHaveValue('');
+  expect(screen.getByLabelText('Tag kind')).toHaveAccessibleDescription('Choose a kind.');
+  await t.user.selectOptions(screen.getByLabelText('Tag kind'), 'Theme');
+  await t.user.click(screen.getByRole('radio', { name: 'Creator' }));
+  expect(screen.getByLabelText('Person or organization')).toHaveValue('');
+});
+
 test('a duplicate ISBN is explained, with a link to the entry that has it', async () => {
   const t = await renderApp('/submit', { as: 'contributor', seed });
   const contributor = t.api.as({ kind: 'user', userId: t.session.userId ?? '' });

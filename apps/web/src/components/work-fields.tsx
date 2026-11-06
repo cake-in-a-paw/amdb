@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { CreatorRole, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
 import { DuplicateCheck } from '@/components/duplicate-check';
 import { DescriptionField, Field, fieldClass, fieldProps, SelectField, TextField } from '@/components/form-fields';
@@ -51,6 +51,9 @@ const monthOptions = Object.fromEntries(
   ].map((name, i) => [String(i + 1), name]),
 );
 
+/** What a credit role is for, in a sentence: "isn't a role for a book". */
+const roleScope: Record<MediaType, string> = { book: 'a book', film_tv: 'film and TV' };
+
 const asMediaType = (raw: string | undefined): MediaType | null => (raw === 'book' || raw === 'film_tv' ? raw : null);
 
 /** A work's fields, chosen by media type, and its relations: credits, series, properties, tags, links and ids. */
@@ -65,16 +68,24 @@ export function WorkFields({
 }: Props & WorkOptions) {
   const props = { value, onChange, errors };
   const mediaType = asMediaType(value.fields.mediaType);
+  const [reassigned, setReassigned] = useState('');
 
-  // Credit roles depend on the media type: keep each one that still fits, else the first that does.
+  // Credit roles depend on the media type: keep each one that still fits, else the first that
+  // does, and say which changed, so a role the contributor chose isn't swapped out unseen.
   function changeMediaType(raw: string) {
     const next = asMediaType(raw);
+    const said: string[] = [];
     const credits = next
-      ? value.credits.map((c) => ({
-          ...c,
-          role: CreatorRole[next].safeParse(c.role).success ? c.role : (CreatorRole[next].options[0] ?? ''),
-        }))
+      ? value.credits.map((c) => {
+          if (CreatorRole[next].safeParse(c.role).success) return c;
+          const role = CreatorRole[next].options[0] ?? '';
+          said.push(
+            `${roleLabel(c.role)} isn’t a role for ${roleScope[next]}, so ${c.entity.title} is now ${roleLabel(role)}.`,
+          );
+          return { ...c, role };
+        })
       : value.credits;
+    setReassigned(said.length > 0 ? `${said.join(' ')} Check it.` : '');
     onChange({ ...value, fields: { ...value.fields, mediaType: raw }, credits });
   }
 
@@ -128,7 +139,7 @@ export function WorkFields({
         {mediaType && <TextField name="originalLanguage" label="Original language" hint="(e.g. ja)" {...props} />}
       </div>
       <DescriptionField {...props} />
-      {relations && <WorkRelations {...props} mediaType={mediaType} />}
+      {relations && <WorkRelations {...props} mediaType={mediaType} reassigned={reassigned} />}
     </div>
   );
 }
@@ -178,7 +189,13 @@ function PickedRow({
   );
 }
 
-function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaType: MediaType | null }) {
+function WorkRelations({
+  value,
+  onChange,
+  errors,
+  mediaType,
+  reassigned,
+}: Props & { mediaType: MediaType | null; reassigned: string }) {
   const without = <T,>(rows: T[], i: number) => rows.filter((_, j) => j !== i);
   const update = <T,>(rows: T[], i: number, patch: Partial<T>) =>
     rows.map((r, j) => (j === i ? { ...r, ...patch } : r));
@@ -187,6 +204,10 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
   return (
     <>
       <Section title="Credits">
+        {/* Always there, so a message written into it is announced. */}
+        <p role="status" className="text-sm empty:hidden">
+          {reassigned}
+        </p>
         {mediaType ? (
           <>
             <ul aria-label="Credits">
