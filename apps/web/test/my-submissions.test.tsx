@@ -1,6 +1,8 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { getAnonToken, peekAnonToken } from '@/lib/anon';
+import { createAppRouter } from '@/router';
 import { renderApp } from './harness';
 
 const film = (title: string) => ({
@@ -115,20 +117,77 @@ test('a storage failure does not break sign-in', async () => {
   vi.restoreAllMocks();
 });
 
-test('a failed claim is tried again on the next load', async () => {
-  const t = await renderApp('/');
-  await submitAnonymously(t);
-  const token = peekAnonToken();
+/** Makes the claim call fail with a 500 until the returned function is called. */
+function failClaims(t: Awaited<ReturnType<typeof renderApp>>) {
   const request = t.api.app.request.bind(t.api.app);
-  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
-    urlOf(input).includes('claim-anonymous') ? new Response('{}', { status: 500 }) : request(input, init),
-  );
+  let failing = true;
+  const spy = vi
+    .spyOn(t.api.app, 'request')
+    .mockImplementation(async (input, init) =>
+      failing && urlOf(input).includes('claim-anonymous') ? new Response('{}', { status: 500 }) : request(input, init),
+    );
+  return {
+    claims: () => spy.mock.calls.filter(([input]) => urlOf(input).includes('/api/me/claim-anonymous')),
+    recover: () => (failing = false),
+  };
+}
+
+/** Whether the signed-in account now owns `submissionId`, as the API sees it. */
+async function owned(t: Awaited<ReturnType<typeof renderApp>>, submissionId: string) {
+  const res = await t.api.as({ kind: 'user', userId: t.session.userId! }).get(`/api/submissions/${submissionId}`);
+  return res.status === 200;
+}
+
+test('a failed claim says so, and Try again hands the submissions over', async () => {
+  const t = await renderApp('/');
+  const submission = await submitAnonymously(t);
+  const token = peekAnonToken();
+  const fault = failClaims(t);
 
   await signInByEmail(t);
-  await screen.findByRole('button', { name: 'Account' });
 
-  await waitFor(() => expect(localStorage.getItem('amdb.anon.claimed')).toBeNull());
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    "Couldn't move the submissions you made before signing in to your account.",
+  );
   expect(peekAnonToken()).toBe(token);
+  expect(localStorage.getItem('amdb.anon.claimed')).toBeNull();
+  expect(await owned(t, submission.id)).toBe(false);
+
+  fault.recover();
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+
+  await waitFor(() => expect(peekAnonToken()).not.toBe(token));
+  expect(fault.claims()).toHaveLength(2);
+  expect(await owned(t, submission.id)).toBe(true);
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('a failed claim is tried again on the next load', async () => {
+  const t = await renderApp('/');
+  const submission = await submitAnonymously(t);
+  const token = peekAnonToken();
+  const fault = failClaims(t);
+  await signInByEmail(t);
+  await screen.findByRole('alert');
+  expect(localStorage.getItem('amdb.anon.claimed')).toBeNull();
+
+  // Reload: a fresh app in the same browser (its storage) and the same session.
+  fault.recover();
+  t.view.unmount();
+  const reloaded = createAppRouter({
+    api: t.router.options.context.api,
+    auth: t.auth,
+    history: createMemoryHistory({ initialEntries: ['/'] }),
+    queryDefaults: { queries: { retry: false }, mutations: { retry: false } },
+  });
+  const view = render(<RouterProvider router={reloaded} />);
+
+  await waitFor(() => expect(peekAnonToken()).not.toBe(token));
+  expect(fault.claims()).toHaveLength(2);
+  expect(await owned(t, submission.id)).toBe(true);
+  // Unmounted here, before the harness closes the database under it.
+  view.unmount();
+  await reloaded.options.context.queryClient.cancelQueries();
 });
 
 test('a rejected change shows its reason and a Fix and resubmit link', async () => {
