@@ -1,20 +1,25 @@
 import { createApiClient } from '@amdb/shared/api';
-import { getAnonToken } from './anon';
+import { getAnonToken, peekAnonToken } from './anon';
 
 /**
  * The anonymous identity header: sent only while signed out, so a signed-in request never carries
  * a token that could be mistaken for its caller. (The claim call is the one exception; it names
- * the token explicitly.)
+ * the token explicitly.) A read sends the token only if one exists: a visitor who only browses
+ * never gets one, and the first write makes it.
  */
-export function anonHeaders(isSignedIn: () => boolean): Record<string, string> {
-  return isSignedIn() ? {} : { 'x-amdb-anon': getAnonToken() };
+export function anonHeaders(isSignedIn: () => boolean, request?: Request): Record<string, string> {
+  if (isSignedIn()) return {};
+  const reading = request?.method === 'GET' || request?.method === 'HEAD';
+  const token = reading ? peekAnonToken() : getAnonToken();
+  return token ? { 'x-amdb-anon': token } : {};
 }
 
 /**
  * The app's client, for main.tsx. Routes get it through router context (`context.api`) so tests
  * can inject their own. `isSignedIn` is asked on every request.
  */
-export const createWebApi = (isSignedIn: () => boolean) => createApiClient({ headers: () => anonHeaders(isSignedIn) });
+export const createWebApi = (isSignedIn: () => boolean) =>
+  createApiClient({ headers: (request) => anonHeaders(isSignedIn, request) });
 
 /**
  * A non-2xx answer from the API: the HTTP status, the `{ error: { code, message, details? } }` body

@@ -121,9 +121,9 @@ export async function renderApp<Seeded = undefined>(
         }
         return res;
       },
-      headers: (): Record<string, string> => ({
+      headers: (request): Record<string, string> => ({
         ...(session.userId ? { 'x-test-user': session.userId } : {}),
-        ...anonHeaders(() => session.userId !== null),
+        ...anonHeaders(() => session.userId !== null, request),
       }),
     }),
     auth,

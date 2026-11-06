@@ -352,3 +352,19 @@ test('a failed background account refetch keeps the list already shown', async (
   expect(within(list).getByText('Waiting for review')).toBeInTheDocument();
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
+
+test('browsing signed out makes no anonymous token; the first submission does', async () => {
+  const t = await renderApp('/me/submissions');
+  expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+  await t.router.navigate({ to: '/browse' });
+  await screen.findByRole('heading', { level: 1 });
+  expect(peekAnonToken()).toBeNull();
+
+  const client = t.router.options.context.api;
+  const created = await client.POST('/api/submissions', {
+    // film() widens op and kind to string; the API validates the body either way.
+    body: { cc0: true, changes: [film('Arrival')] } as never,
+  });
+  expect(created.response.status).toBe(201);
+  expect(peekAnonToken()).not.toBeNull();
+});

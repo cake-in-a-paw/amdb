@@ -12,8 +12,8 @@ export interface ApiClientOptions {
   baseUrl?: string;
   /** Injected in tests; defaults to the global `fetch`. */
   fetch?: typeof fetch;
-  /** Called on every request; the returned headers are added to it (e.g. `x-amdb-anon`). */
-  headers?: () => Record<string, string>;
+  /** Called on every request, with it; the returned headers are added to it (e.g. `x-amdb-anon`). */
+  headers?: (request: Request) => Record<string, string>;
 }
 
 /** The typed client for the AMDB API, generated from its OpenAPI snapshot (`gen:api`). */
@@ -27,7 +27,7 @@ export function createApiClient(opts: ApiClientOptions = {}) {
   if (headers) {
     client.use({
       onRequest({ request }) {
-        for (const [name, value] of Object.entries(headers())) request.headers.set(name, value);
+        for (const [name, value] of Object.entries(headers(request))) request.headers.set(name, value);
         return request;
       },
     });
