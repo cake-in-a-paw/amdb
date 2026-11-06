@@ -206,3 +206,24 @@ test('a failed history load says so and Try again loads it', async () => {
   await t.user.click(screen.getByRole('button', { name: 'Try again' }));
   expect(await screen.findByRole('list', { name: 'History' })).toBeInTheDocument();
 });
+
+test('a change written by an import names the run and links to its evidence', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { runId, changes } = await api.importSubmission([
+        {
+          op: 'create',
+          kind: 'work',
+          ref: 'w',
+          fields: { mediaType: 'film_tv', subtype: 'movie', title: 'Stalker', releaseYear: 1979 },
+        },
+      ]);
+      return { runId, id: changes[0]?.entityId ?? '' };
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id/history', params: { id: t.seeded.id } });
+  const list = await screen.findByRole('list', { name: 'History' });
+
+  const link = within(list).getByRole('link', { name: 'Wikidata import' });
+  expect(link).toHaveAttribute('href', `/api/import-runs/${t.seeded.runId}`);
+});
