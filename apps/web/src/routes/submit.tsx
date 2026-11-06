@@ -2,13 +2,15 @@ import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Cc0Agreement } from '@/components/cc0-agreement';
+import { Loading } from '@/components/entity-states';
 import { EntryForm } from '@/components/entry-form';
 import { NoteField } from '@/components/note-field';
 import { SubmissionResult } from '@/components/submission-result';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
-import { useDraft } from '@/lib/drafts';
+import { draftKeys, useDraft } from '@/lib/drafts';
 import { describeSubmitError, existingIdOf } from '@/lib/errors';
+import { meQueryOptions, useIdentity } from '@/lib/me';
 import { linkClass } from '@/lib/styles';
 import {
   buildSubmission,
@@ -22,9 +24,12 @@ import {
 } from '@/lib/submission';
 
 export const Route = createFileRoute('/submit')({
-  // `title` starts a new entry with that title (search's "Add it"); it never replaces a draft.
+  // `title` starts a new entry with that title (search's "Add it"); with a draft saved, it is offered instead.
   validateSearch: (raw: Record<string, unknown>): { title?: string } =>
     typeof raw.title === 'string' && raw.title.trim() ? { title: raw.title.trim() } : {},
+  // Who is signed in decides which draft opens; read it first so the form shows at once. A failure
+  // is left to the page, which treats it as signed out.
+  loader: ({ context }) => context.queryClient.ensureQueryData(meQueryOptions(context.api)).catch(() => null),
   component: Submit,
 });
 
@@ -35,7 +40,27 @@ function Submit() {
   const { api } = Route.useRouteContext();
   const { title } = Route.useSearch();
   const navigate = Route.useNavigate();
-  const [form, setForm, clearDraft] = useDraft<EntryFormValue>('submit', EMPTY, isEntryForm);
+  // The address's title is taken once, on arrival, and left out of the address after.
+  const [offered] = useState(title);
+  useEffect(() => {
+    if (title) void navigate({ search: {}, replace: true });
+  }, []);
+  const identity = useIdentity(api);
+  if (!identity) {
+    return (
+      <div className="max-w-3xl py-10">
+        <Loading what="your draft" />
+      </div>
+    );
+  }
+  // Keyed: a draft is the contributor's, so signing in or out opens theirs.
+  return <SubmitForm key={identity} identity={identity} offered={offered} />;
+}
+
+function SubmitForm({ identity, offered }: { identity: string; offered: string | undefined }) {
+  const { api } = Route.useRouteContext();
+  const { key, adoptFrom } = draftKeys('submit', identity);
+  const [form, setForm, clearDraft] = useDraft<EntryFormValue>(key, EMPTY, { valid: isEntryForm, adoptFrom });
   const [cc0, setCc0] = useState(false);
   // Errors show once a submit was tried, then follow the form as it changes.
   const [checked, setChecked] = useState(false);
@@ -46,13 +71,15 @@ function Submit() {
   const [focusError, setFocusError] = useState(0);
   const errors: FormErrors = checked ? validateForm(form) : {};
 
-  // A prefilled title applies only to a fresh form, and leaves the address so it applies once.
+  // A title from the address fills a fresh form. Over a saved draft it is offered, not forced:
+  // the draft is work the contributor did, and the title is one click away.
   const restored = useRef(form !== EMPTY);
+  const [offer, setOffer] = useState(
+    offered && restored.current && (form.fields.title ?? form.fields.name) !== offered ? offered : null,
+  );
   useEffect(() => {
-    if (!title) return;
-    if (!restored.current) setForm({ ...EMPTY, fields: { title } });
-    void navigate({ search: {}, replace: true });
-    // Once, on arrival: later title changes come from this effect itself.
+    if (offered && !restored.current) setForm({ ...EMPTY, fields: { title: offered } });
+    // Once, on arrival.
   }, []);
 
   useEffect(() => {
@@ -100,6 +127,24 @@ function Submit() {
       <p className="mt-3 text-muted-foreground">
         A moderator reviews every change before it appears. Your draft is saved in this browser as you type.
       </p>
+      {offer && (
+        <div
+          role="status"
+          className="mt-4 flex flex-wrap items-center gap-x-4 rounded-md border border-border bg-card p-3"
+        >
+          <p>Your saved draft is open, so “{offer}” wasn’t filled in.</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setForm({ ...EMPTY, fields: { title: offer } });
+              setOffer(null);
+            }}
+          >
+            Start “{offer}” instead
+          </Button>
+        </div>
+      )}
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
         {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
         <fieldset disabled={submit.isPending} className="grid min-w-0 gap-8">

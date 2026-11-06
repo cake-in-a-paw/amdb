@@ -2,9 +2,10 @@ import { act, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getAnonToken } from '@/lib/anon';
 import { useDraft } from '@/lib/drafts';
+import { emptyForm } from '@/lib/submission';
 import { renderApp, seed } from './harness';
 
-const KEY = 'amdb.draft.submit';
+const KEY = 'amdb.draft.submit.anonymous';
 const CC0 = 'I release this contribution into the public domain (CC0)';
 
 /** The draft as stored, or null. */
@@ -231,7 +232,7 @@ describe('a saved draft is checked on load', () => {
 
   test('an edit draft that does not fit is ignored, and the form opens from the entry', async () => {
     const t = await renderApp('/', { as: 'contributor', seed });
-    localStorage.setItem(`amdb.draft.edit.${t.seeded.works.spiritedAway}`, 'null');
+    localStorage.setItem(`amdb.draft.edit.${t.seeded.works.spiritedAway}.${t.session.userId}`, 'null');
 
     await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
 
@@ -244,6 +245,97 @@ describe('a saved draft is checked on load', () => {
 
     expect(await screen.findByLabelText('Title')).toHaveValue('Old draft');
     expect(screen.getByRole('list', { name: 'Tags' })).toBeInTheDocument();
+  });
+});
+
+describe('drafts are kept per contributor', () => {
+  const draftOf = (title: string) => JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title } });
+
+  /** Signs the app in as `userId` (or out, with null), the way a sign-in or sign-out reaches the page. */
+  async function becomes(t: Awaited<ReturnType<typeof renderApp>>, userId: string | null) {
+    t.session.userId = userId;
+    await t.router.options.context.queryClient.invalidateQueries({ queryKey: ['me'] });
+  }
+
+  test("on a shared browser, one person's submit draft is not shown to the next", async () => {
+    const t = await renderApp('/submit', { as: 'contributor' });
+    const first = t.session.userId ?? '';
+    await fillBook(t, 'The Left Hand of Darkness');
+    await waitFor(() => expect(localStorage.getItem(`amdb.draft.submit.${first}`)).toContain('Left Hand'));
+
+    await becomes(t, await t.api.createUser());
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue(''));
+
+    await becomes(t, first);
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('The Left Hand of Darkness'));
+  });
+
+  test('a draft written signed out is carried over on signing in', async () => {
+    const t = await renderApp('/submit');
+    await fillBook(t, 'Four Ways to Forgiveness');
+    await waitFor(() => expect(stored()?.fields.title).toBe('Four Ways to Forgiveness'));
+
+    const userId = await t.api.createUser();
+    await becomes(t, userId);
+
+    await waitFor(() => expect(localStorage.getItem(`amdb.draft.submit.${userId}`)).toContain('Four Ways'));
+    expect(screen.getByLabelText('Title')).toHaveValue('Four Ways to Forgiveness');
+    expect(stored()).toBeNull();
+  });
+
+  test('a draft saved before drafts were per contributor still opens, and moves to its new key', async () => {
+    localStorage.setItem('amdb.draft.submit', draftOf('Planet of Exile'));
+    const t = await renderApp('/submit', { as: 'contributor' });
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Planet of Exile');
+    expect(localStorage.getItem('amdb.draft.submit')).toBeNull();
+    expect(localStorage.getItem(`amdb.draft.submit.${t.session.userId}`)).toContain('Planet of Exile');
+  });
+
+  test('so does an edit draft', async () => {
+    const t = await renderApp('/', { as: 'contributor', seed });
+    const id = t.seeded.works.spiritedAway;
+    await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+    const original = await screen.findByLabelText(/^Original title/);
+    await t.user.type(original, 'Sen to Chihiro');
+    const key = `amdb.draft.edit.${id}.${t.session.userId}`;
+    await waitFor(() => expect(localStorage.getItem(key)).toContain('Sen to Chihiro'));
+    await t.router.navigate({ to: '/' });
+    // As an older version kept it: under the entry alone.
+    localStorage.setItem(`amdb.draft.edit.${id}`, localStorage.getItem(key) ?? '');
+    localStorage.removeItem(key);
+
+    await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+
+    expect(await screen.findByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
+    expect(localStorage.getItem(`amdb.draft.edit.${id}`)).toBeNull();
+  });
+});
+
+describe("search's title and a saved draft", () => {
+  test('a saved draft opens, and the title from the address is offered instead of lost', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title: 'Old draft' } }));
+    const t = await renderApp('/submit?title=Zzyzx');
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Old draft');
+    expect(screen.getByText('Your saved draft is open, so “Zzyzx” wasn’t filled in.')).toBeInTheDocument();
+
+    await t.user.click(screen.getByRole('button', { name: 'Start “Zzyzx” instead' }));
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Zzyzx');
+    expect(screen.queryByRole('button', { name: /instead/ })).not.toBeInTheDocument();
+    expect(t.router.state.location.search).toEqual({});
+  });
+
+  test('with no draft the title fills the form, and with a draft of that title nothing is said', async () => {
+    const t = await renderApp('/submit?title=Zzyzx');
+    expect(await screen.findByLabelText('Title')).toHaveValue('Zzyzx');
+    await waitFor(() => expect(stored()?.fields.title).toBe('Zzyzx'));
+    t.view.unmount();
+
+    await renderApp('/submit?title=Zzyzx');
+    expect(await screen.findByLabelText('Title')).toHaveValue('Zzyzx');
+    expect(screen.queryByRole('button', { name: /instead/ })).not.toBeInTheDocument();
   });
 });
 

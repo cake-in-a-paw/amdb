@@ -103,21 +103,25 @@ export function isEditDraft(v: unknown, kind: EntryForm['kind']): v is EditDraft
  * rebased again whenever `current` changes while it is open (a refetch on returning to the tab, an
  * invalidation), so what is sent is only ever the contributor's own edits: never a revert of a
  * field someone else changed meanwhile, nor an unrelate of a relation someone else added.
- * `conflicts` names the fields both sides changed, from the load on.
+ * `conflicts` names the fields both sides changed, from the load on. `adoptFrom` is as for `useDraft`.
  */
 export function useEditDraft(
   key: string,
   current: EntryForm,
+  adoptFrom?: readonly string[],
 ): { form: EntryForm; setForm: (next: EntryForm) => void; clear: () => void; conflicts: string[] } {
   const loaded = useRef<string[]>([]);
   const [draft, setDraft, clear] = useDraft<EditDraft>(
     key,
     { base: current, form: current },
-    (v): v is EditDraft => isEditDraft(v, current.kind),
-    (saved) => {
-      const rebased = rebase(saved.base, saved.form, current);
-      loaded.current = rebased.conflicts;
-      return { base: current, form: rebased.form };
+    {
+      valid: (v): v is EditDraft => isEditDraft(v, current.kind),
+      migrate: (saved) => {
+        const rebased = rebase(saved.base, saved.form, current);
+        loaded.current = rebased.conflicts;
+        return { base: current, form: rebased.form };
+      },
+      adoptFrom,
     },
   );
   const [conflicts, setConflicts] = useState(() => loaded.current);

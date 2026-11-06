@@ -163,14 +163,16 @@ test('with nothing changed the submit button is disabled and says why', async ()
   expect(submit).toBeDisabled();
 });
 
-test('the draft is kept under edit.<entityId>, and survives leaving the page', async () => {
+test('the draft is kept under edit.<entityId>.<userId>, and survives leaving the page', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   const edit = { to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } } as const;
   await t.router.navigate(edit);
 
   await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
-  await waitFor(() => expect(stored(`edit.${t.seeded.works.spiritedAway}`)).toContain('Sen to Chihiro'));
-  expect(stored('submit')).toBeNull();
+  await waitFor(() =>
+    expect(stored(`edit.${t.seeded.works.spiritedAway}.${t.session.userId}`)).toContain('Sen to Chihiro'),
+  );
+  expect(stored(`submit.${t.session.userId}`)).toBeNull();
 
   await t.router.navigate({ to: '/' });
   await t.router.navigate(edit);
@@ -184,13 +186,13 @@ test('after submitting, the entry says the edit is waiting for review, and the d
 
   await t.user.clear(await screen.findByLabelText('Release year'));
   await t.user.type(screen.getByLabelText('Release year'), '2002');
-  await waitFor(() => expect(stored(`edit.${id}`)).not.toBeNull());
+  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).not.toBeNull());
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
   expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
   expect(t.router.state.location.pathname).toBe(`/entities/${id}`);
-  expect(stored(`edit.${id}`)).toBeNull();
+  expect(stored(`edit.${id}.${t.session.userId}`)).toBeNull();
   // The change waits: the entry still shows the published year.
   expect(screen.getByText('Spirited Away', { selector: 'h1' })).toBeInTheDocument();
   expect(screen.getByText(/2001/)).toBeInTheDocument();
@@ -229,7 +231,7 @@ test('a rejected-by-API edit keeps the draft and the form', async () => {
 
   expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
   expect(screen.getByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
-  await waitFor(() => expect(stored(`edit.${id}`)).toContain('Sen to Chihiro'));
+  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).toContain('Sen to Chihiro'));
 });
 
 test("a merged id opens the winner's edit form", async () => {
@@ -267,7 +269,7 @@ async function reopenAfter(
   const route = { to: '/entities/$id/edit', params: { id } } as const;
   await t.router.navigate(route);
   await edit();
-  await waitFor(() => expect(stored(`edit.${id}`)).not.toBeNull());
+  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).not.toBeNull());
   await t.router.navigate({ to: '/' });
   await meanwhile(await actors(t.api));
   // A fresh load of the entry, as after a reload.
@@ -400,7 +402,7 @@ test("a background refetch while the form is open sends only the contributor's e
   // The 201 clears the draft for good: nothing is written back after it.
   expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
   await new Promise((resolve) => setTimeout(resolve, 600));
-  expect(stored(`edit.${id}`)).toBeNull();
+  expect(stored(`edit.${id}.${t.session.userId}`)).toBeNull();
 });
 
 test('a background refetch that changes a field the contributor edited says so', async () => {

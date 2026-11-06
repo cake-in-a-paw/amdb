@@ -3,14 +3,17 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Cc0Agreement } from '@/components/cc0-agreement';
 import { ConflictNotice } from '@/components/conflict-notice';
+import { Loading } from '@/components/entity-states';
 import { EntryForm } from '@/components/entry-form';
 import { NoteField } from '@/components/note-field';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { buildEdit } from '@/lib/diff';
+import { draftKeys } from '@/lib/drafts';
 import { describeSubmitError } from '@/lib/errors';
 import { entityQueryOptions, type EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
+import { useIdentity } from '@/lib/me';
 import { useEditDraft } from '@/lib/rebase';
 import { validateForm, type FormErrors } from '@/lib/submission';
 
@@ -21,11 +24,14 @@ function Edit() {
   const { id } = Route.useParams();
   const { api } = Route.useRouteContext();
   const { data: entity } = useQuery(entityQueryOptions(api, id));
+  const identity = useIdentity(api);
   if (!entity) return null;
-  return <EditForm entity={entity} />;
+  if (!identity) return <Loading what="your draft" />;
+  // Keyed: a draft is the contributor's, so signing in or out opens theirs.
+  return <EditForm key={identity} entity={entity} identity={identity} />;
 }
 
-function EditForm({ entity }: { entity: EntityView }) {
+function EditForm({ entity, identity }: { entity: EntityView; identity: string }) {
   const { api } = Route.useRouteContext();
   const navigate = Route.useNavigate();
   const queryClient = useQueryClient();
@@ -33,7 +39,8 @@ function EditForm({ entity }: { entity: EntityView }) {
   // The draft keeps the form as it was when the contributor started beside the form as they
   // changed it, laid over the entry as it is now (on load and on every refetch), so what they
   // never touched follows the entry and only what they changed is sent.
-  const { form, setForm, clear: clearDraft, conflicts } = useEditDraft(`edit.${entity.id}`, current);
+  const { key, adoptFrom } = draftKeys(`edit.${entity.id}`, identity);
+  const { form, setForm, clear: clearDraft, conflicts } = useEditDraft(key, current, adoptFrom);
   const [cc0, setCc0] = useState(false);
   const [checked, setChecked] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
