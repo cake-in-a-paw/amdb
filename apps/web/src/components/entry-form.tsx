@@ -51,7 +51,12 @@ export function EntryForm({
         <div className="grid gap-4">
           {value.kind === 'tag' && <SelectField name="kind" label="Tag kind" options={tagKindLabels} {...props} />}
           <TextField name={titleKey} label={titleKey === 'name' ? 'Name' : 'Title'} {...props} />
-          <DuplicateCheck kind={value.kind} title={value.fields[titleKey] ?? ''} excludeId={options.entityId} />
+          <DuplicateCheck
+            kind={value.kind}
+            title={value.fields[titleKey] ?? ''}
+            excludeId={options.entityId}
+            level={options.headingLevel}
+          />
           {value.kind === 'creator' && (
             <SelectField name="kind" label="Person or organization" options={creatorKindLabels} {...props} />
           )}

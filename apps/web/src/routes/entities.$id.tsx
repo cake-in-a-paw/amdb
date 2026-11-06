@@ -3,6 +3,7 @@ import { createFileRoute, Outlet, useMatch, useRouter } from '@tanstack/react-ro
 import { useEffect } from 'react';
 import { EntityHeader } from '@/components/entity-header';
 import { entryGone, LoadError, Loading, NotFound, Removed } from '@/components/entity-states';
+import { moveDrafts } from '@/lib/drafts';
 import { entityQueryKey, entityQueryOptions } from '@/lib/entity';
 
 export const Route = createFileRoute('/entities/$id')({ component: EntityLayout });
@@ -25,6 +26,9 @@ function EntityLayout() {
   useEffect(() => {
     if (!winnerId || !entity.data) return;
     queryClient.setQueryData(entityQueryKey(winnerId), entity.data);
+    // An edit begun under this id would be stranded here: carry it to the winner, where it is
+    // laid over the winner as it is (the form's rebase), like any draft of an entry that changed.
+    moveDrafts(`edit.${id}`, `edit.${winnerId}`);
     // Replace, not push: Back shouldn't land on the dead id and bounce forward again.
     // A page under the entry (its history, its edit form) stays on that page for the winner.
     void router.navigate({
@@ -32,7 +36,7 @@ function EntityLayout() {
       params: { id: winnerId },
       replace: true,
     });
-  }, [winnerId, entity.data, onHistory, onEdit, queryClient, router]);
+  }, [winnerId, entity.data, id, onHistory, onEdit, queryClient, router]);
 
   if (entity.isPending || winnerId) return <Loading what="this entry" />;
   if (entity.isError) {

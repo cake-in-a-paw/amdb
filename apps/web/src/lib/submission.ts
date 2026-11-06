@@ -1,4 +1,12 @@
-import { CreatorRole, EntityKind, FieldsFor, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
+import {
+  CreatorRole,
+  EntityKind,
+  FieldsFor,
+  IdScheme,
+  WorkFieldsBase,
+  WorkLinkType,
+  type MediaType,
+} from '@amdb/shared';
 import type { paths } from '@amdb/shared/api';
 
 export type SubmissionInput = paths['/api/submissions']['post']['requestBody']['content']['application/json'];
@@ -237,20 +245,45 @@ function plainWords(field: string, message: string): string {
       return 'Use a day from 1 to 31.';
     case 'originalLanguage':
       return 'Enter 1 to 35 characters.';
-    default:
+    case 'lifecycle':
+      return 'Choose a release status.';
+    case 'runtimeMin':
+    case 'episodes':
+    case 'pageCount':
       return 'Use a whole number above 0.';
+    default:
+      return 'Check this field.';
   }
+}
+
+/**
+ * A work's attribute issues, by input. Attributes are a union (one shape per media type), so the
+ * work schema reports a bad one as a single issue at `attributes`, sometimes from the wrong media
+ * type's branch. The branch that knows every key sent is the media type's own; its issues name
+ * the input.
+ */
+function attributeIssues(attributes: unknown): { field: string; message: string }[] {
+  for (const branch of WorkFieldsBase.shape.attributes.unwrap().options) {
+    const parsed = branch.safeParse(attributes);
+    if (parsed.success) return [];
+    if (parsed.error.issues.some((issue) => issue.code === 'unrecognized_keys')) continue;
+    return parsed.error.issues.map((issue) => ({ field: String(issue.path[0]), message: issue.message }));
+  }
+  return [];
 }
 
 /** The fields' schema issues, by input; a work's attributes are named by their own input. */
 export function fieldErrors(kind: EntityKind, inputs: Record<string, string>): FormErrors {
-  const parsed = FieldsFor[kind].safeParse(toFields(kind, inputs));
+  const fields = toFields(kind, inputs);
+  const parsed = FieldsFor[kind].safeParse(fields);
   const errors: FormErrors = {};
   if (parsed.success) return errors;
   for (const issue of parsed.error.issues) {
-    const [first, second] = issue.path;
-    const field = String(first === 'attributes' && second !== undefined ? second : first);
-    errors[field] ??= plainWords(field, issue.message);
+    const found =
+      issue.path[0] === 'attributes'
+        ? attributeIssues(fields.attributes)
+        : [{ field: String(issue.path[0]), message: issue.message }];
+    for (const { field, message } of found) errors[field] ??= plainWords(field, message);
   }
   return errors;
 }

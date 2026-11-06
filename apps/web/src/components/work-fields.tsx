@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { CreatorRole, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
 import { DuplicateCheck } from '@/components/duplicate-check';
 import { DescriptionField, Field, fieldClass, fieldProps, SelectField, TextField } from '@/components/form-fields';
@@ -30,6 +30,8 @@ export interface WorkOptions {
   lockMediaType?: boolean | undefined;
   /** Show the relation sections (credits, series and so on); a rejected create's fields have none. */
   relations?: boolean | undefined;
+  /** The duplicate check's heading level: one below the heading the form sits under. */
+  headingLevel?: 2 | 3 | undefined;
 }
 
 const monthOptions = Object.fromEntries(
@@ -49,6 +51,9 @@ const monthOptions = Object.fromEntries(
   ].map((name, i) => [String(i + 1), name]),
 );
 
+/** What a credit role is for, in a sentence: "isn't a role for a book". */
+const roleScope: Record<MediaType, string> = { book: 'a book', film_tv: 'film and TV' };
+
 const asMediaType = (raw: string | undefined): MediaType | null => (raw === 'book' || raw === 'film_tv' ? raw : null);
 
 /** A work's fields, chosen by media type, and its relations: credits, series, properties, tags, links and ids. */
@@ -59,19 +64,28 @@ export function WorkFields({
   entityId,
   lockMediaType = false,
   relations = true,
+  headingLevel,
 }: Props & WorkOptions) {
   const props = { value, onChange, errors };
   const mediaType = asMediaType(value.fields.mediaType);
+  const [reassigned, setReassigned] = useState('');
 
-  // Credit roles depend on the media type: keep each one that still fits, else the first that does.
+  // Credit roles depend on the media type: keep each one that still fits, else the first that
+  // does, and say which changed, so a role the contributor chose isn't swapped out unseen.
   function changeMediaType(raw: string) {
     const next = asMediaType(raw);
+    const said: string[] = [];
     const credits = next
-      ? value.credits.map((c) => ({
-          ...c,
-          role: CreatorRole[next].safeParse(c.role).success ? c.role : (CreatorRole[next].options[0] ?? ''),
-        }))
+      ? value.credits.map((c) => {
+          if (CreatorRole[next].safeParse(c.role).success) return c;
+          const role = CreatorRole[next].options[0] ?? '';
+          said.push(
+            `${roleLabel(c.role)} isn’t a role for ${roleScope[next]}, so ${c.entity.title} is now ${roleLabel(role)}.`,
+          );
+          return { ...c, role };
+        })
       : value.credits;
+    setReassigned(said.length > 0 ? `${said.join(' ')} Check it.` : '');
     onChange({ ...value, fields: { ...value.fields, mediaType: raw }, credits });
   }
 
@@ -103,6 +117,7 @@ export function WorkFields({
           title={value.fields.title ?? ''}
           mediaType={mediaType ?? undefined}
           excludeId={entityId}
+          level={headingLevel}
         />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
       </div>
@@ -124,7 +139,7 @@ export function WorkFields({
         {mediaType && <TextField name="originalLanguage" label="Original language" hint="(e.g. ja)" {...props} />}
       </div>
       <DescriptionField {...props} />
-      {relations && <WorkRelations {...props} mediaType={mediaType} />}
+      {relations && <WorkRelations {...props} mediaType={mediaType} reassigned={reassigned} />}
     </div>
   );
 }
@@ -138,8 +153,23 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-/** One picked entry: its name, the control that goes with it (a role, a position), and Remove. */
-function PickedRow({ entity, onRemove, children }: { entity: Picked; onRemove: () => void; children?: ReactNode }) {
+/**
+ * One picked entry: its name, the control that goes with it (a role, a position), and Remove,
+ * named for the row and its section (`from`), since one entry can be in several sections or twice in one.
+ */
+function PickedRow({
+  entity,
+  from,
+  detail,
+  onRemove,
+  children,
+}: {
+  entity: Picked;
+  from: string;
+  detail?: string;
+  onRemove: () => void;
+  children?: ReactNode;
+}) {
   return (
     <li className="flex flex-wrap items-end gap-3 border-b border-border/70 py-2">
       <span className="min-h-11 flex-1 content-center font-serif">
@@ -147,14 +177,25 @@ function PickedRow({ entity, onRemove, children }: { entity: Picked; onRemove: (
         {'ref' in entity && <span className="ml-2 font-sans text-sm text-muted-foreground">(new)</span>}
       </span>
       {children}
-      <Button type="button" variant="ghost" onClick={onRemove} aria-label={`Remove ${entity.title}`}>
+      <Button
+        type="button"
+        variant="ghost"
+        onClick={onRemove}
+        aria-label={`Remove ${entity.title}${detail ? `, ${detail},` : ''} from ${from}`}
+      >
         Remove
       </Button>
     </li>
   );
 }
 
-function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaType: MediaType | null }) {
+function WorkRelations({
+  value,
+  onChange,
+  errors,
+  mediaType,
+  reassigned,
+}: Props & { mediaType: MediaType | null; reassigned: string }) {
   const without = <T,>(rows: T[], i: number) => rows.filter((_, j) => j !== i);
   const update = <T,>(rows: T[], i: number, patch: Partial<T>) =>
     rows.map((r, j) => (j === i ? { ...r, ...patch } : r));
@@ -163,11 +204,21 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
   return (
     <>
       <Section title="Credits">
+        {/* Always there, so a message written into it is announced. */}
+        <p role="status" className="text-sm empty:sr-only">
+          {reassigned}
+        </p>
         {mediaType ? (
           <>
             <ul aria-label="Credits">
               {value.credits.map((c, i) => (
-                <PickedRow key={i} entity={c.entity} onRemove={() => set({ credits: without(value.credits, i) })}>
+                <PickedRow
+                  key={i}
+                  entity={c.entity}
+                  from="credits"
+                  detail={roleLabel(c.role)}
+                  onRemove={() => set({ credits: without(value.credits, i) })}
+                >
                   <Field name={`credits.${i}.role`} label={`Role for ${c.entity.title}`} errors={errors}>
                     <select
                       {...fieldProps(`credits.${i}.role`, errors)}
@@ -201,7 +252,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Series">
         <ul aria-label="Series">
           {value.series.map((s, i) => (
-            <PickedRow key={i} entity={s.entity} onRemove={() => set({ series: without(value.series, i) })}>
+            <PickedRow
+              key={i}
+              entity={s.entity}
+              from="series"
+              onRemove={() => set({ series: without(value.series, i) })}
+            >
               <Field name={`series.${i}.position`} label={`Position in ${s.entity.title}`} errors={errors}>
                 <input
                   {...fieldProps(`series.${i}.position`, errors)}
@@ -226,7 +282,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
         <p className="text-sm text-muted-foreground">A franchise or story world this belongs to.</p>
         <ul aria-label="Properties">
           {value.properties.map((p, i) => (
-            <PickedRow key={i} entity={p.entity} onRemove={() => set({ properties: without(value.properties, i) })} />
+            <PickedRow
+              key={i}
+              entity={p.entity}
+              from="properties"
+              onRemove={() => set({ properties: without(value.properties, i) })}
+            />
           ))}
         </ul>
         <RelationPicker
@@ -239,7 +300,7 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Tags">
         <ul aria-label="Tags">
           {value.tags.map((tag, i) => (
-            <PickedRow key={i} entity={tag.entity} onRemove={() => set({ tags: without(value.tags, i) })} />
+            <PickedRow key={i} entity={tag.entity} from="tags" onRemove={() => set({ tags: without(value.tags, i) })} />
           ))}
         </ul>
         <RelationPicker kind="tag" label="Find a tag" onPick={(entity) => set({ tags: [...value.tags, { entity }] })} />
@@ -248,7 +309,12 @@ function WorkRelations({ value, onChange, errors, mediaType }: Props & { mediaTy
       <Section title="Related works">
         <ul aria-label="Related works">
           {value.links.map((l, i) => (
-            <PickedRow key={i} entity={l.entity} onRemove={() => set({ links: without(value.links, i) })}>
+            <PickedRow
+              key={i}
+              entity={l.entity}
+              from="related works"
+              onRemove={() => set({ links: without(value.links, i) })}
+            >
               <Field name={`links.${i}.linkType`} label={`How this relates to ${l.entity.title}`} errors={errors}>
                 <select
                   {...fieldProps(`links.${i}.linkType`, errors)}

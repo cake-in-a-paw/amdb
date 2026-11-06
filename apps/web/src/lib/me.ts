@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query';
+import { queryOptions, useQuery } from '@tanstack/react-query';
 import type { ApiClient } from '@amdb/shared/api';
 import { ApiError, unwrap } from './api';
 
@@ -24,3 +24,12 @@ export const meQueryOptions = (api: ApiClient) =>
 /** Moderators and admins review changes. */
 export const canModerate = (me: { role: string } | null | undefined): boolean =>
   me?.role === 'moderator' || me?.role === 'admin';
+
+/**
+ * Whose work this browser is doing: the signed-in account's id, or `'anonymous'`; `null` until
+ * that is known. If the account can't be read, the browser is treated as signed out.
+ */
+export function useIdentity(api: ApiClient): string | null {
+  const me = useQuery(meQueryOptions(api));
+  return me.isPending ? null : (me.data?.id ?? 'anonymous');
+}

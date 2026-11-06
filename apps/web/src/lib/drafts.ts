@@ -40,6 +40,48 @@ function remove(k: string) {
   }
 }
 
+/**
+ * Moves the draft at `from` to `to` when `to` has none, so a draft that changed keys (written
+ * before drafts were kept per contributor, or while signed out) is picked up rather than stranded.
+ */
+function adopt(from: string, to: string) {
+  if (readRaw(to) !== null) return;
+  const raw = readRaw(from);
+  if (raw === null) return;
+  try {
+    localStorage.setItem(to, raw);
+    memory.delete(to);
+  } catch {
+    memory.set(to, raw);
+  }
+  remove(from);
+}
+
+/** Every stored draft key named `name` or under it (`name.<anything>`). */
+function keysUnder(name: string): string[] {
+  const k = storageKey(name);
+  const found = new Set(memory.keys());
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key !== null) found.add(key);
+    }
+  } catch {
+    // Storage can't be read; the memory copies are all there is.
+  }
+  return [...found].filter((key) => key === k || key.startsWith(`${k}.`));
+}
+
+/**
+ * Moves every draft kept under `from` (each contributor's, and an unscoped one) to the same place
+ * under `to`, unless one is already there: for an entry merged into another, whose drafts would
+ * otherwise sit under an id nobody opens again.
+ */
+export function moveDrafts(from: string, to: string) {
+  const prefix = storageKey(from);
+  for (const key of keysUnder(from)) adopt(key, storageKey(to) + key.slice(prefix.length));
+}
+
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -62,22 +104,32 @@ function load<T>(k: string, initial: T, valid?: (value: unknown) => value is T, 
   }
 }
 
+export interface DraftOptions<T> {
+  /** A saved draft that fails it (JSON `null`, a shape from another version) is ignored. */
+  valid?: ((value: unknown) => value is T) | undefined;
+  /** Brings a restored draft up to date with what it was based on. */
+  migrate?: ((draft: T) => T) | undefined;
+  /** Keys a draft may have been kept under before, taken over in order when `key` has none. */
+  adoptFrom?: readonly string[] | undefined;
+}
+
 /**
  * State that survives leaving the page: kept in `localStorage['amdb.draft.<key>']`, written 500ms
  * after the last change and on unmount or `pagehide`, so nothing typed is lost. If storage throws,
  * the draft lives in memory for this tab. `clear` forgets it (call it only once the work is safe,
- * i.e. after a 201) and returns the state to `initial`. With `valid`, a saved draft that fails it
- * (JSON `null`, a shape from another version) is ignored and `initial` is used. A draft that is
- * restored goes through `migrate` first (for bringing it up to date with what it was based on).
+ * i.e. after a 201) and returns the state to `initial`. The key is read once, on mount: a caller
+ * whose key can change remounts the component (a React `key`) rather than passing a new one.
  */
 export function useDraft<T>(
   key: string,
   initial: T,
-  valid?: (value: unknown) => value is T,
-  migrate?: (draft: T) => T,
+  { valid, migrate, adoptFrom = [] }: DraftOptions<T> = {},
 ): [T, (next: T) => void, () => void] {
   const k = storageKey(key);
-  const [value, setValue] = useState(() => load(k, initial, valid, migrate));
+  const [value, setValue] = useState(() => {
+    for (const from of adoptFrom) adopt(storageKey(from), k);
+    return load(k, initial, valid, migrate);
+  });
   const initialRef = useRef(initial);
   const pending = useRef<{ value: T } | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -116,4 +168,18 @@ export function useDraft<T>(
   }, [k]);
 
   return [value, set, clear];
+}
+
+/**
+ * The draft keys for `name` (`submit`, `edit.<id>`) for `identity`: its own, and the ones it takes
+ * over when it has none. Drafts are kept per contributor so a shared browser doesn't hand one
+ * person's work to the next. A draft written signed out is taken over on signing in, as the
+ * anonymous submissions are claimed; one from before drafts were per contributor (`name` alone)
+ * by whoever opens it first.
+ */
+export function draftKeys(name: string, identity: string): { key: string; adoptFrom: string[] } {
+  return {
+    key: `${name}.${identity}`,
+    adoptFrom: identity === 'anonymous' ? [name] : [name, `${name}.anonymous`],
+  };
 }

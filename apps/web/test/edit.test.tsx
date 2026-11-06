@@ -88,12 +88,23 @@ test('removing a tag sends an unrelate with its relation id', async () => {
     relations: { tags: { relationId: string }[] };
   };
 
-  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
   await waitFor(async () => expect(await posts()).toHaveLength(1));
   expect((await posts())[0]?.changes).toEqual([{ op: 'unrelate', relationId: entity.relations.tags[0]?.relationId }]);
+});
+
+test('each Remove button names its row and its section', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  // The film is part of the property "Howl's Moving Castle" and adapted from the book of that name.
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.howlsMovingCastle } });
+
+  await screen.findByLabelText('Title');
+  expect(screen.getByRole('button', { name: 'Remove Hayao Miyazaki, Director, from credits' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: "Remove Howl's Moving Castle from properties" })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: "Remove Howl's Moving Castle from related works" })).toBeInTheDocument();
 });
 
 test('adding a creator sends a relate for it', async () => {
@@ -152,14 +163,16 @@ test('with nothing changed the submit button is disabled and says why', async ()
   expect(submit).toBeDisabled();
 });
 
-test('the draft is kept under edit.<entityId>, and survives leaving the page', async () => {
+test('the draft is kept under edit.<entityId>.<userId>, and survives leaving the page', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   const edit = { to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } } as const;
   await t.router.navigate(edit);
 
   await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
-  await waitFor(() => expect(stored(`edit.${t.seeded.works.spiritedAway}`)).toContain('Sen to Chihiro'));
-  expect(stored('submit')).toBeNull();
+  await waitFor(() =>
+    expect(stored(`edit.${t.seeded.works.spiritedAway}.${t.session.userId}`)).toContain('Sen to Chihiro'),
+  );
+  expect(stored(`submit.${t.session.userId}`)).toBeNull();
 
   await t.router.navigate({ to: '/' });
   await t.router.navigate(edit);
@@ -173,13 +186,13 @@ test('after submitting, the entry says the edit is waiting for review, and the d
 
   await t.user.clear(await screen.findByLabelText('Release year'));
   await t.user.type(screen.getByLabelText('Release year'), '2002');
-  await waitFor(() => expect(stored(`edit.${id}`)).not.toBeNull());
+  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).not.toBeNull());
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
   expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
   expect(t.router.state.location.pathname).toBe(`/entities/${id}`);
-  expect(stored(`edit.${id}`)).toBeNull();
+  expect(stored(`edit.${id}.${t.session.userId}`)).toBeNull();
   // The change waits: the entry still shows the published year.
   expect(screen.getByText('Spirited Away', { selector: 'h1' })).toBeInTheDocument();
   expect(screen.getByText(/2001/)).toBeInTheDocument();
@@ -203,22 +216,25 @@ test("an entry nobody edited has no notice, and neither has one whose edit was s
 test('a rejected-by-API edit keeps the draft and the form', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   const id = t.seeded.works.spiritedAway;
-  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  const route = { to: '/entities/$id/edit', params: { id } } as const;
+  const key = `edit.${id}.${t.session.userId}`;
+  await t.router.navigate(route);
   await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
-  await t.user.click(screen.getByLabelText(CC0));
-  const real = t.api.app.request.bind(t.api.app);
-  // A 400 from the API for the submission only: the way to make a valid form meet a refusal.
-  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
-    urlOf(input).endsWith('/api/submissions')
-      ? Response.json({ error: { code: 'invalid_fields', message: 'no' } }, { status: 400 })
-      : real(input, init),
-  );
+  await waitFor(() => expect(stored(key)).toContain('Sen to Chihiro'));
+  await t.router.navigate({ to: '/' });
+  // The draft gains a tag the catalog doesn't have: the form accepts it, the API refuses it.
+  const draft = JSON.parse(stored(key) ?? '') as { form: { tags: unknown[] } };
+  draft.form.tags.push({ entity: { id: crypto.randomUUID(), title: 'No such tag' } });
+  localStorage.setItem(`amdb.draft.${key}`, JSON.stringify(draft));
+  await t.router.navigate(route);
+  await t.user.click(await screen.findByLabelText(CC0));
 
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
+  expect(await screen.findByRole('alert')).toHaveTextContent("An entry named here doesn't exist (any more).");
   expect(screen.getByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
-  await waitFor(() => expect(stored(`edit.${id}`)).toContain('Sen to Chihiro'));
+  await waitFor(() => expect(stored(key)).toContain('Sen to Chihiro'));
+  expect(stored(key)).toContain('No such tag');
 });
 
 test("a merged id opens the winner's edit form", async () => {
@@ -246,6 +262,29 @@ test("a merged id opens the winner's edit form", async () => {
   await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.series.howlsSeries}/edit`));
 });
 
+test('a draft of an entry merged while it was being edited follows it to the winner', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const winner = t.seeded.series.howlsSeries;
+  const { contributor, moderator } = await actors(t.api);
+  const made = await publish(contributor, moderator, [
+    { op: 'create', kind: 'series', ref: 's', fields: { title: 'Howls Castle' } },
+  ]);
+  const loser = made.changes[0]?.entityId ?? '';
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: loser } });
+  await t.user.type(await screen.findByLabelText(/^Description/), 'Two novels by Diana Wynne Jones.');
+  await waitFor(() => expect(stored(`edit.${loser}.${t.session.userId}`)).toContain('Two novels'));
+
+  // A moderator merges the entry while the form is open, and the entry is read again.
+  await publish(contributor, moderator, [{ op: 'merge', kind: 'series', from: loser, into: winner }]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', loser] });
+
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${winner}/edit`));
+  expect(await screen.findByLabelText(/^Description/)).toHaveValue('Two novels by Diana Wynne Jones.');
+  // What the contributor never touched is the winner's.
+  expect(screen.getByLabelText('Title')).toHaveValue("Howl's Castle");
+  expect(stored(`edit.${loser}.${t.session.userId}`)).toBeNull();
+});
+
 /** Starts an edit of Spirited Away (so a draft is saved), leaves, lets `meanwhile` change the entry through the API, and reopens the form. */
 async function reopenAfter(
   t: Awaited<ReturnType<typeof renderApp<Awaited<ReturnType<typeof seed>>>>>,
@@ -256,7 +295,7 @@ async function reopenAfter(
   const route = { to: '/entities/$id/edit', params: { id } } as const;
   await t.router.navigate(route);
   await edit();
-  await waitFor(() => expect(stored(`edit.${id}`)).not.toBeNull());
+  await waitFor(() => expect(stored(`edit.${id}.${t.session.userId}`)).not.toBeNull());
   await t.router.navigate({ to: '/' });
   await meanwhile(await actors(t.api));
   // A fresh load of the entry, as after a reload.
@@ -339,7 +378,7 @@ test('a relation the contributor removed and someone else removed too sends no u
   await reopenAfter(
     t,
     async () => {
-      await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+      await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
     },
     async ({ contributor, moderator }) => {
       const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
@@ -389,7 +428,44 @@ test("a background refetch while the form is open sends only the contributor's e
   // The 201 clears the draft for good: nothing is written back after it.
   expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
   await new Promise((resolve) => setTimeout(resolve, 600));
-  expect(stored(`edit.${id}`)).toBeNull();
+  expect(stored(`edit.${id}.${t.session.userId}`)).toBeNull();
+});
+
+test('a credit the contributor changed and someone else removed meanwhile is kept as new, and they are told', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.works.spiritedAway;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.selectOptions(await screen.findByLabelText('Role for Hayao Miyazaki'), 'writer');
+
+  const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
+    relations: { creators: { relationId: string }[] };
+  };
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.creators[0]?.relationId }]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+  const posts = watchSubmissions(t);
+
+  expect(await screen.findByText(/changed since you started editing.*check credits\./)).toBeInTheDocument();
+  expect(screen.getByLabelText('Role for Hayao Miyazaki')).toHaveValue('writer');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes.map((c) => c.op)).toEqual(['relate']);
+});
+
+test("a tag's kind is named as the form names it in the conflict notice", async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const id = t.seeded.tags.fantasy;
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await t.user.selectOptions(await screen.findByLabelText('Tag kind'), 'Theme');
+
+  const { contributor, moderator } = await actors(t.api);
+  await publish(contributor, moderator, [
+    { op: 'update', kind: 'tag', entityId: id, fields: { kind: 'content_warning' } },
+  ]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
+
+  expect(await screen.findByText(/changed since you started editing.*check tag kind\./)).toBeInTheDocument();
 });
 
 test('a background refetch that changes a field the contributor edited says so', async () => {
@@ -412,7 +488,7 @@ test('removing a link someone else already removed says so, instead of "Try agai
   const t = await renderApp('/', { as: 'contributor', seed });
   const id = t.seeded.works.spiritedAway;
   await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
-  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy' }));
+  await t.user.click(await screen.findByRole('button', { name: 'Remove Fantasy from tags' }));
   // Someone else removes the same tag; the form hasn't read the entry again.
   const view = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
     relations: { tags: { relationId: string }[] };

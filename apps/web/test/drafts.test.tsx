@@ -1,10 +1,11 @@
-import { act, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, renderHook, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getAnonToken } from '@/lib/anon';
-import { useDraft } from '@/lib/drafts';
+import { moveDrafts, useDraft } from '@/lib/drafts';
+import { emptyForm } from '@/lib/submission';
 import { renderApp, seed } from './harness';
 
-const KEY = 'amdb.draft.submit';
+const KEY = 'amdb.draft.submit.anonymous';
 const CC0 = 'I release this contribution into the public domain (CC0)';
 
 /** The draft as stored, or null. */
@@ -79,6 +80,22 @@ describe('useDraft', () => {
 
     expect(renderHook(() => useDraft('t', { n: 0 })).result.current[0]).toEqual({ n: 0 });
   });
+
+  test("moveDrafts carries every contributor's draft across, and never over one already there", () => {
+    localStorage.setItem('amdb.draft.edit.a.u1', '"one"');
+    localStorage.setItem('amdb.draft.edit.a.u2', '"two"');
+    localStorage.setItem('amdb.draft.edit.ab.u1', '"other entry"');
+    localStorage.setItem('amdb.draft.edit.b.u2', '"already"');
+
+    moveDrafts('edit.a', 'edit.b');
+
+    expect(localStorage.getItem('amdb.draft.edit.b.u1')).toBe('"one"');
+    expect(localStorage.getItem('amdb.draft.edit.a.u1')).toBeNull();
+    expect(localStorage.getItem('amdb.draft.edit.b.u2')).toBe('"already"');
+    // Not dropped: left where it was.
+    expect(localStorage.getItem('amdb.draft.edit.a.u2')).toBe('"two"');
+    expect(localStorage.getItem('amdb.draft.edit.ab.u1')).toBe('"other entry"');
+  });
 });
 
 /** Fills in the smallest valid entry: a book with a title. */
@@ -143,6 +160,65 @@ test('a submission that never reaches the API keeps the draft and the form', asy
   await waitFor(() => expect(stored()?.fields.title).toBe('Always Coming Home'));
 });
 
+/** Holds the submission POST (or the resubmit) until the returned function is called; other requests go through. */
+function holdSubmission(t: Awaited<ReturnType<typeof renderApp>>, path: RegExp) {
+  const real = t.api.app.request.bind(t.api.app);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) => {
+    const method = input instanceof Request ? input.method : (init?.method ?? 'GET');
+    if (method === 'POST' && path.test(urlOf(input))) await held;
+    return real(input, init);
+  });
+  return release;
+}
+
+test('while a submission is in flight the form is read-only, so nothing typed then is lost', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed });
+  await fillBook(t, 'The Telling');
+  await t.user.click(screen.getByLabelText(CC0));
+  const release = holdSubmission(t, /\/api\/submissions$/);
+
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(await screen.findByRole('button', { name: 'Submitting…' })).toBeDisabled();
+  expect(screen.getByLabelText('Title')).toBeDisabled();
+  expect(screen.getByLabelText('Find a creator')).toBeDisabled();
+  release();
+  expect(await screen.findByText('New work: The Telling')).toBeInTheDocument();
+});
+
+test('while an edit or a resubmit is in flight its form is read-only too', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  await t.user.type(await screen.findByLabelText(/^Original title/), 'Sen to Chihiro');
+  await t.user.click(screen.getByLabelText(CC0));
+  const release = holdSubmission(t, /\/api\/submissions$/);
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  expect(await screen.findByRole('button', { name: 'Submitting…' })).toBeDisabled();
+  expect(screen.getByLabelText(/^Original title/)).toBeDisabled();
+  release();
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.works.spiritedAway}`));
+
+  const author = t.api.as({ kind: 'user', userId: t.session.userId ?? '' });
+  const moderator = t.api.as({ kind: 'user', userId: await t.api.createUser({ role: 'moderator' }) });
+  const made = await author.post('/api/submissions', {
+    cc0: true,
+    changes: [{ op: 'create', kind: 'series', ref: 's', fields: { title: 'Hainish Cycle' } }],
+  });
+  const changeId = ((await made.json()) as { changes: { id: string }[] }).changes[0]?.id ?? '';
+  expect((await moderator.post(`/api/changes/${changeId}/reject`, { reason: 'Spelling.' })).status).toBe(200);
+  vi.restoreAllMocks();
+  const releaseResubmit = holdSubmission(t, /\/resubmit$/);
+  await t.router.navigate({ to: '/changes/$id/resubmit', params: { id: changeId } });
+  await t.user.type(await screen.findByLabelText('Title'), ' (novels)');
+  await t.user.click(screen.getByRole('button', { name: 'Resubmit for review' }));
+  expect(await screen.findByRole('button', { name: 'Resubmitting…' })).toBeDisabled();
+  expect(screen.getByLabelText('Title')).toBeDisabled();
+  releaseResubmit();
+  await waitFor(() => expect(t.router.state.location.pathname).toBe('/me/submissions'));
+});
+
 test('only a 201 clears the draft', async () => {
   const t = await renderApp('/submit');
   await fillBook(t, 'The Word for World Is Forest');
@@ -172,7 +248,7 @@ describe('a saved draft is checked on load', () => {
 
   test('an edit draft that does not fit is ignored, and the form opens from the entry', async () => {
     const t = await renderApp('/', { as: 'contributor', seed });
-    localStorage.setItem(`amdb.draft.edit.${t.seeded.works.spiritedAway}`, 'null');
+    localStorage.setItem(`amdb.draft.edit.${t.seeded.works.spiritedAway}.${t.session.userId}`, 'null');
 
     await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
 
@@ -188,21 +264,115 @@ describe('a saved draft is checked on load', () => {
   });
 });
 
+describe('drafts are kept per contributor', () => {
+  const draftOf = (title: string) => JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title } });
+
+  /** Signs the app in as `userId` (or out, with null), the way a sign-in or sign-out reaches the page. */
+  async function becomes(t: Awaited<ReturnType<typeof renderApp>>, userId: string | null) {
+    t.session.userId = userId;
+    await t.router.options.context.queryClient.invalidateQueries({ queryKey: ['me'] });
+  }
+
+  test("on a shared browser, one person's submit draft is not shown to the next", async () => {
+    const t = await renderApp('/submit', { as: 'contributor' });
+    const first = t.session.userId ?? '';
+    await fillBook(t, 'The Left Hand of Darkness');
+    await waitFor(() => expect(localStorage.getItem(`amdb.draft.submit.${first}`)).toContain('Left Hand'));
+
+    await becomes(t, await t.api.createUser());
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue(''));
+
+    await becomes(t, first);
+    await waitFor(() => expect(screen.getByLabelText('Title')).toHaveValue('The Left Hand of Darkness'));
+  });
+
+  test('a draft written signed out is carried over on signing in', async () => {
+    const t = await renderApp('/submit');
+    await fillBook(t, 'Four Ways to Forgiveness');
+    await waitFor(() => expect(stored()?.fields.title).toBe('Four Ways to Forgiveness'));
+
+    const userId = await t.api.createUser();
+    await becomes(t, userId);
+
+    await waitFor(() => expect(localStorage.getItem(`amdb.draft.submit.${userId}`)).toContain('Four Ways'));
+    expect(screen.getByLabelText('Title')).toHaveValue('Four Ways to Forgiveness');
+    expect(stored()).toBeNull();
+  });
+
+  test('a draft saved before drafts were per contributor still opens, and moves to its new key', async () => {
+    localStorage.setItem('amdb.draft.submit', draftOf('Planet of Exile'));
+    const t = await renderApp('/submit', { as: 'contributor' });
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Planet of Exile');
+    expect(localStorage.getItem('amdb.draft.submit')).toBeNull();
+    expect(localStorage.getItem(`amdb.draft.submit.${t.session.userId}`)).toContain('Planet of Exile');
+  });
+
+  test('so does an edit draft', async () => {
+    const t = await renderApp('/', { as: 'contributor', seed });
+    const id = t.seeded.works.spiritedAway;
+    await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+    const original = await screen.findByLabelText(/^Original title/);
+    await t.user.type(original, 'Sen to Chihiro');
+    const key = `amdb.draft.edit.${id}.${t.session.userId}`;
+    await waitFor(() => expect(localStorage.getItem(key)).toContain('Sen to Chihiro'));
+    await t.router.navigate({ to: '/' });
+    // As an older version kept it: under the entry alone.
+    localStorage.setItem(`amdb.draft.edit.${id}`, localStorage.getItem(key) ?? '');
+    localStorage.removeItem(key);
+
+    await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+
+    expect(await screen.findByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
+    expect(localStorage.getItem(`amdb.draft.edit.${id}`)).toBeNull();
+  });
+});
+
+describe("search's title and a saved draft", () => {
+  test('a saved draft opens, and the title from the address is offered instead of lost', async () => {
+    localStorage.setItem(KEY, JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title: 'Old draft' } }));
+    const t = await renderApp('/submit?title=Zzyzx');
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Old draft');
+    expect(screen.getByText('Your saved draft is open, so “Zzyzx” wasn’t filled in.')).toBeInTheDocument();
+
+    await t.user.click(screen.getByRole('button', { name: 'Start “Zzyzx” instead' }));
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Zzyzx');
+    expect(screen.queryByRole('button', { name: /instead/ })).not.toBeInTheDocument();
+    expect(t.router.state.location.search).toEqual({});
+  });
+
+  test('with no draft the title fills the form, and with a draft of that title nothing is said', async () => {
+    const t = await renderApp('/submit?title=Zzyzx');
+    expect(await screen.findByLabelText('Title')).toHaveValue('Zzyzx');
+    await waitFor(() => expect(stored()?.fields.title).toBe('Zzyzx'));
+    t.view.unmount();
+
+    await renderApp('/submit?title=Zzyzx');
+    expect(await screen.findByLabelText('Title')).toHaveValue('Zzyzx');
+    expect(screen.queryByRole('button', { name: /instead/ })).not.toBeInTheDocument();
+  });
+});
+
 test('a 400 from the API keeps the draft and the form', async () => {
-  const t = await renderApp('/submit');
-  await fillBook(t, 'Rocannon’s World');
-  await t.user.click(screen.getByLabelText(CC0));
-  const real = t.api.app.request.bind(t.api.app);
-  // A 400 from the API for the submission only: the way to make a valid form meet a refusal.
-  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
-    urlOf(input).endsWith('/api/submissions')
-      ? Response.json({ error: { code: 'invalid_fields', message: 'no' } }, { status: 400 })
-      : real(input, init),
+  // A draft naming a tag the catalog doesn't have: the form accepts it, the API refuses it.
+  const ghost = { id: crypto.randomUUID(), title: 'No such tag' };
+  localStorage.setItem(
+    KEY,
+    JSON.stringify({
+      ...emptyForm(),
+      fields: { mediaType: 'book', title: 'Rocannon’s World' },
+      tags: [{ entity: ghost }],
+    }),
   );
+  const t = await renderApp('/submit');
+  await t.user.click(screen.getByLabelText(CC0));
 
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
 
-  expect(await screen.findByRole('alert')).toHaveTextContent("Some of this isn't valid");
+  expect(await screen.findByRole('alert')).toHaveTextContent("An entry named here doesn't exist (any more).");
   expect(screen.getByLabelText('Title')).toHaveValue('Rocannon’s World');
+  expect(within(screen.getByRole('list', { name: 'Tags' })).getByText('No such tag')).toBeInTheDocument();
   await waitFor(() => expect(stored()?.fields.title).toBe('Rocannon’s World'));
 });
