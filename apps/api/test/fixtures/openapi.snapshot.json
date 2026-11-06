@@ -970,6 +970,11 @@
                       "nullable": true,
                       "format": "uuid"
                     },
+                    "importRunId": {
+                      "type": "string",
+                      "nullable": true,
+                      "format": "uuid"
+                    },
                     "changes": {
                       "type": "array",
                       "items": {
@@ -1084,6 +1089,7 @@
                     "note",
                     "createdAt",
                     "authorUserId",
+                    "importRunId",
                     "changes"
                   ]
                 }

@@ -211,17 +211,27 @@ it('a second running run violates import_runs_one_running', async () => {
   try {
     await startRun(t);
     await rejects(
-      t.db
-        .insert(importRuns)
-        .values({
-          source: 'wikidata',
-          params: {},
-          licenseUrl: LICENSE,
-          licenseCheckedOn: '2026-11-05',
-          status: 'running',
-        }),
+      t.db.insert(importRuns).values({
+        source: 'wikidata',
+        params: {},
+        licenseUrl: LICENSE,
+        licenseCheckedOn: '2026-11-05',
+        status: 'running',
+      }),
       'import_runs_one_running',
     );
+  } finally {
+    await t.close();
+  }
+});
+
+it('a moderator reading an imported submission sees its run, and no account', async () => {
+  const { t, mod } = await setup();
+  try {
+    const { id, runId } = await t.importSubmission([film('w', 'Arrival')]);
+    const res = await mod.get(`/api/submissions/${id}`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ id, authorUserId: null, importRunId: runId });
   } finally {
     await t.close();
   }

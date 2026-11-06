@@ -472,6 +472,8 @@ export interface paths {
                             createdAt: string;
                             /** Format: uuid */
                             authorUserId: string | null;
+                            /** Format: uuid */
+                            importRunId: string | null;
                             changes: {
                                 /** Format: uuid */
                                 id: string;

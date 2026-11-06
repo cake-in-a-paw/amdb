@@ -101,8 +101,10 @@ export const SubmissionDetailSchema = z.object({
   id: z.uuid(),
   note: z.string().nullable(),
   createdAt: z.iso.datetime(),
-  /** The account that submitted it; null for an anonymous submission, whose token is never shown. */
+  /** The account that submitted it; null for an anonymous or import-run submission (an anonymous token is never shown). */
   authorUserId: z.uuid().nullable(),
+  /** The import run that wrote it; null for a contributor's submission. */
+  importRunId: z.uuid().nullable(),
   changes: z.array(ChangeSchema),
 });
 

@@ -251,6 +251,7 @@ export function changesRoutes(changes: ChangesService, { trustedProxyHops }: Cha
         note: submission.note,
         createdAt: submission.createdAt.toISOString(),
         authorUserId: submission.authorUserId,
+        importRunId: submission.importRunId,
         changes: rows.map(changeView),
       },
       200,
