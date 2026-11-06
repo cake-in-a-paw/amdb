@@ -297,7 +297,7 @@ test('a failed first load says so and can be retried', async () => {
 });
 
 test('an unrelate then a relate of the same pair (a changed role) approve in queue order', async () => {
-  const { api, session } = await renderApp('/', {
+  const { api, user, router, seeded } = await renderApp('/', {
     as: 'moderator',
     seed: async (a) => {
       const { contributor } = await actors(a);
@@ -318,16 +318,21 @@ test('an unrelate then a relate of the same pair (a changed role) approve in que
       return catalog;
     },
   });
-  const mod = api.as({ kind: 'user', userId: session.userId ?? '' });
-  const queue = (await (await mod.get('/api/moderation/queue')).json()) as {
-    items: { change: { id: string; op: string } }[];
-  };
-  expect(queue.items.map((i) => i.change.op)).toEqual(['unrelate', 'relate']);
+  await router.navigate({ to: '/moderation' });
+  const [removed, added] = await queueItems();
+  expect(removed).toHaveTextContent('Removes a link');
+  expect(added).toHaveTextContent('New link');
 
-  for (const { change } of queue.items) {
-    const res = await mod.post(`/api/changes/${change.id}/approve`);
-    expect(res.status, await res.clone().text()).toBe(200);
-  }
+  // Each from the top of the queue, as a moderator works through it.
+  await user.click(within(removed as HTMLElement).getByRole('button', { name: 'Approve' }));
+  await waitFor(async () => expect(await queueItems()).toHaveLength(1));
+  const [next] = await queueItems();
+  await user.click(within(next as HTMLElement).getByRole('button', { name: 'Approve' }));
+
+  expect(await screen.findByText('Nothing is waiting for review.')).toBeInTheDocument();
+  const entity = await api.as({ kind: 'none' }).get(`/api/entities/${seeded.works.spiritedAway}`);
+  const body = (await entity.json()) as { relations: { creators: { role: string }[] } };
+  expect(body.relations.creators.map((c) => c.role)).toEqual(['producer']);
 });
 
 test('a review dialog traps focus in itself and gives it back to its button when closed', async () => {
@@ -485,3 +490,144 @@ test.each(['Approve', 'Reject'] as const)(
     expect(await screen.findByText('Nothing is waiting for review.')).toBeInTheDocument();
   },
 );
+
+type RequestArgs = Parameters<TestApi['app']['request']>;
+type Answer = Response | 'offline' | null;
+
+/**
+ * Answers the requests `fake` picks (`'offline'` is a network fault) and passes the rest to the
+ * real API (`fake` returns null for those). `real` lets a fake rewrite the API's own answer.
+ */
+function intercept(api: TestApi, fake: (path: string, real: () => Promise<Response>) => Answer | Promise<Answer>) {
+  const request = api.app.request.bind(api.app);
+  return vi.spyOn(api.app, 'request').mockImplementation(async (...args: RequestArgs) => {
+    const [input] = args;
+    const path = new URL(input instanceof Request ? input.url : String(input), 'http://amdb.test').pathname;
+    const answer = await fake(path, () => Promise.resolve(request(...args)));
+    if (answer === 'offline') throw new TypeError('offline');
+    return answer ?? request(...args);
+  });
+}
+
+/** A credit between two live entries, waiting in the queue; returns both ends' ids. */
+async function pendingCredit(a: TestApi) {
+  const { contributor, moderator } = await actors(a);
+  const live = await publish(contributor, moderator, [
+    work('w', 'Arrival'),
+    { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Denis Villeneuve', kind: 'person' } },
+  ]);
+  const [w, c] = live.changes.map((change) => change.entityId ?? '');
+  await submit(contributor, [
+    { op: 'relate', type: 'work_creator', from: { id: w }, to: { id: c }, data: { role: 'director' } },
+  ]);
+  return { work: w ?? '', creator: c ?? '' };
+}
+
+/** Spirited Away's director credit, with an unrelate of it waiting in the queue. */
+async function pendingUnrelate(a: TestApi) {
+  const { contributor } = await actors(a);
+  const catalog = await seed(a);
+  const entity = await a.as({ kind: 'none' }).get(`/api/entities/${catalog.works.spiritedAway}`);
+  const body = (await entity.json()) as { relations: { creators: { relationId: string; role: string }[] } };
+  const credit = body.relations.creators.find((c) => c.role === 'director');
+  await submit(contributor, [{ op: 'unrelate', relationId: credit?.relationId }]);
+  return catalog;
+}
+
+test("an end that can't be loaded says so; only a missing one reads as not published", async () => {
+  const { api, router, seeded } = await renderApp('/', { as: 'moderator', seed: pendingCredit });
+  intercept(api, (path) => {
+    if (path === `/api/entities/${seeded.work}`) return 'offline';
+    if (path === `/api/entities/${seeded.creator}`)
+      return Response.json({ error: { code: 'not_found', message: 'Not found' } }, { status: 404 });
+    return null;
+  });
+
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+
+  await waitFor(() =>
+    expect(item).toHaveTextContent("an entry that couldn't be loaded → an entry that isn't published"),
+  );
+});
+
+test('an edit whose entry can’t be loaded says its “Before” is from when the edit was made', async () => {
+  const { api, router } = await renderApp('/', {
+    as: 'moderator',
+    seed: async (a) => {
+      const { contributor, moderator } = await actors(a);
+      const live = await publish(contributor, moderator, [work('w', 'Arrival')]);
+      await submit(contributor, [
+        { op: 'update', kind: 'work', entityId: live.changes[0]?.entityId, fields: { releaseYear: 2017 } },
+      ]);
+    },
+  });
+  intercept(api, (path) => (path.startsWith('/api/entities/') ? 'offline' : null));
+
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+
+  expect(await within(item as HTMLElement).findByText(/Couldn't load the entry/)).toBeInTheDocument();
+  const row = within(item as HTMLElement)
+    .getByText('Release year')
+    .closest('tr') as HTMLElement;
+  expect(within(row).getByText('2016')).toBeInTheDocument();
+});
+
+test('a failed background reload keeps showing which link an unrelate removes', async () => {
+  const { api, router } = await renderApp('/', { as: 'moderator', seed: pendingUnrelate });
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+  await waitFor(() => expect(item).toHaveTextContent('Credit: Hayao Miyazaki (Director)'));
+
+  intercept(api, (path) => (path.startsWith('/api/entities/') ? 'offline' : null));
+  const queryClient = router.options.context.queryClient;
+  await queryClient.invalidateQueries({ queryKey: ['entity'] });
+  await waitFor(() =>
+    expect(
+      queryClient
+        .getQueryCache()
+        .findAll({ queryKey: ['entity'] })
+        .some((q) => q.state.status === 'error'),
+    ).toBe(true),
+  );
+
+  expect(item).toHaveTextContent('Credit: Hayao Miyazaki (Director)');
+  expect(within(item as HTMLElement).queryByRole('alert')).not.toBeInTheDocument();
+});
+
+test('an unrelate with no entry named claims neither an entry nor that the link is gone', async () => {
+  // The API always names the entry a relation is on; a queue row without one is faked here.
+  const { api, router } = await renderApp('/', { as: 'moderator', seed: pendingUnrelate });
+  intercept(api, async (path, real) => {
+    if (path !== '/api/moderation/queue') return null;
+    const body = (await (await real()).json()) as { items: { change: { entityId: string | null } }[] };
+    for (const entry of body.items) entry.change.entityId = null;
+    return Response.json(body);
+  });
+
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+
+  expect(item).toHaveTextContent('Removes a link');
+  expect(item).not.toHaveTextContent('no longer on the entry');
+  expect(within(item as HTMLElement).queryByRole('status')).not.toBeInTheDocument();
+});
+
+test('an unrelate says so while it loads which link it removes', async () => {
+  const { api, router } = await renderApp('/', { as: 'moderator', seed: pendingUnrelate });
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => (release = resolve));
+  intercept(api, async (path, real) => {
+    if (!path.startsWith('/api/entities/')) return null;
+    await held;
+    return real();
+  });
+
+  await router.navigate({ to: '/moderation' });
+  const [item] = await queueItems();
+
+  expect(within(item as HTMLElement).getByRole('status')).toHaveTextContent('Loading the link…');
+  release();
+  await waitFor(() => expect(item).toHaveTextContent('Credit: Hayao Miyazaki (Director)'));
+});

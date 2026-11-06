@@ -1,9 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
 import { getRouteApi } from '@tanstack/react-router';
 import type { paths } from '@amdb/shared/api';
+import { entryGone } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { record, valueText } from '@/lib/change-text';
-import { describeError } from '@/lib/errors';
+import { errorCause } from '@/lib/errors';
 import { entityQueryOptions, entityTitle } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
 import { fieldLabel, idSchemeLabels, roleLabel, workLinkLabels } from '@/lib/labels';
@@ -31,7 +32,19 @@ export function EntryTitle({ id, titles }: { id: string | null | undefined; titl
   if (known !== undefined) return <span className="font-medium">{known}</span>;
   if (!id) return null;
   if (entity.data) return <span className="font-medium">{entityTitle(entity.data)}</span>;
-  if (entity.isError) return <span className="text-muted-foreground">an entry that isn't published</span>;
+  if (entity.isError) {
+    // Only an answer that there is no such entry means unpublished; a fault says nothing about it.
+    const gone = entryGone(entity.error);
+    return (
+      <span className="text-muted-foreground">
+        {gone === 'removed'
+          ? 'a removed entry'
+          : gone === 'not-found'
+            ? "an entry that isn't published"
+            : "an entry that couldn't be loaded"}
+      </span>
+    );
+  }
   return <span className="text-muted-foreground">…</span>;
 }
 
@@ -79,6 +92,11 @@ function UpdateDiff({ change, titles }: { change: QueuedChange; titles: Titles }
       <p>
         Edit to <EntryTitle id={id} titles={titles} />
       </p>
+      {entity.isError && !entity.data && (
+        <p className="text-sm text-muted-foreground">
+          Couldn't load the entry, so “Before” shows it as it was when the edit was made.
+        </p>
+      )}
       <table className="mt-1 text-sm">
         <thead>
           <tr className="text-left text-muted-foreground">
@@ -140,15 +158,23 @@ function UnrelateDiff({ change, titles }: { change: QueuedChange; titles: Titles
   return (
     <>
       <p>
-        Removes a link from <EntryTitle id={id} titles={titles} />
+        {id ? (
+          <>
+            Removes a link from <EntryTitle id={id} titles={titles} />
+          </>
+        ) : (
+          // With no entry to read, there is nothing to say about which link it is or whether it remains.
+          'Removes a link'
+        )}
       </p>
-      {entity.isPending && id ? (
+      {!id ? null : entity.isPending ? (
         <p role="status" className="text-sm text-muted-foreground">
           Loading the link…
         </p>
-      ) : entity.isError ? (
+      ) : entity.isError && !entity.data ? (
+        // Only a failed first load: a failed background reload keeps the link already shown.
         <div role="alert" className="flex flex-wrap items-center gap-3 text-sm">
-          <p>Couldn't load which link this removes. {describeError(entity.error, '')}</p>
+          <p>Couldn't load which link this removes. {errorCause(entity.error)}</p>
           <Button variant="outline" onClick={() => void entity.refetch()}>
             Try again
           </Button>

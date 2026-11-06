@@ -2,7 +2,7 @@ import { Link } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/lib/api';
-import { describeError } from '@/lib/errors';
+import { errorCause } from '@/lib/errors';
 import { linkClass } from '@/lib/styles';
 
 export function Loading({ what }: { what: string }) {
@@ -18,7 +18,7 @@ export function LoadError({ what, error, onRetry }: { what: string; error: unkno
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 py-6">
       <p>
-        Couldn't load {what}. {describeError(error, '')}
+        Couldn't load {what}. {errorCause(error)}
       </p>
       <Button variant="outline" onClick={onRetry}>
         Try again
