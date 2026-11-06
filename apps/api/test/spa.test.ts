@@ -86,8 +86,11 @@ it('never serves a file outside the dist directory', async () => {
   const t = await setupTest({ webDistDir: dir });
   writeFileSync(join(dir, '..', 'amdb-spa-secret'), 'secret');
   try {
-    for (const path of ['/../amdb-spa-secret', '/%2e%2e/amdb-spa-secret', '/assets/..%2f..%2famdb-spa-secret']) {
+    // Encoded separators survive URL parsing (a bare `/../` is resolved away before the app sees it),
+    // so these reach the static handler as escapes from the dist dir.
+    for (const path of ['/..%2famdb-spa-secret', '/..%5camdb-spa-secret', '/assets/..%2f..%2famdb-spa-secret']) {
       const res = await t.app.request(path);
+      expect(res.status, path).toBe(404);
       expect(await res.text(), path).not.toContain('secret');
     }
   } finally {
