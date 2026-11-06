@@ -55,6 +55,58 @@ it('leaves /api alone, and non-GET requests', async () => {
   }
 });
 
+it('a missing file with an extension is a 404, not the app shell', async () => {
+  const t = await setupTest({ webDistDir: dir });
+  try {
+    for (const path of ['/favicon.ico', '/robots.txt', '/entities/x/logo.png']) {
+      const res = await t.app.request(path);
+      expect(res.status, path).toBe(404);
+      expect(await res.text(), path).not.toContain('<div id="root">');
+    }
+  } finally {
+    await t.close();
+  }
+});
+
+it('answers HEAD for the shell and assets', async () => {
+  const t = await setupTest({ webDistDir: dir });
+  try {
+    for (const path of ['/', '/search', '/assets/app.js']) {
+      const res = await t.app.request(path, { method: 'HEAD' });
+      expect(res.status, path).toBe(200);
+      expect(await res.text(), path).toBe('');
+    }
+    expect((await t.app.request('/favicon.ico', { method: 'HEAD' })).status).toBe(404);
+  } finally {
+    await t.close();
+  }
+});
+
+it('never serves a file outside the dist directory', async () => {
+  const t = await setupTest({ webDistDir: dir });
+  writeFileSync(join(dir, '..', 'amdb-spa-secret'), 'secret');
+  try {
+    for (const path of ['/../amdb-spa-secret', '/%2e%2e/amdb-spa-secret', '/assets/..%2f..%2famdb-spa-secret']) {
+      const res = await t.app.request(path);
+      expect(await res.text(), path).not.toContain('secret');
+    }
+  } finally {
+    rmSync(join(dir, '..', 'amdb-spa-secret'), { force: true });
+    await t.close();
+  }
+});
+
+it('serves /apiary as an app route, not as /api', async () => {
+  const t = await setupTest({ webDistDir: dir });
+  try {
+    const res = await t.app.request('/apiary');
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain('<div id="root">');
+  } finally {
+    await t.close();
+  }
+});
+
 it('without webDistDir, / is the JSON 404', async () => {
   const t = await setupTest();
   try {

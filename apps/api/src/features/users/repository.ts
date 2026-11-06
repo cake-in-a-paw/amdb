@@ -1,5 +1,5 @@
 import type { Role } from '@amdb/shared';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { users } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 
@@ -19,12 +19,15 @@ export function usersRepository(db: DbOrTx) {
     findByEmail(email: string) {
       return db.select(accountColumns).from(users).where(eq(users.email, email));
     },
-    async countOtherAdmins(id: string): Promise<number> {
-      const [row] = await db
-        .select({ n: sql<number>`count(*)::int` })
+    /** Locks every admin row, in id order so concurrent callers can't deadlock; call inside a transaction. */
+    async lockAdminIds(): Promise<string[]> {
+      const rows = await db
+        .select({ id: users.id })
         .from(users)
-        .where(and(eq(users.role, 'admin'), ne(users.id, id)));
-      return row?.n ?? 0;
+        .where(eq(users.role, 'admin'))
+        .orderBy(users.id)
+        .for('update');
+      return rows.map((r) => r.id);
     },
     async setRole(id: string, role: Role): Promise<{ id: string; role: Role } | null> {
       const [row] = await db

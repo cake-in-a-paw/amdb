@@ -30,9 +30,11 @@ export function serveSpa(dir: string) {
     if (skip(c.req.path) || (c.req.method !== 'GET' && c.req.method !== 'HEAD')) return next();
     return serveStatic({ root, onFound: cacheAs('no-cache') })(c, next);
   });
-  // Unknown paths fall back to the app shell, except missing assets, which are plain 404s.
+  // Unknown paths fall back to the app shell, except missing assets and anything else that names a
+  // file (`/favicon.ico`), which are plain 404s. App routes never have a dot: ids are UUIDs.
+  const namesFile = (path: string) => /\.[^/]*$/.test(path);
   app.use('*', async (c, next) => {
-    if (skip(c.req.path) || c.req.path.startsWith('/assets/')) return next();
+    if (skip(c.req.path) || c.req.path.startsWith('/assets/') || namesFile(c.req.path)) return next();
     if (c.req.method !== 'GET' && c.req.method !== 'HEAD') return next();
     return serveStatic({ root, path: 'index.html', onFound: cacheAs('no-cache') })(c, next);
   });

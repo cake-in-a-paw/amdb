@@ -284,6 +284,11 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           if (keys.length === 0) {
             throw badRequest('invalid_fields', `Change ${index + 1} changes no fields`);
           }
+          // Caught here as for a create, or the change could be submitted but never approved.
+          if (change.kind === 'tag' && typeof payload.slug === 'string') {
+            const existing = await repo.findTagBySlug(payload.slug);
+            if (existing && existing !== target.id) throw duplicateSlug(payload.slug, existing);
+          }
           // A reserved entity has no row yet, so there is nothing to record as its base.
           const base = target.dependsOn ? null : await repo.currentFields(change.kind, target.id, keys);
           return {
@@ -319,7 +324,11 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             );
           }
           if (change.type === 'external_id' && change.data.scheme && change.data.value) {
-            const holder = await repo.findExternalIdHolder(change.data.scheme, change.data.value);
+            // An earlier change here that unrelates the holder's id frees it first (moving an id between works).
+            const freed = planned.flatMap((p) =>
+              p.row.op === 'unrelate' && p.row.relationId ? [p.row.relationId] : [],
+            );
+            const holder = await repo.findExternalIdHolder(change.data.scheme, change.data.value, freed);
             if (holder) throw duplicateExternalId(change.data.scheme, change.data.value, holder);
           }
           if (change.type === 'work_creator') {

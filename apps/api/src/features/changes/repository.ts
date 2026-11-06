@@ -1,5 +1,5 @@
 import type { ChangeOp, EntityKind, IdScheme, MediaType } from '@amdb/shared';
-import { and, arrayContains, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, arrayContains, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
   changes,
   creators,
@@ -62,8 +62,8 @@ export function changesRepository(db: DbOrTx) {
       return row?.id ?? null;
     },
 
-    /** The entity that holds an external id (scheme + value) right now. */
-    async findExternalIdHolder(scheme: string, value: string): Promise<string | null> {
+    /** The entity that holds an external id (scheme + value) right now, not counting the relations in `except`. */
+    async findExternalIdHolder(scheme: string, value: string, except: string[] = []): Promise<string | null> {
       const [row] = await db
         .select({ id: relations.fromId })
         .from(relations)
@@ -73,6 +73,7 @@ export function changesRepository(db: DbOrTx) {
             eq(relations.scheme, scheme as IdScheme),
             eq(relations.value, value),
             isNull(relations.removedByChange),
+            except.length ? notInArray(relations.id, except) : undefined,
           ),
         );
       return row?.id ?? null;

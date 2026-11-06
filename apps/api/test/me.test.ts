@@ -60,6 +60,20 @@ it('handles must be 3–30 characters of letters, digits, underscore and hyphen'
   }
 });
 
+it('a missing or non-string handle is 400 invalid_request', async () => {
+  const t = await setupTest();
+  try {
+    const me = t.as({ kind: 'user', userId: await t.createUser() });
+    for (const body of [{}, { handle: 42 }, { handle: true }, { handle: ['ann'] }]) {
+      const res = await me.patch('/api/me', body);
+      expect(res.status, JSON.stringify(body)).toBe(400);
+      expect(await res.json(), JSON.stringify(body)).toMatchObject(error('invalid_request'));
+    }
+  } finally {
+    await t.close();
+  }
+});
+
 it('a taken handle is 409 handle_taken, ignoring case; your own again is fine', async () => {
   const t = await setupTest();
   try {

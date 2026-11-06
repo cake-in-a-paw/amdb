@@ -155,3 +155,24 @@ it('lists a work once, and counts it once toward the cap, when the creator has t
     await t.close();
   }
 });
+
+it('a work with two roles takes one of the 12 slots, so a full group still shows 12 works', async () => {
+  const { t, author, mod, related } = await setup();
+  try {
+    const titles = Array.from({ length: 12 }, (_, i) => `Work ${String(i).padStart(2, '0')}`);
+    const refs = titles.map((_, i) => `w${i}`);
+    const made = await publish(author, mod, [
+      work('Main', 'main'),
+      ...refs.map((r, i) => work(titles[i]!, r)),
+      creator,
+      directed('main'),
+      ...refs.map(directed),
+      // The first work in order also has a writer credit; counted twice, it would push Work 11 out.
+      { ...directed('w0'), data: { role: 'writer' } },
+    ]);
+    const group = (await related(made.changes[0]!.entityId!))!.byCreator[0]!;
+    expect(group.works.map((w) => w.title)).toEqual(titles);
+  } finally {
+    await t.close();
+  }
+});
