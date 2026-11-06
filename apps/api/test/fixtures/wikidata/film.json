@@ -1,0 +1,20 @@
+{
+  "id": "Q100",
+  "labels": { "en": { "language": "en", "value": "The Test Film" } },
+  "descriptions": { "en": { "language": "en", "value": "1999 test film" } },
+  "claims": {
+    "P1476": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P1476", "datavalue": { "type": "monolingualtext", "value": { "text": "Le Film d'essai", "language": "fr" } } } }],
+    "P577": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P577", "datavalue": { "type": "time", "value": { "time": "+1999-03-31T00:00:00Z", "precision": 11 } } } }],
+    "P2047": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P2047", "datavalue": { "type": "quantity", "value": { "amount": "+2", "unit": "http://www.wikidata.org/entity/Q25235" } } } }],
+    "P57": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P57", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q200" } } } }],
+    "P58": [{ "rank": "deprecated", "mainsnak": { "snaktype": "value", "property": "P58", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q201" } } } }],
+    "P272": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P272", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q202" } } } }],
+    "P50": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P50", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q203" } } } }],
+    "P179": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P179", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q300" } } }, "qualifiers": { "P1545": [{ "snaktype": "value", "property": "P1545", "datavalue": { "type": "string", "value": "2" } }] } }],
+    "P8345": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P8345", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q400" } } } }],
+    "P136": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P136", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q500" } } } }],
+    "P144": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P144", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q600" } } } }],
+    "P155": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P155", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q601" } } } }],
+    "P345": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P345", "datavalue": { "type": "string", "value": "tt0123456" } } }]
+  }
+}

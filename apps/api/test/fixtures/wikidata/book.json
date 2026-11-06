@@ -1,0 +1,14 @@
+{
+  "id": "Q700",
+  "labels": { "en": { "language": "en", "value": "The Test Novel" } },
+  "descriptions": { "en": { "language": "en", "value": "a novel" } },
+  "claims": {
+    "P50": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P50", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q203" } } } }],
+    "P57": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P57", "datavalue": { "type": "wikibase-entityid", "value": { "entity-type": "item", "id": "Q200" } } } }],
+    "P1104": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P1104", "datavalue": { "type": "quantity", "value": { "amount": "+320", "unit": "1" } } } }],
+    "P2047": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P2047", "datavalue": { "type": "quantity", "value": { "amount": "+90", "unit": "http://www.wikidata.org/entity/Q7727" } } } }],
+    "P212": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P212", "datavalue": { "type": "string", "value": "978-0-306-40615-7" } } }],
+    "P648": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P648", "datavalue": { "type": "string", "value": "OL123W" } } }],
+    "P345": [{ "rank": "normal", "mainsnak": { "snaktype": "value", "property": "P345", "datavalue": { "type": "string", "value": "nm0000001" } } }]
+  }
+}
