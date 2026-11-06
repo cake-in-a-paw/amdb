@@ -259,6 +259,29 @@ test("a merged id opens the winner's edit form", async () => {
   await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${t.seeded.series.howlsSeries}/edit`));
 });
 
+test('a draft of an entry merged while it was being edited follows it to the winner', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const winner = t.seeded.series.howlsSeries;
+  const { contributor, moderator } = await actors(t.api);
+  const made = await publish(contributor, moderator, [
+    { op: 'create', kind: 'series', ref: 's', fields: { title: 'Howls Castle' } },
+  ]);
+  const loser = made.changes[0]?.entityId ?? '';
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: loser } });
+  await t.user.type(await screen.findByLabelText(/^Description/), 'Two novels by Diana Wynne Jones.');
+  await waitFor(() => expect(stored(`edit.${loser}.${t.session.userId}`)).toContain('Two novels'));
+
+  // A moderator merges the entry while the form is open, and the entry is read again.
+  await publish(contributor, moderator, [{ op: 'merge', kind: 'series', from: loser, into: winner }]);
+  await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', loser] });
+
+  await waitFor(() => expect(t.router.state.location.pathname).toBe(`/entities/${winner}/edit`));
+  expect(await screen.findByLabelText(/^Description/)).toHaveValue('Two novels by Diana Wynne Jones.');
+  // What the contributor never touched is the winner's.
+  expect(screen.getByLabelText('Title')).toHaveValue("Howl's Castle");
+  expect(stored(`edit.${loser}.${t.session.userId}`)).toBeNull();
+});
+
 /** Starts an edit of Spirited Away (so a draft is saved), leaves, lets `meanwhile` change the entry through the API, and reopens the form. */
 async function reopenAfter(
   t: Awaited<ReturnType<typeof renderApp<Awaited<ReturnType<typeof seed>>>>>,

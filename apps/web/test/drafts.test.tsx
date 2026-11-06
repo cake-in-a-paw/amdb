@@ -1,7 +1,7 @@
 import { act, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getAnonToken } from '@/lib/anon';
-import { useDraft } from '@/lib/drafts';
+import { moveDrafts, useDraft } from '@/lib/drafts';
 import { emptyForm } from '@/lib/submission';
 import { renderApp, seed } from './harness';
 
@@ -79,6 +79,22 @@ describe('useDraft', () => {
     localStorage.setItem('amdb.draft.t', '{not json');
 
     expect(renderHook(() => useDraft('t', { n: 0 })).result.current[0]).toEqual({ n: 0 });
+  });
+
+  test("moveDrafts carries every contributor's draft across, and never over one already there", () => {
+    localStorage.setItem('amdb.draft.edit.a.u1', '"one"');
+    localStorage.setItem('amdb.draft.edit.a.u2', '"two"');
+    localStorage.setItem('amdb.draft.edit.ab.u1', '"other entry"');
+    localStorage.setItem('amdb.draft.edit.b.u2', '"already"');
+
+    moveDrafts('edit.a', 'edit.b');
+
+    expect(localStorage.getItem('amdb.draft.edit.b.u1')).toBe('"one"');
+    expect(localStorage.getItem('amdb.draft.edit.a.u1')).toBeNull();
+    expect(localStorage.getItem('amdb.draft.edit.b.u2')).toBe('"already"');
+    // Not dropped: left where it was.
+    expect(localStorage.getItem('amdb.draft.edit.a.u2')).toBe('"two"');
+    expect(localStorage.getItem('amdb.draft.edit.ab.u1')).toBe('"other entry"');
   });
 });
 
