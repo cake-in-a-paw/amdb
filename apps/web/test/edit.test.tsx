@@ -501,3 +501,25 @@ test('removing a link someone else already removed says so, instead of "Try agai
 
   expect(await screen.findByRole('alert')).toHaveTextContent('A link you removed is already gone. Reload the form.');
 });
+
+test('a pending series link counts as a waiting edit on the work, though it is recorded on the series', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  const me = t.api.as({ kind: 'user', userId: t.session.userId! });
+  const made = await me.post('/api/submissions', {
+    cc0: true,
+    changes: [
+      {
+        op: 'relate',
+        type: 'series_work',
+        from: { id: t.seeded.series.howlsSeries },
+        to: { id: t.seeded.works.spiritedAway },
+        data: { position: 3 },
+      },
+    ],
+  });
+  expect(made.status).toBe(201);
+
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.works.spiritedAway } });
+
+  expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
+});

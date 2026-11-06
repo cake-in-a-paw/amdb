@@ -19,11 +19,11 @@ Task 11 items and "Verify on the first real deploy" wait on the owner's live smo
 
 Still open, with the reason:
 
-- **Needs an API change:**
-  - The pending-edits notice misses series-only and property-only edits and reads only the newest 50; `/api/me/submissions` has no `to` end and no filter by entry.
-  - `changeQueryOptions` pages My submissions up to 10 times; there is no author-readable `GET /api/changes/{id}`.
-  - Clearing an optional field on a resubmitted create gives a generic 400; the create resubmit should drop `null` edits.
-  - Reads send an anonymous token; `/api/me/submissions` with no token is a 400, not an empty list.
+- **Closed with API changes, the same day:**
+  - The pending-edits notice now asks `GET /api/me/pending?entityId=`. It counts series and property links and has no 50 cap.
+  - The resubmit page reads `GET /api/changes/{id}`, so it no longer pages through My submissions.
+  - A null edit on a resubmitted create leaves the field out.
+  - A signed-out reader gets no anonymous token until a first write. `/api/me/submissions` with no identity is an empty list.
 - **Rare, costly to close:**
   - An anonymous write in flight when a claim rotates the token lands under the old token.
   - Two tags swapping slugs in one submission is refused at submit.
