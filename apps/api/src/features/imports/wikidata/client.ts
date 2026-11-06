@@ -41,7 +41,6 @@ export interface WikidataEntity {
   labels?: Record<string, { value: string; language?: string }>;
   descriptions?: Record<string, { value: string; language?: string }>;
   claims?: Record<string, Claim[]>;
-  sitelinks?: Record<string, { title: string; site?: string }>;
 }
 
 export interface WikidataClient {
@@ -148,7 +147,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       if (ids.length === 0) return {};
       const params = new URLSearchParams({
         ids: ids.join('|'),
-        props: 'labels|descriptions|claims|sitelinks',
+        props: 'labels|descriptions|claims',
         languages: 'en',
       });
       // Shape follows wbgetentities; `missing` marks absent entities, `redirects` a followed redirect.

@@ -121,10 +121,11 @@ export async function runWikidataImport(
   };
 
   // Run-local memory: entities by QID (found in AMDB or created by this run), fetched reference
-  // items (null when Wikidata didn't return one), and genre tags by slug (null for a slug held by a
+  // items reduced to what planning reads (their mapped fields, and the English label a genre needs;
+  // null when Wikidata didn't return one), and genre tags by slug (null for a slug held by a
   // retracted or removed tag, which can't be reused or recreated).
   const known = new Map<string, Known>();
-  const refEntities = new Map<string, WikidataEntity | null>();
+  const refItems = new Map<string, { ref: ReturnType<typeof mapRef>; label: string | null } | null>();
   const tagIds = new Map<string, string | null>();
   const deferred: DeferredLink[] = [];
   /**
@@ -164,8 +165,7 @@ export async function runWikidataImport(
       if (already) return already.kind === kind ? already.ref : null;
       // Works win: a later candidate becomes a work, so it can't also be created as a reference.
       if (candidateQids.has(qid)) return null;
-      const entity = refEntities.get(qid);
-      const mapped = entity ? mapRef(entity) : null;
+      const mapped = refItems.get(qid)?.ref ?? null;
       if (!mapped) return null;
       const ref = nextRef();
       const description = mapped.description === undefined ? {} : { description: mapped.description };
@@ -180,7 +180,7 @@ export async function runWikidataImport(
       return { ref };
     };
     const tagRef = async (qid: string): Promise<EntityRef | null> => {
-      const label = refEntities.get(qid)?.labels?.en?.value;
+      const label = refItems.get(qid)?.label;
       const tag = label ? genreTag(label) : null;
       // Two genres can share a slug ("drama film", "drama"); the work gets the tag once.
       if (!tag || slugs.has(tag.slug)) return null;
@@ -305,10 +305,13 @@ export async function runWikidataImport(
       await remember([...new Set([...refQids, ...linkQids])].filter((q) => !known.has(q)));
       // Genres are tags, found by slug rather than QID, so they are always fetched (once per run).
       const toFetch = [...new Set([...refQids, ...works.flatMap((r) => r.genres)])].filter(
-        (q) => !known.has(q) && !refEntities.has(q) && !candidateQids.has(q),
+        (q) => !known.has(q) && !refItems.has(q) && !candidateQids.has(q),
       );
       const refs = await fetchEntities(toFetch);
-      for (const q of toFetch) refEntities.set(q, refs[q] ?? null);
+      for (const q of toFetch) {
+        const entity = refs[q];
+        refItems.set(q, entity ? { ref: mapRef(entity), label: entity.labels?.en?.value ?? null } : null);
+      }
 
       for (const [i, c] of batch.entries()) {
         checkpoint();
