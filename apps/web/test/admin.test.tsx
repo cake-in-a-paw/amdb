@@ -1,4 +1,4 @@
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { actors, publish, renderApp, type TestApi } from './harness';
 
@@ -197,4 +197,59 @@ test('redacting a change another admin already redacted says so', async () => {
   await user.click(within(dialog).getByRole('button', { name: 'Redact' }));
 
   expect(await within(dialog).findByText('Someone already removed this change.')).toBeInTheDocument();
+});
+
+test('finding again shows a role changed elsewhere since the last lookup', async () => {
+  const { user, api, seeded } = await renderApp('/admin/users', {
+    as: 'admin',
+    seed: async (a) => ({ id: await a.createUser({ email: 'sam@example.test' }) }),
+  });
+  await user.type(await screen.findByLabelText('Email'), 'sam@example.test');
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+  const before = await screen.findByRole('listitem', { name: /sam@example.test/ });
+  expect(within(before).getByLabelText('Role')).toHaveValue('contributor');
+
+  // Another admin promotes Sam meanwhile.
+  const other = api.as({ kind: 'user', userId: await api.createUser({ role: 'admin' }) });
+  const promoted = await other.post(`/api/admin/users/${seeded.id}/role`, { role: 'moderator' });
+  expect(promoted.status, await promoted.clone().text()).toBe(200);
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+
+  await waitFor(() =>
+    expect(within(screen.getByRole('listitem', { name: /sam@example.test/ })).getByLabelText('Role')).toHaveValue(
+      'moderator',
+    ),
+  );
+});
+
+test('an admin who steps down to moderator is told the page is now closed to them', async () => {
+  const { user, api, session } = await renderApp('/admin/users', { as: 'admin' });
+  // Another admin exists, so stepping down is allowed.
+  await api.createUser({ role: 'admin' });
+  const me = await meOf(api, session.userId ?? '');
+
+  await user.type(await screen.findByLabelText('Email'), me.email);
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+  const row = await screen.findByRole('listitem', { name: new RegExp(me.email) });
+  await user.selectOptions(within(row).getByLabelText('Role'), 'moderator');
+  await user.click(within(row).getByRole('button', { name: 'Save role' }));
+
+  expect(await screen.findByRole('status')).toHaveTextContent("Your role is now moderator, so you can't manage users");
+  expect(screen.queryByRole('heading', { name: 'Not found' })).not.toBeInTheDocument();
+  expect(await meOf(api, session.userId ?? '')).toMatchObject({ role: 'moderator' });
+});
+
+test('Find with no email asks the API nothing', async () => {
+  const { user, api } = await renderApp('/admin/users', { as: 'admin' });
+  const spy = vi.spyOn(api.app, 'request');
+
+  await user.type(await screen.findByLabelText('Email'), '   ');
+  await user.click(screen.getByRole('button', { name: 'Find' }));
+
+  expect(
+    spy.mock.calls.filter(([input]) =>
+      String(input instanceof Request ? input.url : input).includes('/api/admin/users'),
+    ),
+  ).toEqual([]);
+  expect(screen.queryByRole('list', { name: 'Accounts' })).not.toBeInTheDocument();
 });

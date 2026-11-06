@@ -19,6 +19,8 @@ function AdminUsers() {
   const me = useQuery(meQueryOptions(api));
   const emailId = useId();
   const [email, setEmail] = useState('');
+  // The role this admin just gave themselves, so leaving the page reads as that, not as Not found.
+  const [steppedDown, setSteppedDown] = useState<Role | null>(null);
   // The API takes an exact email, so there is nothing to list until one is asked for.
   const find = useMutation({
     mutationFn: async (address: string) =>
@@ -27,8 +29,19 @@ function AdminUsers() {
 
   if (me.isPending) return <Loading what="your account" />;
   if (me.isError) return <LoadError what="your account" error={me.error} onRetry={() => void me.refetch()} />;
+  if (steppedDown && me.data?.role === steppedDown) {
+    return (
+      <div className="max-w-3xl py-10">
+        <h1 className="font-serif text-3xl font-semibold">Users</h1>
+        <p role="status" className="mt-4">
+          Your role is now {steppedDown}, so you can't manage users any more.
+        </p>
+      </div>
+    );
+  }
   // Only admins may ask; to everyone else this page doesn't exist.
   if (me.data?.role !== 'admin') return <NotFound what="page" />;
+  const myId = me.data.id;
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -66,7 +79,14 @@ function AdminUsers() {
         ) : (
           <ul aria-label="Accounts" className="mt-4">
             {find.data.items.map((account) => (
-              <UserRow key={account.id} account={account} />
+              // Keyed by role too: a new lookup that finds the role changed elsewhere starts the row afresh.
+              <UserRow
+                key={`${account.id}:${account.role}`}
+                account={account}
+                onSaved={(role) => {
+                  if (account.id === myId && role !== 'admin') setSteppedDown(role);
+                }}
+              />
             ))}
           </ul>
         ))}
@@ -74,7 +94,7 @@ function AdminUsers() {
   );
 }
 
-function UserRow({ account }: { account: Account }) {
+function UserRow({ account, onSaved }: { account: Account; onSaved: (role: Role) => void }) {
   const { api, queryClient } = Route.useRouteContext();
   const roleId = useId();
   const [role, setRole] = useState<Role>(account.role);
@@ -84,7 +104,10 @@ function UserRow({ account }: { account: Account }) {
         await api.POST('/api/admin/users/{id}/role', { params: { path: { id: account.id } }, body: { role: next } }),
       ),
     // A role changed here may be the signed-in admin's own.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: meQueryOptions(api).queryKey }),
+    onSuccess: (saved) => {
+      onSaved(saved.role);
+      return queryClient.invalidateQueries({ queryKey: meQueryOptions(api).queryKey });
+    },
   });
 
   return (
