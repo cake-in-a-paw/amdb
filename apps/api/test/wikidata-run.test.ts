@@ -1,6 +1,7 @@
 import { and, count, eq, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
+import { createImportsService } from '../src/features/imports/service';
 import { runWikidataImport } from '../src/features/imports/wikidata/run.js';
 import {
   changes as changesTable,
@@ -757,6 +758,81 @@ it('a candidate AMDB already holds as another kind is skipped as held_as_other a
     });
     expect(lines.some((l) => l.includes('Q9') && l.includes('series'))).toBe(true);
     expect(await t.db.select().from(works)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('one run at a time: a second concurrent run is refused before it records a run', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), { Q1: film('Q1', 'One'), Q2: film('Q2', 'Two') });
+    const deps = { db: t.db, client, measureBytes: bytes(), today: TODAY };
+    const results = await Promise.allSettled([runWikidataImport(deps, OPTS), runWikidataImport(deps, OPTS)]);
+    const done = results.filter((r) => r.status === 'fulfilled');
+    const refused = results.filter((r) => r.status === 'rejected');
+    expect(done).toHaveLength(1);
+    expect(refused).toHaveLength(1);
+    expect(String((refused[0] as PromiseRejectedResult).reason)).toMatch(/another import run is already running/);
+    expect((await t.db.select({ n: count() }).from(importRuns))[0]!.n).toBe(1);
+    expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(2);
+  } finally {
+    await t.close();
+  }
+});
+
+it('an abort stops the run between batches and finishes it failed with "interrupted"', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2', 'Q3'), {
+      Q1: film('Q1', 'One'),
+      Q2: film('Q2', 'Two'),
+      Q3: film('Q3', 'Three'),
+    });
+    const controller = new AbortController();
+    let calls = 0;
+    // Call 1 is bytesStart, call 2 precedes batch 1; the operator presses Ctrl-C during batch 1.
+    const measureBytes = async () => {
+      if (++calls === 3) controller.abort();
+      return 1000;
+    };
+    const result = await runWikidataImport(
+      { db: t.db, client, measureBytes, today: TODAY, signal: controller.signal },
+      { ...OPTS, batchSize: 1 },
+    );
+    expect(result.status).toBe('failed');
+    expect(result.stats).toMatchObject({ imported: 1, stoppedAt: 1 });
+    const run = (await (await t.as({ kind: 'none' }).get(`/api/import-runs/${result.runId}`)).json()) as {
+      status: string;
+      error: string | null;
+    };
+    expect(run).toMatchObject({ status: 'failed', error: 'interrupted' });
+    expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(1);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a run whose row was closed under it stops with run_not_running instead of skipping every work', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), { Q1: film('Q1', 'One'), Q2: film('Q2', 'Two') });
+    let calls = 0;
+    // Before batch 1, something else (an operator's manual fix) marks the run failed.
+    const measureBytes = async () => {
+      if (++calls === 2) {
+        const [run] = await t.db.select({ id: importRuns.id }).from(importRuns);
+        await createImportsService(t.db).finishRun(run!.id, { status: 'failed', stats: {}, error: 'closed by hand' });
+      }
+      return 1000;
+    };
+    await expect(runWikidataImport({ db: t.db, client, measureBytes, today: TODAY }, OPTS)).rejects.toMatchObject({
+      code: 'run_not_running',
+    });
+    expect(await t.db.select().from(works)).toEqual([]);
+    // The hand-recorded outcome stands.
+    const [run] = await t.db.select().from(importRuns);
+    expect(run).toMatchObject({ status: 'failed', error: 'closed by hand' });
   } finally {
     await t.close();
   }

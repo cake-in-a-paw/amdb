@@ -15,5 +15,6 @@ CREATE TABLE "import_runs" (
 --> statement-breakpoint
 ALTER TABLE "submissions" DROP CONSTRAINT "submissions_one_author";--> statement-breakpoint
 ALTER TABLE "submissions" ADD COLUMN "import_run_id" uuid;--> statement-breakpoint
+CREATE UNIQUE INDEX "import_runs_one_running" ON "import_runs" USING btree ("status") WHERE "import_runs"."status" = 'running';--> statement-breakpoint
 ALTER TABLE "submissions" ADD CONSTRAINT "submissions_import_run_id_import_runs_id_fk" FOREIGN KEY ("import_run_id") REFERENCES "public"."import_runs"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "submissions" ADD CONSTRAINT "submissions_one_author" CHECK (num_nonnulls("submissions"."author_user_id", "submissions"."anon_hash", "submissions"."import_run_id") = 1);

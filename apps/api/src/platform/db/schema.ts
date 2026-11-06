@@ -244,6 +244,10 @@ export const importRuns = pgTable(
   (t) => [
     check('import_runs_status', sql`${t.status} IN ('running', 'finished', 'failed', 'capped')`),
     check('import_runs_finished', sql`(${t.status} = 'running') = (${t.finishedAt} IS NULL)`),
+    // One run at a time: two concurrent runs would race on the same QIDs.
+    uniqueIndex('import_runs_one_running')
+      .on(t.status)
+      .where(sql`${t.status} = 'running'`),
   ],
 );
 

@@ -42,9 +42,18 @@ async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
   const { db, close } = await openDb(url);
+  // Ctrl-C or a SIGTERM finishes the run as failed ("interrupted") after the current work; a second one quits at once.
+  const controller = new AbortController();
+  const onSignal = () => {
+    if (controller.signal.aborted) process.exit(130);
+    log('interrupting after the current work (press again to quit now)');
+    controller.abort();
+  };
+  process.on('SIGINT', onSignal);
+  process.on('SIGTERM', onSignal);
   try {
     const { status, stats, runId } = await runWikidataImport(
-      { db, client: createWikidataClient({ fetch }), log },
+      { db, client: createWikidataClient({ fetch }), log, signal: controller.signal },
       args,
     );
     process.stdout.write(`${JSON.stringify({ runId, status, ...stats })}\n`);

@@ -28,7 +28,13 @@ export function importsRepository(db: DbOrTx) {
       await db
         .update(importRuns)
         .set({ ...outcome, finishedAt: new Date() })
-        .where(eq(importRuns.id, id));
+        // A finished run's outcome stands; finishing it again is a no-op.
+        .where(and(eq(importRuns.id, id), eq(importRuns.status, 'running')));
+    },
+
+    async findRunning(): Promise<{ id: string } | null> {
+      const [row] = await db.select({ id: importRuns.id }).from(importRuns).where(eq(importRuns.status, 'running'));
+      return row ?? null;
     },
 
     async getRun(id: string): Promise<ImportRunRow | null> {

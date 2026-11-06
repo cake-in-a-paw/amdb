@@ -1,5 +1,5 @@
 {
-  "id": "e4fde010-75cd-433a-b921-3ab3bb1b2c83",
+  "id": "79b506df-f272-44c6-8fd1-1a99656fe6b8",
   "prevId": "e5498436-ad54-4a93-93b6-d1b8b0fe920c",
   "version": "7",
   "dialect": "postgresql",
@@ -901,7 +901,24 @@
           "notNull": false
         }
       },
-      "indexes": {},
+      "indexes": {
+        "import_runs_one_running": {
+          "name": "import_runs_one_running",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"import_runs\".\"status\" = 'running'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},

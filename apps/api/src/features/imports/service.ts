@@ -1,8 +1,14 @@
 import type { ImportSource } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
-import { notFound } from '../../platform/http/errors';
+import { conflict, isUniqueViolation, notFound } from '../../platform/http/errors';
 import { importsRepository } from './repository';
 import type { ImportStats } from './schemas';
+
+const alreadyRunning = (id?: string) =>
+  conflict(
+    'run_in_progress',
+    `another import run is already running${id ? ` (${id})` : ''}; wait for it, or see docs/import.md if it died`,
+  );
 
 export function createImportsService(db: Db) {
   const repo = importsRepository(db);
@@ -15,7 +21,15 @@ export function createImportsService(db: Db) {
       /** `YYYY-MM-DD`. */
       licenseCheckedOn: string;
     }) {
-      return repo.insertRun(run);
+      // One run at a time; the partial unique index import_runs_one_running settles a race.
+      const running = await repo.findRunning();
+      if (running) throw alreadyRunning(running.id);
+      try {
+        return await repo.insertRun(run);
+      } catch (err) {
+        if (isUniqueViolation(err)) throw alreadyRunning();
+        throw err;
+      }
     },
 
     async finishRun(

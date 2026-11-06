@@ -22,6 +22,7 @@ import {
 } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
 import { normalizeTitle } from '../catalog/normalize';
+import { createImportsService } from '../imports/service';
 import { anonHashOf, isAdmin, isModerator } from '../users/identity';
 import {
   applyChange,
@@ -530,6 +531,9 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
      * reviewer. One transaction, so a change that fails to apply leaves nothing of it behind.
      */
     async importSubmission(runId: string, changes: ChangeInput[]) {
+      // An unknown run is a 404; a finished one takes no more work (say, after an interrupt).
+      const run = await createImportsService(db).getRun(runId);
+      if (run.status !== 'running') throw conflict('run_not_running', `import run ${runId} is ${run.status}`);
       const items = await plan(
         IMPORTER,
         changes.map((change) => ({ change })),

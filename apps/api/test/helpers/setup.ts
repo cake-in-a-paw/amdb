@@ -54,19 +54,27 @@ export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
     await db.insert(users).values({ id, email: email ?? `${id}@example.test`, name, role });
     return id;
   };
-  /** Starts a Wikidata run and writes `changes` as one of its submissions, the way the importer does. */
+  /**
+   * Starts a Wikidata run, writes `changes` as one of its submissions the way the importer does, and
+   * finishes the run (only one may be running at a time).
+   */
   const importSubmission = async (changes: unknown[], params: Record<string, unknown> = {}) => {
-    const { id: runId } = await createImportsService(db).startRun({
+    const imports = createImportsService(db);
+    const { id: runId } = await imports.startRun({
       source: 'wikidata',
       params,
       licenseUrl: 'https://www.wikidata.org/wiki/Wikidata:Licensing',
       licenseCheckedOn: '2026-11-05',
     });
-    const created = await createChangesService(db).importSubmission(
-      runId,
-      changes.map((c) => ChangeInput.parse(c)),
-    );
-    return { runId, ...created };
+    try {
+      const created = await createChangesService(db).importSubmission(
+        runId,
+        changes.map((c) => ChangeInput.parse(c)),
+      );
+      return { runId, ...created };
+    } finally {
+      await imports.finishRun(runId, { status: 'finished', stats: {} });
+    }
   };
   return { app, db, close, as, createUser, importSubmission };
 }

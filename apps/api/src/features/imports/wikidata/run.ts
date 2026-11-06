@@ -49,6 +49,8 @@ export interface RunDeps {
   measureBytes?: () => Promise<number>;
   today?: Date;
   log?: (line: string) => void;
+  /** Aborting stops the run before its next batch or work and finishes it `failed`, "interrupted". */
+  signal?: AbortSignal;
 }
 
 export interface RunOptions {
@@ -74,8 +76,17 @@ type CreatedKey = { index: number; qid: string; kind: EntityKind } | { index: nu
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-/** A 4xx from planning or applying: about this one item, never the run. */
-const isItemError = (err: unknown): err is ApiError => err instanceof ApiError && err.status < 500;
+/** A 4xx from planning or applying: about this one item, never the run (a closed run stops it). */
+const isItemError = (err: unknown): err is ApiError =>
+  err instanceof ApiError && err.status < 500 && err.code !== 'run_not_running';
+
+const INTERRUPTED = 'interrupted';
+/** Thrown at a checkpoint once the run's signal has aborted. */
+class Interrupted extends Error {
+  constructor() {
+    super(INTERRUPTED);
+  }
+}
 
 export async function runWikidataImport(
   deps: RunDeps,
@@ -87,6 +98,9 @@ export async function runWikidataImport(
   const today = deps.today ?? new Date();
   const log = deps.log ?? (() => {});
   const batchSize = opts.batchSize ?? 50;
+  const checkpoint = () => {
+    if (deps.signal?.aborted) throw new Interrupted();
+  };
 
   const { id: runId } = await imports.startRun({
     source: 'wikidata',
@@ -259,6 +273,7 @@ export async function runWikidataImport(
     const candidates = discovered.slice(0, opts.limit);
     stats.candidates = candidates.length;
     log(`${candidates.length} candidates`);
+    checkpoint();
 
     for (let start = 0; start < candidates.length; start += batchSize) {
       const bytes = await measure();
@@ -266,6 +281,7 @@ export async function runWikidataImport(
         log(`capped at ${bytes} bytes before rank ${start + 1}`);
         return 'capped' as const;
       }
+      checkpoint();
       const batch = candidates.slice(start, start + batchSize);
       await remember(batch.map((c) => c.qid));
       // A reverted work loses its live wikidata id, so `known` can't see it; it still counts as present.
@@ -295,6 +311,7 @@ export async function runWikidataImport(
       for (const q of toFetch) refEntities.set(q, refs[q] ?? null);
 
       for (const [i, c] of batch.entries()) {
+        checkpoint();
         const record = records.get(c.qid);
         const held = known.get(c.qid);
         // A removed holder of any kind counts as present: a removal must stick.
@@ -316,6 +333,8 @@ export async function runWikidataImport(
   async function addDeferredLinks() {
     await remember([...new Set(deferred.map((l) => l.toQid))].filter((q) => !known.has(q)));
     for (const link of deferred) {
+      // An interrupted run stops here too; the links it didn't add are just missing.
+      if (deps.signal?.aborted) return;
       const target = known.get(link.toQid);
       if (!target?.live || target.kind !== 'work') continue;
       try {
@@ -351,14 +370,18 @@ export async function runWikidataImport(
   try {
     status = await importCandidates();
   } catch (err) {
-    if (!(err instanceof WikidataUnavailable)) {
+    // Committed works stay; the run records why it stopped.
+    if (err instanceof Interrupted) {
+      status = 'failed';
+      error = INTERRUPTED;
+    } else if (err instanceof WikidataUnavailable) {
+      status = 'failed';
+      error = err.message;
+      log(`failed: ${err.message} (${err.url})`);
+    } else {
       await fail(err);
       throw err;
     }
-    // Committed works stay; the run records why it stopped.
-    status = 'failed';
-    error = err.message;
-    log(`failed: ${err.message} (${err.url})`);
   }
   try {
     // Links among works already committed need nothing from Wikidata, so a failed run adds them too.
@@ -369,6 +392,11 @@ export async function runWikidataImport(
     await fail(err);
     throw err;
   }
+  if (deps.signal?.aborted && status !== 'failed') {
+    status = 'failed';
+    error = INTERRUPTED;
+  }
+  if (error === INTERRUPTED) log('interrupted');
   await imports.finishRun(runId, { status, stats, ...(error === undefined ? {} : { error }) });
   return { runId, status, stats };
 }

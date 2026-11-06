@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { count, eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
+import { createChangesService } from '../src/features/changes/service';
+import { ChangeInput } from '../src/features/changes/schemas';
+import { createImportsService } from '../src/features/imports/service';
 import { importRuns, submissions, works } from '../src/platform/db/schema';
 import { setupTest } from './helpers/setup';
 
@@ -125,14 +128,15 @@ it('GET /api/import-runs/{id} is public and 404s for an unknown id', async () =>
     expect(await res.json()).toEqual({
       id: runId,
       source: 'wikidata',
-      status: 'running',
+      // The helper finishes its run once the submission is in, as the importer does.
+      status: 'finished',
       params: { classes: ['Q11424'] },
       licenseUrl: LICENSE,
       licenseCheckedOn: '2026-11-05',
       stats: {},
       error: null,
       startedAt: expect.any(String),
-      finishedAt: null,
+      finishedAt: expect.any(String),
     });
     expect((await anon.get(`/api/import-runs/${randomUUID()}`)).status).toBe(404);
   } finally {
@@ -161,6 +165,63 @@ it('a submission with no author, or with two authors, violates submissions_one_a
     await rejects(t.db.insert(submissions).values({ importRunId, authorUserId: userId }), 'submissions_one_author');
     await rejects(t.db.insert(submissions).values({ importRunId, anonHash: 'h' }), 'submissions_one_author');
     await rejects(t.db.insert(submissions).values({ authorUserId: userId, anonHash: 'h' }), 'submissions_one_author');
+  } finally {
+    await t.close();
+  }
+});
+
+const startRun = (t: Awaited<ReturnType<typeof setupTest>>) =>
+  createImportsService(t.db).startRun({
+    source: 'wikidata',
+    params: {},
+    licenseUrl: LICENSE,
+    licenseCheckedOn: '2026-11-05',
+  });
+
+it('finishing a run that already finished changes nothing', async () => {
+  const { t } = await setup();
+  try {
+    const imports = createImportsService(t.db);
+    const { id } = await startRun(t);
+    await imports.finishRun(id, { status: 'finished', stats: { imported: 3 } });
+    await imports.finishRun(id, { status: 'failed', stats: {}, error: 'late' });
+    expect(await imports.getRun(id)).toMatchObject({ status: 'finished', stats: { imported: 3 }, error: null });
+  } finally {
+    await t.close();
+  }
+});
+
+it('an import submission to a run that isn’t running is a 409 run_not_running; to an unknown run, a 404', async () => {
+  const { t } = await setup();
+  try {
+    const { id } = await startRun(t);
+    await createImportsService(t.db).finishRun(id, { status: 'failed', stats: {}, error: 'interrupted' });
+    const changes = createChangesService(t.db);
+    const input = [ChangeInput.parse(film('w', 'Arrival'))];
+    await expect(changes.importSubmission(id, input)).rejects.toMatchObject({ status: 409, code: 'run_not_running' });
+    await expect(changes.importSubmission(randomUUID(), input)).rejects.toMatchObject({ status: 404 });
+    expect(await t.db.select().from(works)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a second running run violates import_runs_one_running', async () => {
+  const { t } = await setup();
+  try {
+    await startRun(t);
+    await rejects(
+      t.db
+        .insert(importRuns)
+        .values({
+          source: 'wikidata',
+          params: {},
+          licenseUrl: LICENSE,
+          licenseCheckedOn: '2026-11-05',
+          status: 'running',
+        }),
+      'import_runs_one_running',
+    );
   } finally {
     await t.close();
   }
