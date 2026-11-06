@@ -118,6 +118,21 @@ describe('mapWork', () => {
     expect(ok(mapWork(withClaims(series(null)), FILM, TODAY)).series).toEqual([]);
   });
 
+  it('a series position must fit a Postgres integer', () => {
+    const series = (ordinal: string): Record<string, Claim[]> => ({
+      P179: [
+        {
+          mainsnak: { snaktype: 'value', datavalue: { value: { 'entity-type': 'item', id: 'Q300' } } },
+          qualifiers: { P1545: [{ snaktype: 'value', datavalue: { value: ordinal } }] },
+        },
+      ],
+    });
+    expect(ok(mapWork(withClaims(series('2147483647')), FILM, TODAY)).series).toEqual([
+      { qid: 'Q300', position: 2147483647 },
+    ]);
+    expect(ok(mapWork(withClaims(series('2147483648')), FILM, TODAY)).series).toEqual([]);
+  });
+
   it('skips a missing English label and a 501-character label', () => {
     expect(mapWork({ id: 'Q1', labels: { fr: { value: 'Chose' } } }, FILM, TODAY)).toEqual({ skip: 'no_title' });
     expect(mapWork({ id: 'Q1', labels: { en: { value: 'x'.repeat(501) } } }, FILM, TODAY)).toEqual({

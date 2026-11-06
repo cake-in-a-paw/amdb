@@ -30,6 +30,8 @@ export interface WorkRecord {
 
 const MAX_TITLE = 500;
 const MAX_DESCRIPTION = 5000;
+/** `relations.position` is a Postgres integer. */
+const MAX_POSITION = 2147483647;
 
 const FILM_TV_ROLES: Record<string, FilmTvRole> = {
   P57: 'director',
@@ -194,7 +196,7 @@ function seriesLinks(entity: WikidataEntity): { qid: string; position: number }[
       .map(stringValue)
       .find((s): s is string => s !== null && /^\d+$/.test(s));
     const position = ordinal ? Number(ordinal) : 0;
-    if (position > 0) out.push({ qid, position });
+    if (position > 0 && position <= MAX_POSITION) out.push({ qid, position });
   }
   return out;
 }

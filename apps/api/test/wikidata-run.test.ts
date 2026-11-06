@@ -611,3 +611,64 @@ it('any other error finishes the run failed with its message and is rethrown', a
     await t.close();
   }
 });
+
+it('one QID named in two roles of different kinds keeps the first and drops the other', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Auteur Piece', { director: 'Q200', franchise: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ invalid: 0 }) });
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'work_creator'))).toHaveLength(1);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'property_work'))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('works win: a reference to a QID that is a later candidate is dropped, and that candidate imports as a work', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q400'), {
+      Q1: film('Q1', 'Spin-off', { series: { qid: 'Q400', ordinal: '1' } }),
+      Q400: film('Q400', 'The Saga'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({
+      imported: 2,
+      skipped: expect.objectContaining({ duplicate_external_id: 0, invalid: 0 }),
+    });
+    expect(await workIdByTitle(t.db, 'Spin-off')).toBeDefined();
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'The Saga'))!)).toEqual(['wikidata:Q400']);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('if recording the failure fails too, the original error is the one thrown', async () => {
+  const t = await setupTest();
+  let closed = false;
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'One') });
+    let calls = 0;
+    // The database goes away along with the measure, so finishRun can't write the failure either.
+    const measureBytes = async () => {
+      if (++calls === 2) {
+        await t.close();
+        closed = true;
+        throw new Error('disk gone');
+      }
+      return 1000;
+    };
+    const lines: string[] = [];
+    await expect(
+      runWikidataImport({ db: t.db, client, measureBytes, today: TODAY, log: (l) => lines.push(l) }, OPTS),
+    ).rejects.toThrow('disk gone');
+    expect(lines.some((l) => l.includes('could not record'))).toBe(true);
+  } finally {
+    if (!closed) await t.close();
+  }
+});

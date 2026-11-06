@@ -103,6 +103,8 @@ export async function runWikidataImport(
   const refEntities = new Map<string, WikidataEntity | null>();
   const tagIds = new Map<string, string | null>();
   const deferred: DeferredLink[] = [];
+  /** Every candidate in this run (after `limit`). */
+  let candidateQids = new Set<string>();
 
   async function fetchEntities(qids: string[]) {
     const out: Record<string, WikidataEntity> = {};
@@ -121,7 +123,7 @@ export async function runWikidataImport(
     const relates: ChangeInput[] = [];
     const created: CreatedKey[] = [{ index: 0, qid: rec.qid, kind: 'work' }];
     const work: EntityRef = { ref: 'w' };
-    const local = new Map<string, EntityRef>();
+    const local = new Map<string, { ref: EntityRef; kind: RefKind }>();
     const slugs = new Set<string>();
 
     const nextRef = () => `r${creates.length}`;
@@ -131,7 +133,10 @@ export async function runWikidataImport(
       // keep the work. A removed entity is never recreated: its wikidata id is still taken.
       if (found) return found.live && found.kind === kind ? { id: found.id } : null;
       const already = local.get(qid);
-      if (already) return already;
+      // One QID in two roles of different kinds (creator and franchise): the first one stands.
+      if (already) return already.kind === kind ? already.ref : null;
+      // Works win: a later candidate becomes a work, so it can't also be created as a reference.
+      if (candidateQids.has(qid)) return null;
       const entity = refEntities.get(qid);
       const mapped = entity ? mapRef(entity) : null;
       if (!mapped) return null;
@@ -144,7 +149,7 @@ export async function runWikidataImport(
       created.push({ index: creates.length, qid, kind });
       creates.push({ op: 'create', kind, ref, fields });
       relates.push({ op: 'relate', type: 'external_id', from: { ref }, data: { scheme: 'wikidata', value: qid } });
-      local.set(qid, { ref });
+      local.set(qid, { ref: { ref }, kind });
       return { ref };
     };
     const tagRef = async (qid: string): Promise<EntityRef | null> => {
@@ -238,6 +243,7 @@ export async function runWikidataImport(
     stats.bytesStart = await measure();
     const candidates = (await discover(deps.client, opts)).slice(0, opts.limit);
     stats.candidates = candidates.length;
+    candidateQids = new Set(candidates.map((c) => c.qid));
     log(`${candidates.length} candidates`);
 
     for (let start = 0; start < candidates.length; start += batchSize) {
@@ -267,7 +273,7 @@ export async function runWikidataImport(
       await remember([...new Set([...refQids, ...linkQids])].filter((q) => !known.has(q)));
       // Genres are tags, found by slug rather than QID, so they are always fetched (once per run).
       const toFetch = [...new Set([...refQids, ...works.flatMap((r) => r.genres)])].filter(
-        (q) => !known.has(q) && !refEntities.has(q),
+        (q) => !known.has(q) && !refEntities.has(q) && !candidateQids.has(q),
       );
       const refs = await fetchEntities(toFetch);
       for (const q of toFetch) refEntities.set(q, refs[q] ?? null);
@@ -311,7 +317,12 @@ export async function runWikidataImport(
   }
 
   const fail = async (err: unknown) => {
-    await imports.finishRun(runId, { status: 'failed', stats, error: errorMessage(err) });
+    try {
+      await imports.finishRun(runId, { status: 'failed', stats, error: errorMessage(err) });
+    } catch (finishErr) {
+      // Not swallowed: the caller rethrows `err`, the error that actually stopped the run.
+      log(`could not record the failure of run ${runId}: ${errorMessage(finishErr)}`);
+    }
   };
 
   let status: RunStatus;

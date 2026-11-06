@@ -27,7 +27,8 @@ export const ChangeInput = z.discriminatedUnion('op', [
     data: z
       .object({
         role: z.string(),
-        position: z.number().int().min(1),
+        // `relations.position` is a Postgres integer.
+        position: z.number().int().min(1).max(2147483647),
         linkType: WorkLinkType,
         scheme: IdScheme,
         value: z.string(),

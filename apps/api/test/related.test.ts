@@ -176,3 +176,22 @@ it('a work with two roles takes one of the 12 slots, so a full group still shows
     await t.close();
   }
 });
+
+it('a series position beyond a Postgres integer is a 400, not a 500', async () => {
+  const t = await setupTest();
+  try {
+    const user = t.as({ kind: 'user', userId: await t.createUser() });
+    const res = await user.post('/api/submissions', {
+      cc0: true,
+      changes: [work('Arrival', 'w'), series, inSeries('w', 2147483648)],
+    });
+    expect(res.status).toBe(400);
+    const ok = await user.post('/api/submissions', {
+      cc0: true,
+      changes: [work('Arrival', 'w'), series, inSeries('w', 2147483647)],
+    });
+    expect(ok.status, await ok.clone().text()).toBe(201);
+  } finally {
+    await t.close();
+  }
+});

@@ -42,6 +42,7 @@ export function importsRepository(db: DbOrTx) {
           qid: relations.value,
           id: entities.id,
           kind: entities.kind,
+          // A merged loser stays live: planning resolves it to its winner.
           live: sql<boolean>`${entities.removedAt} IS NULL AND ${entities.retractedByChange} IS NULL`,
         })
         .from(relations)
