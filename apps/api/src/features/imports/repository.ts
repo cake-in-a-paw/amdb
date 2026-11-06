@@ -7,7 +7,12 @@ export type ImportRunRow = typeof importRuns.$inferSelect;
 
 export function importsRepository(db: DbOrTx) {
   return {
-    async insertRun(run: { source: ImportSource; params: Record<string, unknown>; licenseUrl: string }) {
+    async insertRun(run: {
+      source: ImportSource;
+      params: Record<string, unknown>;
+      licenseUrl: string;
+      licenseCheckedOn: string;
+    }) {
       const [row] = await db
         .insert(importRuns)
         .values({ ...run, status: 'running' })

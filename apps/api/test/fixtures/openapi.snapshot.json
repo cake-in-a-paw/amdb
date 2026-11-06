@@ -4376,6 +4376,10 @@
                     "licenseUrl": {
                       "type": "string"
                     },
+                    "licenseCheckedOn": {
+                      "type": "string",
+                      "format": "date"
+                    },
                     "stats": {
                       "type": "object",
                       "additionalProperties": {
@@ -4402,6 +4406,7 @@
                     "status",
                     "params",
                     "licenseUrl",
+                    "licenseCheckedOn",
                     "stats",
                     "error",
                     "startedAt",

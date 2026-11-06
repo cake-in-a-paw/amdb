@@ -15,6 +15,8 @@ export const ImportRunSchema = z.object({
   params: z.record(z.string(), z.unknown()),
   /** The evidence that the source is CC0. */
   licenseUrl: z.string(),
+  /** The day `licenseUrl` was last confirmed to say CC0. */
+  licenseCheckedOn: z.iso.date(),
   stats: ImportStats,
   error: z.string().nullable(),
   startedAt: z.iso.datetime(),

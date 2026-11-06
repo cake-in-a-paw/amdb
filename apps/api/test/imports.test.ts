@@ -128,6 +128,7 @@ it('GET /api/import-runs/{id} is public and 404s for an unknown id', async () =>
       status: 'running',
       params: { classes: ['Q11424'] },
       licenseUrl: LICENSE,
+      licenseCheckedOn: '2026-11-05',
       stats: {},
       error: null,
       startedAt: expect.any(String),
@@ -145,7 +146,13 @@ it('a submission with no author, or with two authors, violates submissions_one_a
     const userId = await t.createUser();
     const [run] = await t.db
       .insert(importRuns)
-      .values({ source: 'wikidata', params: {}, licenseUrl: LICENSE, status: 'running' })
+      .values({
+        source: 'wikidata',
+        params: {},
+        licenseUrl: LICENSE,
+        licenseCheckedOn: '2026-11-05',
+        status: 'running',
+      })
       .returning({ id: importRuns.id });
     const importRunId = run!.id;
     // The run alone is an author.

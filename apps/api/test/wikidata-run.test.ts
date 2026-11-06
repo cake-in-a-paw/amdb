@@ -135,9 +135,12 @@ it('imports three films that share a director: one creator, three work_creator l
     const run = (await (await t.as({ kind: 'none' }).get(`/api/import-runs/${result.runId}`)).json()) as {
       status: string;
       stats: unknown;
+      licenseCheckedOn: string;
     };
     expect(run.status).toBe('finished');
     expect(run.stats).toEqual(result.stats);
+    // The day the license page was last checked, recorded with the run as evidence.
+    expect(run.licenseCheckedOn).toBe('2026-11-05');
   } finally {
     await t.close();
   }

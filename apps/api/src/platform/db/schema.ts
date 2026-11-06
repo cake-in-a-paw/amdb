@@ -19,6 +19,7 @@ import {
   type AnyPgColumn,
   boolean,
   check,
+  date,
   customType,
   index,
   integer,
@@ -232,6 +233,8 @@ export const importRuns = pgTable(
     params: jsonb('params').$type<Record<string, unknown>>().notNull(),
     /** The evidence that the source is CC0. */
     licenseUrl: text('license_url').notNull(),
+    /** The day someone last confirmed `licenseUrl` still says CC0. */
+    licenseCheckedOn: date('license_checked_on', { mode: 'string' }).notNull(),
     status: text('status').$type<ImportRunStatus>().notNull(),
     stats: jsonb('stats').$type<Record<string, unknown>>().notNull().default({}),
     error: text('error'),

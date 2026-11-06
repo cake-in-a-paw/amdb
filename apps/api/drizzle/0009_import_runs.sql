@@ -3,6 +3,7 @@ CREATE TABLE "import_runs" (
 	"source" text NOT NULL,
 	"params" jsonb NOT NULL,
 	"license_url" text NOT NULL,
+	"license_checked_on" date NOT NULL,
 	"status" text NOT NULL,
 	"stats" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"error" text,

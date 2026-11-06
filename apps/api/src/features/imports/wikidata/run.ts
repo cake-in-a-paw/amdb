@@ -10,6 +10,8 @@ import { discover } from './discover';
 import { genreTag, mapRef, mapWork, type WorkRecord } from './map';
 
 const LICENSE_URL = 'https://www.wikidata.org/wiki/Wikidata:Licensing';
+/** When LICENSE_URL was last read and still said CC0 for the main namespace; re-check and bump it. */
+const LICENSE_CHECKED_ON = '2026-11-05';
 /** The entity API's per-request cap (the client rejects more). */
 const MAX_IDS = 50;
 
@@ -83,6 +85,7 @@ export async function runWikidataImport(
     source: 'wikidata',
     params: { ...opts, batchSize },
     licenseUrl: LICENSE_URL,
+    licenseCheckedOn: LICENSE_CHECKED_ON,
   });
   const stats: WikidataImportStats = {
     candidates: 0,

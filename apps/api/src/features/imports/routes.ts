@@ -21,6 +21,7 @@ export function importsRoutes(imports: ImportsService) {
         status: run.status,
         params: run.params,
         licenseUrl: run.licenseUrl,
+        licenseCheckedOn: run.licenseCheckedOn,
         stats: run.stats,
         error: run.error,
         startedAt: run.startedAt.toISOString(),

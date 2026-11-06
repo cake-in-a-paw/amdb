@@ -1989,6 +1989,8 @@ export interface paths {
                                 [key: string]: unknown;
                             };
                             licenseUrl: string;
+                            /** Format: date */
+                            licenseCheckedOn: string;
                             stats: {
                                 [key: string]: unknown;
                             };

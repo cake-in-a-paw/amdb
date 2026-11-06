@@ -8,7 +8,13 @@ export function createImportsService(db: Db) {
   const repo = importsRepository(db);
   return {
     /** Records a run as started; its submissions are written through the changes service's `importSubmission`. */
-    async startRun(run: { source: ImportSource; params: Record<string, unknown>; licenseUrl: string }) {
+    async startRun(run: {
+      source: ImportSource;
+      params: Record<string, unknown>;
+      licenseUrl: string;
+      /** `YYYY-MM-DD`. */
+      licenseCheckedOn: string;
+    }) {
       return repo.insertRun(run);
     },
 

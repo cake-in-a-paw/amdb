@@ -60,6 +60,7 @@ export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
       source: 'wikidata',
       params,
       licenseUrl: 'https://www.wikidata.org/wiki/Wikidata:Licensing',
+      licenseCheckedOn: '2026-11-05',
     });
     const created = await createChangesService(db).importSubmission(
       runId,

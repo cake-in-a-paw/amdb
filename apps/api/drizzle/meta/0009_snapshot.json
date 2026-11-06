@@ -1,5 +1,5 @@
 {
-  "id": "98b74754-a0e5-4634-928b-9b35fa6c223f",
+  "id": "e4fde010-75cd-433a-b921-3ab3bb1b2c83",
   "prevId": "e5498436-ad54-4a93-93b6-d1b8b0fe920c",
   "version": "7",
   "dialect": "postgresql",
@@ -859,6 +859,12 @@
         "license_url": {
           "name": "license_url",
           "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "license_checked_on": {
+          "name": "license_checked_on",
+          "type": "date",
           "primaryKey": false,
           "notNull": true
         },
