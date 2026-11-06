@@ -3,7 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import { Cc0Agreement } from '@/components/cc0-agreement';
 import { ConflictNotice } from '@/components/conflict-notice';
-import { Loading } from '@/components/entity-states';
+import { LoadError, Loading } from '@/components/entity-states';
 import { EntryForm } from '@/components/entry-form';
 import { NoteField } from '@/components/note-field';
 import { Button } from '@/components/ui/button';
@@ -24,9 +24,10 @@ function Edit() {
   const { id } = Route.useParams();
   const { api } = Route.useRouteContext();
   const { data: entity } = useQuery(entityQueryOptions(api, id));
-  const identity = useIdentity(api);
+  const { identity, error, retry } = useIdentity(api);
   if (!entity) return null;
-  if (!identity) return <Loading what="your draft" />;
+  if (!identity)
+    return error ? <LoadError what="your account" error={error} onRetry={retry} /> : <Loading what="your draft" />;
   // Keyed: a draft is the contributor's, so signing in or out opens theirs.
   return <EditForm key={identity} entity={entity} identity={identity} />;
 }

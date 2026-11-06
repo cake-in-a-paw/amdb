@@ -2,7 +2,7 @@ import { useMutation } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { Cc0Agreement } from '@/components/cc0-agreement';
-import { Loading } from '@/components/entity-states';
+import { LoadError, Loading } from '@/components/entity-states';
 import { EntryForm } from '@/components/entry-form';
 import { NoteField } from '@/components/note-field';
 import { SubmissionResult } from '@/components/submission-result';
@@ -28,8 +28,8 @@ export const Route = createFileRoute('/submit')({
   validateSearch: (raw: Record<string, unknown>): { title?: string } =>
     typeof raw.title === 'string' && raw.title.trim() ? { title: raw.title.trim() } : {},
   // Who is signed in decides which draft opens; read it first so the form shows at once. A failure
-  // is left to the page, which treats it as signed out; no retries here, so a failing API never
-  // holds the page blank through the backoff.
+  // is left to the page, which says so; no retries here, so a failing API never holds the page
+  // blank through the backoff.
   loader: ({ context }) =>
     context.queryClient.ensureQueryData({ ...meQueryOptions(context.api), retry: false }).catch(() => null),
   component: Submit,
@@ -47,11 +47,11 @@ function Submit() {
   useEffect(() => {
     if (title) void navigate({ search: {}, replace: true });
   }, []);
-  const identity = useIdentity(api);
+  const { identity, error, retry } = useIdentity(api);
   if (!identity) {
     return (
       <div className="max-w-3xl py-10">
-        <Loading what="your draft" />
+        {error ? <LoadError what="your account" error={error} onRetry={retry} /> : <Loading what="your draft" />}
       </div>
     );
   }

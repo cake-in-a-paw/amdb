@@ -5,7 +5,7 @@ import { ChangeStatus } from '@/components/change-status';
 import { LoadError } from '@/components/entity-states';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
-import { meQueryOptions } from '@/lib/me';
+import { useIdentity } from '@/lib/me';
 import { linkClass } from '@/lib/styles';
 
 export const Route = createFileRoute('/me/submissions')({ component: MySubmissions });
@@ -31,11 +31,8 @@ function describeChange(change: Change) {
 
 function MySubmissions() {
   const { api } = Route.useRouteContext();
-  const me = useQuery(meQueryOptions(api));
-  // Anonymous visitors see what their browser's token submitted, so wait to learn which this is. A
-  // failed lookup isn't an answer: treating it as signed out would show a signed-in person the
-  // anonymous view.
-  const identity = me.isPending || me.isError ? null : (me.data?.id ?? 'anonymous');
+  // Anonymous visitors see what their browser's token submitted, so wait to learn which this is.
+  const { identity, error: meError, retry: retryMe } = useIdentity(api);
   const submissions = useInfiniteQuery({
     queryKey: ['my-submissions', identity],
     enabled: identity !== null,
@@ -58,8 +55,8 @@ function MySubmissions() {
           to keep them with an account.
         </p>
       )}
-      {me.isError ? (
-        <LoadError what="your account" error={me.error} onRetry={() => void me.refetch()} />
+      {meError ? (
+        <LoadError what="your account" error={meError} onRetry={retryMe} />
       ) : submissions.isPending ? (
         <p role="status" className="mt-4 text-muted-foreground">
           Loading your submissions…

@@ -23,14 +23,17 @@ export function AnonClaim() {
   const { api } = rootRoute.useRouteContext();
   const queryClient = useQueryClient();
   const userId = useQuery(meQueryOptions(api)).data?.id;
-  const [failed, setFailed] = useState(false);
+  // The account whose claim failed: a different account signing in hasn't failed anything yet.
+  const [failedFor, setFailedFor] = useState<string | null>(null);
   // Bumped by Try again, to run the claim once more.
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!userId) return;
     const token = peekAnonToken();
-    if (!token || claiming === token || isClaimed(token)) return;
+    // Nothing left to claim (another tab may have done it): no failure to show either.
+    if (!token || isClaimed(token)) return setFailedFor(null);
+    if (claiming === token) return;
     claiming = token;
     markClaimed(token);
     void (async () => {
@@ -38,11 +41,11 @@ export function AnonClaim() {
         // Signed in, the client sends no token of its own; the claim names the one to hand over.
         unwrap(await api.POST('/api/me/claim-anonymous', { headers: { 'x-amdb-anon': token } }));
         rotateAnonToken();
-        setFailed(false);
+        setFailedFor(null);
         await queryClient.invalidateQueries({ queryKey: ['my-submissions'] });
       } catch {
         unmarkClaimed();
-        setFailed(true);
+        setFailedFor(userId);
       } finally {
         claiming = null;
       }
@@ -50,7 +53,7 @@ export function AnonClaim() {
   }, [userId, api, queryClient, attempt]);
 
   // Signed out since, there is no account to hand them to.
-  if (!failed || !userId) return null;
+  if (!userId || failedFor !== userId) return null;
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3 border-b border-border bg-card px-4 py-2 text-sm">
       <p>Couldn't check this browser for anything you submitted before signing in.</p>

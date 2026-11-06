@@ -1,7 +1,7 @@
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, onTestFinished, test, vi } from 'vitest';
-import { getAnonToken, peekAnonToken } from '@/lib/anon';
+import { getAnonToken, peekAnonToken, rotateAnonToken } from '@/lib/anon';
 import { createAppRouter } from '@/router';
 import { renderApp } from './harness';
 
@@ -162,6 +162,21 @@ test('a failed claim says so, and Try again hands the submissions over', async (
   expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });
 
+test('a failed claim another tab finished since clears on Try again', async () => {
+  const t = await renderApp('/');
+  await submitAnonymously(t);
+  const fault = failClaims(t);
+  await signInByEmail(t);
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't check this browser");
+
+  // Another tab claimed this token and rotated it meanwhile.
+  rotateAnonToken();
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  expect(fault.claims()).toHaveLength(1);
+});
+
 test('with storage blocked, a second Try again during a claim in flight sends nothing more', async () => {
   const t = await renderApp('/');
   // Storage can't hold the token or mark it claimed, so only the in-memory guard stops a second send.
@@ -308,4 +323,32 @@ test('a failed load says so and can retry', async () => {
   await t.user.click(screen.getByRole('button', { name: 'Try again' }));
 
   expect(await screen.findByText('You haven’t submitted anything yet.')).toBeInTheDocument();
+});
+
+test('a failed background account refetch keeps the list already shown', async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  await t.api
+    .as({ kind: 'user', userId: t.session.userId! })
+    .post('/api/submissions', { cc0: true, changes: [film('Arrival')] });
+  await t.router.navigate({ to: '/me/submissions' });
+  const list = await screen.findByRole('list', { name: 'Your submissions' });
+  expect(await within(list).findByText('Waiting for review')).toBeInTheDocument();
+  const request = t.api.app.request.bind(t.api.app);
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    new URL(urlOf(input), 'http://amdb.test').pathname === '/api/me'
+      ? Promise.reject(new TypeError('offline'))
+      : request(input, init),
+  );
+
+  // A refocus refetches the account; that it failed doesn't unsay who was signed in.
+  await act(async () => {
+    await t.router.options.context.queryClient.refetchQueries({ queryKey: ['me'] });
+    // Let the page render what the failed refetch left.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  });
+
+  expect(t.router.options.context.queryClient.getQueryState(['me'])?.status).toBe('error');
+  expect(screen.getByRole('list', { name: 'Your submissions' })).toBe(list);
+  expect(within(list).getByText('Waiting for review')).toBeInTheDocument();
+  expect(screen.queryByRole('alert')).not.toBeInTheDocument();
 });

@@ -291,3 +291,27 @@ test('buildSubmission puts every create before the relates that name it by ref',
     ],
   });
 });
+
+test("a failed account lookup doesn't open the signed-out draft; Try again opens the account's own", async () => {
+  const t = await renderApp('/', { as: 'contributor' });
+  const someoneElses: EntryForm = { ...emptyForm(), fields: { ...emptyForm().fields, title: 'Someone else’s draft' } };
+  localStorage.setItem('amdb.draft.submit.anonymous', JSON.stringify(someoneElses));
+  const request = t.api.app.request.bind(t.api.app);
+  let failing = true;
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) =>
+    failing && new URL(urlOf(input), 'http://amdb.test').pathname === '/api/me'
+      ? Promise.reject(new TypeError('offline'))
+      : request(input, init),
+  );
+  t.router.options.context.queryClient.removeQueries({ queryKey: ['me'] });
+
+  await t.router.navigate({ to: '/submit' });
+
+  expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't load your account");
+  expect(screen.queryByDisplayValue('Someone else’s draft')).not.toBeInTheDocument();
+  expect(JSON.parse(localStorage.getItem('amdb.draft.submit.anonymous')!)).toEqual(someoneElses);
+  failing = false;
+  await t.user.click(screen.getByRole('button', { name: 'Try again' }));
+  expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+});
