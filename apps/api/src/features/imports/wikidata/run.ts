@@ -296,7 +296,7 @@ export async function runWikidataImport(
         stats.linksAdded++;
       } catch (err) {
         if (!isItemError(err)) throw err;
-        stats.skipped.invalid++;
+        // Logged, not counted: `skipped` counts candidates, and this link's work was imported.
         log(`skipped link ${link.fromId} → ${link.toQid}: ${err.code} (${err.message})`);
       }
     }

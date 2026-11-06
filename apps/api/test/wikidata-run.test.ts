@@ -2,7 +2,7 @@ import { and, count, eq, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import { runWikidataImport } from '../src/features/imports/wikidata/run.js';
-import { creators, relations, tags, works } from '../src/platform/db/schema';
+import { creators, importRuns, relations, tags, works } from '../src/platform/db/schema';
 import { setupTest } from './helpers/setup';
 
 const FILM_CLASS = 'Q11424';
@@ -22,6 +22,7 @@ const claim = (property: string, value: unknown, ordinal?: string) => ({
 
 interface FilmSpec {
   director?: string;
+  directors?: string[];
   imdb?: string;
   follows?: string;
   genres?: string[];
@@ -33,6 +34,7 @@ function film(id: string, title: string, spec: FilmSpec = {}): WikidataEntity {
     P577: [claim('P577', { time: '+2001-05-04T00:00:00Z', precision: 11 })],
   };
   if (spec.director) claims.P57 = [claim('P57', item(spec.director))];
+  if (spec.directors) claims.P57 = spec.directors.map((d) => claim('P57', item(d)));
   if (spec.imdb) claims.P345 = [claim('P345', spec.imdb)];
   if (spec.follows) claims.P155 = [claim('P155', item(spec.follows))];
   if (spec.genres) claims.P136 = spec.genres.map((g) => claim('P136', item(g)));
@@ -265,7 +267,7 @@ it('two items sharing an IMDb id: the second is imported with only its wikidata 
   }
 });
 
-it('Wikidata down mid-run: the run is failed with the reason, and the first batch’s works remain', async () => {
+it("Wikidata down mid-run: the run is failed with the reason, and the first batch's works remain", async () => {
   const t = await setupTest();
   try {
     const { client } = fakeWikidata(
@@ -416,6 +418,48 @@ it('measures the real database size when no measure is injected', async () => {
     expect(result.stats.bytesStart).toBeGreaterThan(0);
     expect(result.stats.bytesEnd).toBeGreaterThanOrEqual(result.stats.bytesStart);
     expect(Number.isFinite(result.stats.bytesPerWork)).toBe(true);
+  } finally {
+    await t.close();
+  }
+});
+
+it('fetches references in chunks of at most 50 ids', async () => {
+  const t = await setupTest();
+  try {
+    const directors = Array.from({ length: 60 }, (_, i) => `Q${1000 + i}`);
+    const { client, entityCalls } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Crowded', { directors }),
+      ...Object.fromEntries(directors.map((d, i) => [d, person(d, `Director ${i}`)])),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats.imported).toBe(1);
+    expect(Math.max(...entityCalls.map((c) => c.length))).toBeLessThanOrEqual(50);
+    expect((await t.db.select({ n: count() }).from(creators))[0]!.n).toBe(60);
+  } finally {
+    await t.close();
+  }
+});
+
+it('any other error finishes the run failed with its message and is rethrown', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'One') });
+    let calls = 0;
+    const measureBytes = async () => {
+      if (++calls === 2) throw new Error('disk gone');
+      return 1000;
+    };
+    await expect(runWikidataImport({ db: t.db, client, measureBytes, today: TODAY }, OPTS)).rejects.toThrow(
+      'disk gone',
+    );
+    const [{ id: runId }] = (await t.db.select({ id: importRuns.id }).from(importRuns)) as [{ id: string }];
+    const run = (await (await t.as({ kind: 'none' }).get(`/api/import-runs/${runId}`)).json()) as {
+      status: string;
+      error: string | null;
+      finishedAt: string | null;
+    };
+    expect(run).toMatchObject({ status: 'failed', error: 'disk gone' });
+    expect(run.finishedAt).not.toBeNull();
   } finally {
     await t.close();
   }
