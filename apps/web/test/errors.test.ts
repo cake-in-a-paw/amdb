@@ -154,9 +154,18 @@ describe('every error code the API can send', () => {
   /**
    * Codes no screen can meet, so they keep the fallback: edit-and-approve is offered only for a
    * create or update (`not_editable`), the pickers only offer the right kind (`kind_mismatch`), and
-   * the web never offers a merge (`self_merge`, `already_merged`, `entity_unavailable`).
+   * the web never offers a merge (`self_merge`, `already_merged`, `entity_unavailable`), and the
+   * import-run codes reach only the importer CLI, never HTTP (`run_not_running`, `run_in_progress`).
    */
-  const unreachable = ['not_editable', 'kind_mismatch', 'self_merge', 'already_merged', 'entity_unavailable'];
+  const unreachable = [
+    'not_editable',
+    'kind_mismatch',
+    'self_merge',
+    'already_merged',
+    'entity_unavailable',
+    'run_not_running',
+    'run_in_progress',
+  ];
   const FALLBACK = '<fallback>';
 
   test.each(codes)('%i %s has its own words', (status, code) => {
