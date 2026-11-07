@@ -1,4 +1,4 @@
-import { and, count, eq, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
 import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import { createImportsService } from '../src/features/imports/service';
@@ -1102,6 +1102,63 @@ it('backfill: works win, so a reference that is itself a candidate is still drop
       skipped: expect.objectContaining({ not_present: 1 }),
     });
     expect(await t.db.select().from(series)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+/** A film whose series and franchise had no labels when it was imported, then got them. */
+async function importWithoutSeriesAndFranchise(t: Awaited<ReturnType<typeof setupTest>>) {
+  const spec = { series: { qid: 'Q400', ordinal: '1' }, franchise: 'Q450' };
+  const before = fakeWikidata(ranked('Q1'), {
+    Q1: film('Q1', 'Episode One', spec),
+    Q400: unlabeled(thing('Q400', 'The Saga')),
+    Q450: unlabeled(thing('Q450', 'The Franchise')),
+  });
+  await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+  return fakeWikidata(ranked('Q1'), {
+    Q1: film('Q1', 'Episode One', spec),
+    Q400: thing('Q400', 'The Saga'),
+    Q450: thing('Q450', 'The Franchise'),
+  }).client;
+}
+
+const referenceLinks = (db: Awaited<ReturnType<typeof setupTest>>['db']) =>
+  db
+    .select()
+    .from(relations)
+    .where(and(inArray(relations.type, ['series_work', 'property_work'])));
+
+it('backfill: a second backfill adds no series or franchise relation again', async () => {
+  const t = await setupTest();
+  try {
+    const client = await importWithoutSeriesAndFranchise(t);
+    const first = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(first.stats).toMatchObject({ backfilled: 1, relationsAdded: 2 });
+    const again = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(again.stats).toMatchObject({ backfilled: 0, upToDate: 1, relationsAdded: 0 });
+    expect(await referenceLinks(t.db)).toHaveLength(2);
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, again.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a series or franchise relation a moderator removed is not re-added', async () => {
+  const t = await setupTest();
+  try {
+    const client = await importWithoutSeriesAndFranchise(t);
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    for (const link of await referenceLinks(t.db))
+      await publish(author, mod, [{ op: 'unrelate', relationId: link.id }]);
+
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, relationsAdded: 0 });
+    const links = await referenceLinks(t.db);
+    expect(links).toHaveLength(2);
+    expect(links.every((l) => l.removedByChange !== null)).toBe(true);
   } finally {
     await t.close();
   }
