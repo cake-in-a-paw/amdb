@@ -60,26 +60,27 @@ Verify: `status` is `finished`, and the works look right in the app.
 
 Do not run this without the owner saying so at that moment.
 
-The importer applies pending migrations from the checkout it runs in, so run it from a clean
-checkout of the exact `main` commit Railway has deployed, after that deploy has finished (an older
-checkout would miss migrations, a newer one would apply ones the deployed app doesn't know):
+The Postgres service has no public address, so the import runs inside the deployed `app` container,
+which reaches it over the private network with its own `DATABASE_URL`. That container is the deployed
+`main` commit with its migrations already applied, so the code and schema always match. Wait for a
+deploy to finish first, and don't deploy during a run: a redeploy kills the run and leaves it
+`running` (close it as above).
+
+Start the run detached, so a dropped SSH session doesn't stop it, and read its log later:
 
 ```sh
-git fetch origin && git switch --detach <deployed commit> && git status   # must be clean
-pnpm install --frozen-lockfile
+railway ssh --service app -- sh -c 'cd /app/apps/api && nohup pnpm import:wikidata --limit N --classes Q11424 > /tmp/import.log 2>&1 < /dev/null &'
+railway ssh --service app -- tail -n 3 /tmp/import.log   # progress; the last line is the stats JSON when done
 ```
 
-`railway run --service postgres` runs a local command with the Postgres service's variables. Its
-`DATABASE_URL` is the private network address, which a laptop can't reach, so point the importer at
-`DATABASE_PUBLIC_URL` inside the child shell (the single quotes keep the URL out of your shell and
-history):
+To stop a detached run, open a shell with `railway ssh --service app` and send SIGTERM to the
+`tsx scripts/import-wikidata.ts` process; the run finishes as `interrupted`. The container has no
+`pgrep`, so find the PID by reading `/proc/<pid>/cmdline`.
 
-```sh
-railway run --service postgres -- sh -c 'DATABASE_URL="$DATABASE_PUBLIC_URL" pnpm --filter @amdb/api import:wikidata --limit N'
-```
-
-If the project has more than one environment, add `-e production` to `railway run`. The public
-proxy adds a round trip to every query, so a run is much slower than step 2's local one.
+`railway ssh` signs in with an SSH key registered on Railway (`railway ssh keys list`); a key held
+by a locked 1Password agent fails with "communication with agent failed", so unlock it first. If the
+project has more than one environment, add `-e production`. The log is in the container's `/tmp`
+and is gone after the next deploy; the run's stats stay at `/api/import-runs/<id>`.
 
 Pick N from step 2 so that the current size plus `N * bytesPerWork` stays under 70% of the volume.
 
