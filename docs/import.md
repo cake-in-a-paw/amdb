@@ -109,8 +109,9 @@ railway ssh --service app -- sh -c 'cd /app/apps/api && nohup pnpm import:wikida
 railway ssh --service app -- tail -n 3 /tmp/import.log
 ```
 
-Use the same `--limit`, `--classes` and `--min-sitelinks` as the runs being backfilled, so it walks
-the same candidates. The same rules as a normal run apply: owner's go-ahead, one run at a time, the
+Use the same `--classes` and `--min-sitelinks` as the runs being backfilled, and the same or a
+larger `--limit`: ranks shift as sitelinks change, and an extra candidate costs little (one not in
+AMDB is only counted as `not_present`, never fetched). The same rules as a normal run apply: owner's go-ahead, one run at a time, the
 size cap, Ctrl-C/SIGTERM, and closing a dead run by hand.
 
 What it does: for each candidate that an import run created (and that is still live, not merged
