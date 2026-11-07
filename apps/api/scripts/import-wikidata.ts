@@ -1,4 +1,5 @@
-// Seeds AMDB from Wikidata. See docs/import.md. Progress goes to stderr, the stats to stdout.
+// Seeds AMDB from Wikidata, or with --backfill adds the references imported works are missing. See docs/import.md.
+// Progress goes to stderr, the stats to stdout.
 import { openDb } from '../src/platform/db/open';
 import { createWikidataClient } from '../src/features/imports/wikidata/client';
 import { discover } from '../src/features/imports/wikidata/discover';

@@ -30,6 +30,12 @@ describe('import:wikidata parseArgs', () => {
     ).toEqual({ classes: ['Q11424', 'Q7725634'], minSitelinks: 0, limit: 50, maxDbBytes: 1000, dryRun: true });
   });
 
+  it('reads --backfill, and refuses it with --dry-run (a dry run only previews the mapping)', () => {
+    expect(parseArgs(['--backfill', '--limit', '10'])).toMatchObject({ backfill: true, dryRun: false, limit: 10 });
+    expect(() => parseArgs(['--dry-run', '--backfill'])).toThrow(/--dry-run.*--backfill|--backfill.*--dry-run/);
+    expect(() => parseArgs(['--backfill', '--dry-run'])).toThrow(/--dry-run.*--backfill|--backfill.*--dry-run/);
+  });
+
   it('rejects unknown flags', () => {
     expect(() => parseArgs(['--bogus'])).toThrow(/--bogus/);
   });

@@ -83,6 +83,25 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 - A work link whose target isn't in AMDB yet is kept for the end of the run and added then if the
   target arrived.
 
+## Backfill
+
+A run with `--backfill` adds the references imported works are missing (dropped by an earlier
+importer version, or a link whose target arrived in a later run), and nothing else.
+
+- It walks the same ranked candidates and acts only on works an import run created: the work's
+  `create` and its live wikidata id came from the same import-run submission, and the work is live
+  and not merged away. A work a person entered is skipped as `present`; a candidate not in AMDB is
+  skipped as `not_present`, never imported.
+- Each such work gets at most one submission of the backfill run (`params.backfill: true`), through
+  the same revision-logged path: creates for new references (with their wikidata id) and relations.
+  No work create or update, no unrelate, no external id on the work. A work with nothing to add gets
+  no submission and counts as `upToDate`.
+- A removal sticks: a relation is skipped if `relations` holds any row, live or removed, with the
+  same type, ends and role.
+- References resolve by the normal run's rules (works win, a QID held as another kind or removed is
+  dropped, a retracted tag's slug is dropped, one QID in two roles keeps the first). A link whose
+  target isn't in AMDB stays missing: a backfill imports no works, so none is deferred.
+
 ## Being a good client
 
 - User-Agent `AMDB-importer/<version> (https://github.com/cake-in-a-paw/amdb)`; no email (the repo

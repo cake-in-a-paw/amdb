@@ -1,6 +1,7 @@
-import type { EntityKind, ImportRunStatus, ImportSource } from '@amdb/shared';
-import { and, eq, inArray, isNotNull, isNull, or, sql } from 'drizzle-orm';
-import { entities, importRuns, relations } from '../../platform/db/schema';
+import type { EntityKind, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
+import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
+import { changes, entities, importRuns, relations, submissions } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
 
 export type ImportRunRow = typeof importRuns.$inferSelect;
@@ -90,6 +91,65 @@ export function importsRepository(db: DbOrTx) {
           ),
         );
       return new Set(rows.flatMap((r) => (r.qid ? [r.qid] : [])));
+    },
+
+    /**
+     * Of `qids`, the live, unmerged works an import run created holding that QID, by QID: the work's
+     * `create` and its live wikidata id were written by the same import-run submission. A work a person
+     * entered fails the first test; a merge winner holding a loser's QID fails the second. Read-only.
+     */
+    async findImportedWorks(qids: string[]): Promise<Map<string, string>> {
+      if (qids.length === 0) return new Map();
+      const idChange = alias(changes, 'id_change');
+      const createChange = alias(changes, 'create_change');
+      const rows = await db
+        .select({ qid: relations.value, id: entities.id })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .innerJoin(idChange, eq(idChange.id, relations.createdByChange))
+        .innerJoin(
+          createChange,
+          and(
+            eq(createChange.entityId, entities.id),
+            eq(createChange.op, 'create'),
+            eq(createChange.submissionId, idChange.submissionId),
+          ),
+        )
+        .innerJoin(submissions, eq(submissions.id, createChange.submissionId))
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            inArray(relations.value, qids),
+            isNull(relations.removedByChange),
+            eq(entities.kind, 'work'),
+            isNull(entities.mergedIntoId),
+            isNull(entities.removedAt),
+            isNull(entities.retractedByChange),
+            isNotNull(submissions.importRunId),
+          ),
+        );
+      // `value` is set on every external_id relation; the filter on scheme guarantees it here.
+      return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, r.id] as const] : [])));
+    },
+
+    /**
+     * Every relation between entities touching `entityIds` (external ids aside), live or removed: an
+     * unrelate only sets `removed_by_change`, so a removed row is how a removal is remembered. Read-only.
+     */
+    async findRelationKeys(
+      entityIds: string[],
+    ): Promise<{ type: RelationType; fromId: string; toId: string | null; role: string | null }[]> {
+      if (entityIds.length === 0) return [];
+      return db
+        .selectDistinct({ type: relations.type, fromId: relations.fromId, toId: relations.toId, role: relations.role })
+        .from(relations)
+        .where(
+          and(
+            ne(relations.type, 'external_id'),
+            or(inArray(relations.fromId, entityIds), inArray(relations.toId, entityIds)),
+          ),
+        );
     },
 
     /** The database's size on disk, as the size cap measures it. */

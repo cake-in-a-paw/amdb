@@ -49,6 +49,16 @@ export function createImportsService(db: Db) {
       return repo.findRetiredWikidataIds(qids);
     },
 
+    /** Of these QIDs, the works an import run created (live, not merged away), by QID: what a backfill may add to. */
+    async findImportedWorks(qids: string[]) {
+      return repo.findImportedWorks(qids);
+    },
+
+    /** The relations touching these entities, live or removed, so a backfill never re-adds one a moderator took out. */
+    async findRelationKeys(entityIds: string[]) {
+      return repo.findRelationKeys(entityIds);
+    },
+
     async databaseBytes() {
       return repo.databaseBytes();
     },

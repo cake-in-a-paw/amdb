@@ -14,6 +14,7 @@ Flags (all optional):
 | `--classes`        | all five        | Comma list of Wikidata class QIDs                    |
 | `--max-db-bytes`   | `3500000000`    | Stop before a batch once the database is this big    |
 | `--dry-run`        |                 | Fetch and map only; writes nothing, no `DATABASE_URL`|
+| `--backfill`       |                 | Add missing references to imported works (§6); not with `--dry-run` |
 
 The stats print as one JSON line on stdout and progress on stderr. Exit 0 for `finished` or
 `capped`, 1 for `failed` or any error, 130 after a second Ctrl-C.
@@ -95,3 +96,33 @@ are skipped, so a later run only adds the new ranks.
 
 Upgrade to Railway Pro and grow the volume before the projection passes 3.5 GB. `--max-db-bytes`
 is the backstop: a run stops with `capped` instead of filling the disk.
+
+## 6. Backfill references
+
+Works imported before the importer read Wikidata's `mul` label are missing some references: a
+director, studio, series, franchise or genre whose name was only under `mul` was dropped, and a work
+link whose target was skipped was never added. A normal re-run skips those works as `present`, so
+it never adds them. `--backfill` does:
+
+```sh
+railway ssh --service app -- sh -c 'cd /app/apps/api && nohup pnpm import:wikidata --backfill --limit N --classes Q11424 > /tmp/import.log 2>&1 < /dev/null &'
+railway ssh --service app -- tail -n 3 /tmp/import.log
+```
+
+Use the same `--limit`, `--classes` and `--min-sitelinks` as the runs being backfilled, so it walks
+the same candidates. The same rules as a normal run apply: owner's go-ahead, one run at a time, the
+size cap, Ctrl-C/SIGTERM, and closing a dead run by hand.
+
+What it does: for each candidate that an import run created (and that is still live, not merged
+away), it fetches the work from Wikidata again and adds, as one submission of the new run, the
+creator, series, franchise, genre tag and work-link relations it is missing, creating a missing
+reference with its wikidata id as a normal run would.
+
+What it never does: create or edit a work, change a field, remove a relation, or touch a work's
+external ids. It never re-adds a relation that AMDB holds or ever held (so a moderator's unrelate
+sticks), and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
+is counted `not_present`, not imported.
+
+Read the stats: `backfilled` (works that got a relation), `relationsAdded`, `upToDate` (imported
+works with nothing to add), and `skipped.present` (works it may not touch). A second backfill should
+show `backfilled: 0`.

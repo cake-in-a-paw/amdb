@@ -7,11 +7,14 @@ import {
   changes as changesTable,
   creators,
   importRuns,
+  properties,
   relations,
   series,
+  submissions,
   tags,
   works,
 } from '../src/platform/db/schema';
+import { publish } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
 const FILM_CLASS = 'Q11424';
@@ -855,6 +858,250 @@ it('a run whose row was closed under it stops with run_not_running instead of sk
     // The hand-recorded outcome stands.
     const [run] = await t.db.select().from(importRuns);
     expect(run).toMatchObject({ status: 'failed', error: 'closed by hand' });
+  } finally {
+    await t.close();
+  }
+});
+
+// --- Backfill: references a work is missing, added to works already imported ---
+
+/** An item Wikidata returned with no label in any language read: its reference is dropped at import. */
+const unlabeled = (e: WikidataEntity): WikidataEntity => ({ ...e, labels: {} });
+const BACKFILL = { ...OPTS, backfill: true };
+
+async function relationsOf(db: Awaited<ReturnType<typeof setupTest>>['db'], type: 'work_creator' | 'work_link') {
+  return db.select().from(relations).where(eq(relations.type, type));
+}
+
+it('backfill: a director dropped at import time (no label then) is created and credited', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Forrest Gump', { director: 'Q200' }),
+      Q200: unlabeled(person('Q200', 'Robert Zemeckis')),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(await relationsOf(t.db, 'work_creator')).toEqual([]);
+
+    const after = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Forrest Gump', { director: 'Q200' }),
+      Q200: person('Q200', 'Robert Zemeckis'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: after.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(result.status).toBe('finished');
+    expect(result.stats).toMatchObject({ imported: 0, backfilled: 1, upToDate: 0, relationsAdded: 1 });
+
+    const [director] = await t.db.select().from(creators);
+    expect(director).toMatchObject({ name: 'Robert Zemeckis', kind: 'person' });
+    expect(await externalIdsOf(t.db, director!.entityId)).toEqual(['wikidata:Q200']);
+    const workId = (await workIdByTitle(t.db, 'Forrest Gump'))!;
+    expect(await relationsOf(t.db, 'work_creator')).toEqual([
+      expect.objectContaining({ fromId: workId, toId: director!.entityId, role: 'director' }),
+    ]);
+    // The work itself is untouched: still one create, and only its own wikidata id.
+    expect((await t.db.select({ n: count() }).from(works))[0]!.n).toBe(1);
+    expect(await externalIdsOf(t.db, workId)).toEqual(['wikidata:Q1']);
+    const [run] = await t.db.select().from(importRuns).where(eq(importRuns.id, result.runId));
+    expect(run!.params).toMatchObject({ backfill: true });
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: genre, series and franchise references and a work link are each added', async () => {
+  const t = await setupTest();
+  try {
+    const spec = { genres: ['Q300'], series: { qid: 'Q400', ordinal: '2' }, franchise: 'Q450', follows: 'Q2' };
+    // Run 1 imports only the sequel, whose references have no labels yet; run 2 imports its prequel.
+    const first = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Part Two', spec),
+      Q300: unlabeled(thing('Q300', 'drama film')),
+      Q400: unlabeled(thing('Q400', 'The Saga')),
+      Q450: unlabeled(thing('Q450', 'The Franchise')),
+    });
+    await runWikidataImport(
+      { db: t.db, client: first.client, measureBytes: bytes(), today: TODAY },
+      { ...OPTS, limit: 1 },
+    );
+    const second = fakeWikidata(ranked('Q2'), { Q2: film('Q2', 'Part One') });
+    await runWikidataImport({ db: t.db, client: second.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(await relationsOf(t.db, 'work_link')).toEqual([]);
+
+    const now = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Part Two', spec),
+      Q2: film('Q2', 'Part One'),
+      Q300: thing('Q300', 'drama film'),
+      Q400: thing('Q400', 'The Saga'),
+      Q450: thing('Q450', 'The Franchise'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: now.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(result.stats).toMatchObject({ backfilled: 1, upToDate: 1, relationsAdded: 4 });
+
+    const two = (await workIdByTitle(t.db, 'Part Two'))!;
+    const one = (await workIdByTitle(t.db, 'Part One'))!;
+    expect(await relationsOf(t.db, 'work_link')).toEqual([
+      expect.objectContaining({ fromId: two, toId: one, linkType: 'sequel_of' }),
+    ]);
+    expect((await t.db.select({ slug: tags.slug }).from(tags)).map((r) => r.slug)).toEqual(['drama']);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'work_tag'))).toEqual([
+      expect.objectContaining({ fromId: two }),
+    ]);
+    const [saga] = await t.db.select().from(series);
+    expect(saga).toMatchObject({ title: 'The Saga' });
+    expect(await externalIdsOf(t.db, saga!.entityId)).toEqual(['wikidata:Q400']);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([
+      expect.objectContaining({ fromId: saga!.entityId, toId: two, position: 2 }),
+    ]);
+    const [franchise] = await t.db.select().from(properties);
+    expect(await externalIdsOf(t.db, franchise!.entityId)).toEqual(['wikidata:Q450']);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'property_work'))).toEqual([
+      expect.objectContaining({ fromId: franchise!.entityId, toId: two }),
+    ]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a credit a moderator unrelated is not re-added, and nothing is submitted for the work', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [credit] = await relationsOf(t.db, 'work_creator');
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [{ op: 'unrelate', relationId: credit!.id }]);
+
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, relationsAdded: 0 });
+    expect(await relationsOf(t.db, 'work_creator')).toEqual([
+      expect.objectContaining({ id: credit!.id, removedByChange: expect.any(String) }),
+    ]);
+    // No empty submission either.
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, result.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a second backfill adds nothing and counts every work up to date', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1', 'Q2', 'Q3'), { ...threeFilms, Q200: unlabeled(threeFilms.Q200) });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const { client } = fakeWikidata(ranked('Q1', 'Q2', 'Q3'), threeFilms);
+    const first = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(first.stats).toMatchObject({ backfilled: 3, upToDate: 0, relationsAdded: 3 });
+    expect((await t.db.select({ n: count() }).from(creators))[0]!.n).toBe(1);
+
+    const again = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(again.status).toBe('finished');
+    expect(again.stats).toMatchObject({ backfilled: 0, upToDate: 3, relationsAdded: 0 });
+    expect(await relationsOf(t.db, 'work_creator')).toHaveLength(3);
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, again.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a work a person entered, with a wikidata id, is left alone', async () => {
+  const t = await setupTest();
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [
+      { op: 'create', kind: 'work', ref: 'w', fields: { mediaType: 'film_tv', subtype: 'movie', title: 'Alpha' } },
+      { op: 'relate', type: 'external_id', from: { ref: 'w' }, data: { scheme: 'wikidata', value: 'Q1' } },
+    ]);
+    const { client, entityCalls } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({
+      backfilled: 0,
+      upToDate: 0,
+      skipped: expect.objectContaining({ present: 1 }),
+    });
+    expect(entityCalls).toEqual([]);
+    expect(await t.db.select().from(creators)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a candidate that isn’t in AMDB is not imported', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'Alpha') });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ imported: 0, skipped: expect.objectContaining({ not_present: 1 }) });
+    expect(await t.db.select().from(works)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a merged-away work’s references are not added to its winner', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Alpha'),
+      Q2: film('Q2', 'Alpha (duplicate)', { director: 'Q200' }),
+      Q200: unlabeled(person('Q200', 'Dana Director')),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const kept = (await workIdByTitle(t.db, 'Alpha'))!;
+    const loser = (await workIdByTitle(t.db, 'Alpha (duplicate)'))!;
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [{ op: 'merge', kind: 'work', from: loser, into: kept }]);
+
+    const after = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Alpha'),
+      Q2: film('Q2', 'Alpha (duplicate)', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: after.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(result.stats).toMatchObject({
+      backfilled: 0,
+      upToDate: 1,
+      skipped: expect.objectContaining({ present: 1 }),
+    });
+    expect(await t.db.select().from(creators)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: works win, so a reference that is itself a candidate is still dropped', async () => {
+  const t = await setupTest();
+  try {
+    // Q400 is discovered as a work (beyond the limit, and not in AMDB) and named as Q1's series.
+    const { client } = fakeWikidata(ranked('Q1', 'Q400'), {
+      Q1: film('Q1', 'Spin-off', { series: { qid: 'Q400', ordinal: '1' } }),
+      Q400: film('Q400', 'The Saga'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, { ...OPTS, limit: 1 });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({
+      backfilled: 0,
+      upToDate: 1,
+      skipped: expect.objectContaining({ not_present: 1 }),
+    });
+    expect(await t.db.select().from(series)).toEqual([]);
   } finally {
     await t.close();
   }

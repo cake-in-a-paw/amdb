@@ -7,6 +7,8 @@ export interface ImportArgs {
   limit: number;
   maxDbBytes: number;
   dryRun: boolean;
+  /** Set only by `--backfill`: add missing references to works already imported (see docs/import.md). */
+  backfill?: true;
 }
 
 const integer = (flag: string, raw: string | undefined, min: number): number => {
@@ -28,6 +30,9 @@ export function parseArgs(argv: string[]): ImportArgs {
     switch (flag) {
       case '--dry-run':
         args.dryRun = true;
+        break;
+      case '--backfill':
+        args.backfill = true;
         break;
       case '--limit':
         args.limit = integer(flag, argv[++i], 1);
@@ -53,5 +58,7 @@ export function parseArgs(argv: string[]): ImportArgs {
         throw new Error(`Unknown flag ${flag}`);
     }
   }
+  if (args.dryRun && args.backfill)
+    throw new Error('--dry-run and --backfill can’t be combined: a dry run only previews the mapping');
   return args;
 }

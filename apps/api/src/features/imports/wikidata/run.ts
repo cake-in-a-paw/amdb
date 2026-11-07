@@ -16,7 +16,10 @@ const LICENSE_CHECKED_ON = '2026-11-05';
 const MAX_IDS = 50;
 
 export type SkipReason =
+  /** In AMDB already; in a backfill, also a present work an import run didn't create (a person entered it). */
   | 'present'
+  /** Backfill only: not in AMDB, and a backfill never imports a work. */
+  | 'not_present'
   /** AMDB already holds the QID as a creator, series, property or tag: it isn't turned into a work. */
   | 'held_as_other'
   | 'no_title'
@@ -38,6 +41,12 @@ export type WikidataImportStats = {
   bytesPerWork: number;
   /** The 1-based rank of the last candidate the run dealt with. */
   stoppedAt: number;
+  /** Backfill runs only: imported works that got at least one new relation. */
+  backfilled?: number;
+  /** Backfill runs only: imported works with nothing missing (or nothing that may be re-added). */
+  upToDate?: number;
+  /** Backfill runs only: relations added to those works (a new reference's own wikidata id aside). */
+  relationsAdded?: number;
 };
 
 export type RunStatus = 'finished' | 'capped' | 'failed';
@@ -59,6 +68,12 @@ export interface RunOptions {
   limit: number;
   maxDbBytes: number;
   batchSize?: number;
+  /**
+   * Add the references (creators, series, franchises, genres, work links) that works an import run
+   * created are missing, and nothing else: no work is created or edited, and a relation that ever
+   * existed, live or removed, is never added again.
+   */
+  backfill?: boolean;
 }
 
 type Known = { id: string; kind: EntityKind; live: boolean };
@@ -111,13 +126,22 @@ export async function runWikidataImport(
   const stats: WikidataImportStats = {
     candidates: 0,
     imported: 0,
-    skipped: { present: 0, held_as_other: 0, no_title: 0, duplicate_external_id: 0, missing: 0, invalid: 0 },
+    skipped: {
+      present: 0,
+      not_present: 0,
+      held_as_other: 0,
+      no_title: 0,
+      duplicate_external_id: 0,
+      missing: 0,
+      invalid: 0,
+    },
     linksAdded: 0,
     linksFailed: 0,
     bytesStart: 0,
     bytesEnd: 0,
     bytesPerWork: 0,
     stoppedAt: 0,
+    ...(opts.backfill ? { backfilled: 0, upToDate: 0, relationsAdded: 0 } : {}),
   };
 
   // Run-local memory: entities by QID (found in AMDB or created by this run), fetched reference
@@ -145,16 +169,19 @@ export async function runWikidataImport(
     for (const [qid, entity] of await imports.findByWikidataIds(qids)) known.set(qid, entity);
   }
 
-  /** One work's submission: its create, creates for new references, its relations and external ids. */
-  async function buildChanges(rec: WorkRecord) {
-    const creates: ChangeInput[] = [{ op: 'create', kind: 'work', ref: 'w', fields: rec.fields }];
+  /**
+   * The references a work names, resolved by the run's rules: a create (with its wikidata id) for
+   * each new one, and the work's relations to them. `work` is the work's ref in a normal run and its
+   * id in a backfill; `offset` is where these creates start in the submission.
+   */
+  async function referenceChanges(rec: WorkRecord, work: EntityRef, offset: number) {
+    const creates: ChangeInput[] = [];
     const relates: ChangeInput[] = [];
-    const created: CreatedKey[] = [{ index: 0, qid: rec.qid, kind: 'work' }];
-    const work: EntityRef = { ref: 'w' };
+    const created: CreatedKey[] = [];
     const local = new Map<string, { ref: EntityRef; kind: RefKind }>();
     const slugs = new Set<string>();
 
-    const nextRef = () => `r${creates.length}`;
+    const nextRef = () => `r${offset + creates.length}`;
     const entityRef = (qid: string, kind: RefKind): EntityRef | null => {
       const found = known.get(qid);
       // Removed, or held as another kind (say, a series item imported as a work): drop the reference,
@@ -173,7 +200,7 @@ export async function runWikidataImport(
         kind === 'creator'
           ? { name: mapped.name, kind: mapped.kind, ...description }
           : { title: mapped.name, ...description };
-      created.push({ index: creates.length, qid, kind });
+      created.push({ index: offset + creates.length, qid, kind });
       creates.push({ op: 'create', kind, ref, fields });
       relates.push({ op: 'relate', type: 'external_id', from: { ref }, data: { scheme: 'wikidata', value: qid } });
       local.set(qid, { ref: { ref }, kind });
@@ -193,7 +220,7 @@ export async function runWikidataImport(
       if (id === null) return null;
       if (id) return { id };
       const ref = nextRef();
-      created.push({ index: creates.length, slug: tag.slug });
+      created.push({ index: offset + creates.length, slug: tag.slug });
       creates.push({ op: 'create', kind: 'tag', ref, fields: { kind: 'genre', name: tag.name, slug: tag.slug } });
       return { ref };
     };
@@ -214,9 +241,12 @@ export async function runWikidataImport(
       const to = await tagRef(qid);
       if (to) relates.push({ op: 'relate', type: 'work_tag', from: work, to, data: {} });
     }
-    for (const { scheme, value } of rec.externalIds) {
-      relates.push({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } });
-    }
+    return { creates, relates, created };
+  }
+
+  /** A work's links to works in AMDB, and the ones whose target isn't in AMDB (yet). */
+  function linkChanges(rec: WorkRecord, work: EntityRef) {
+    const relates: ChangeInput[] = [];
     const later: Omit<DeferredLink, 'fromId'>[] = [];
     for (const { qid, linkType } of rec.links) {
       if (qid === rec.qid) continue;
@@ -226,19 +256,47 @@ export async function runWikidataImport(
       else if (target.live && target.kind === 'work')
         relates.push({ op: 'relate', type: 'work_link', from: work, to: { id: target.id }, data: { linkType } });
     }
-    return { changes: [...creates, ...relates], created, later };
+    return { relates, later };
   }
 
-  async function submitWork(rec: WorkRecord) {
-    const built = await buildChanges(rec);
-    const result = await changes.importSubmission(runId, built.changes);
-    // Only a committed submission's entities exist; a failed one rolled back, so nothing is remembered.
-    for (const key of built.created) {
+  /** One work's submission: its create, creates for new references, its relations and external ids. */
+  async function buildChanges(rec: WorkRecord) {
+    const work: EntityRef = { ref: 'w' };
+    const refs = await referenceChanges(rec, work, 1);
+    const ids: ChangeInput[] = rec.externalIds.map(({ scheme, value }) => ({
+      op: 'relate',
+      type: 'external_id',
+      from: work,
+      data: { scheme, value },
+    }));
+    const links = linkChanges(rec, work);
+    return {
+      changes: [
+        { op: 'create', kind: 'work', ref: 'w', fields: rec.fields } satisfies ChangeInput,
+        ...refs.creates,
+        ...refs.relates,
+        ...ids,
+        ...links.relates,
+      ],
+      created: [{ index: 0, qid: rec.qid, kind: 'work' } satisfies CreatedKey, ...refs.created],
+      later: links.later,
+    };
+  }
+
+  /** Remembers what a committed submission created; a failed one rolled back, so it created nothing. */
+  function rememberCreated(created: CreatedKey[], result: { changes: { entityId: string | null }[] }) {
+    for (const key of created) {
       const entityId = result.changes[key.index]?.entityId;
       if (!entityId) throw new Error(`importSubmission returned no entity for change ${key.index + 1}`);
       if ('slug' in key) tagIds.set(key.slug, entityId);
       else known.set(key.qid, { id: entityId, kind: key.kind, live: true });
     }
+  }
+
+  async function submitWork(rec: WorkRecord) {
+    const built = await buildChanges(rec);
+    const result = await changes.importSubmission(runId, built.changes);
+    rememberCreated(built.created, result);
     const workId = result.changes[0]?.entityId;
     // Checked in the loop above: change 0 is the work's create.
     for (const link of built.later) deferred.push({ ...link, fromId: workId! });
@@ -266,6 +324,57 @@ export async function runWikidataImport(
     }
   }
 
+  /**
+   * Relations AMDB holds, live or removed, among the works being backfilled: a backfill never adds one
+   * again, so a moderator's unrelate sticks and nothing is duplicated.
+   */
+  const existingKeys = new Set<string>();
+  const relationKey = (type: string, fromId: string, toId: string | null, role: string | null) =>
+    JSON.stringify([type, fromId, toId, role]);
+  /** A relate's key when both its ends are already in AMDB; null when one is created in the same submission. */
+  const keyOf = (change: ChangeInput) =>
+    change.op === 'relate' && 'id' in change.from && change.to && 'id' in change.to
+      ? relationKey(change.type, change.from.id, change.to.id, change.data.role ?? null)
+      : null;
+  const count = (key: 'backfilled' | 'upToDate' | 'relationsAdded', n = 1) => {
+    stats[key] = (stats[key] ?? 0) + n;
+  };
+
+  /** Adds what an imported work is missing, as one relate-only submission (plus creates for new references). */
+  async function backfillWork(rec: WorkRecord, workId: string) {
+    const work: EntityRef = { id: workId };
+    const refs = await referenceChanges(rec, work, 0);
+    // A link whose target isn't in AMDB stays missing: a backfill brings in no work, so none can arrive.
+    const links = linkChanges(rec, work);
+    const keys = new Set<string>();
+    // Only relates between existing entities can be filtered out, so every create keeps its relation
+    // and `refs.created`'s indices (the creates come first) still hold.
+    const relates = [...refs.relates, ...links.relates].filter((change) => {
+      const key = keyOf(change);
+      if (key === null) return true;
+      if (existingKeys.has(key) || keys.has(key)) return false;
+      keys.add(key);
+      return true;
+    });
+    const added = relates.filter((c) => c.op === 'relate' && c.type !== 'external_id').length;
+    if (added === 0) {
+      count('upToDate');
+      return;
+    }
+    try {
+      const result = await changes.importSubmission(runId, [...refs.creates, ...relates]);
+      rememberCreated(refs.created, result);
+    } catch (err) {
+      if (!isItemError(err)) throw err;
+      stats.skipped.invalid++;
+      log(`skipped ${rec.qid}: ${err.code} (${err.message})`);
+      return;
+    }
+    for (const key of keys) existingKeys.add(key);
+    count('backfilled');
+    count('relationsAdded', added);
+  }
+
   async function importCandidates() {
     stats.bytesStart = await measure();
     const discovered = await discover(deps.client, opts);
@@ -287,9 +396,14 @@ export async function runWikidataImport(
       // A reverted work loses its live wikidata id, so `known` can't see it; it still counts as present.
       const retired = await imports.findRetiredWikidataIds(batch.map((c) => c.qid).filter((q) => !known.has(q)));
       const fresh = batch.filter((c) => !known.has(c.qid) && !retired.has(c.qid));
-      const fetched = await fetchEntities(fresh.map((c) => c.qid));
+      // A backfill maps the works an import run created instead; merged-away and person-entered ones aren't among them.
+      const imported = opts.backfill
+        ? await imports.findImportedWorks(batch.map((c) => c.qid).filter((q) => known.get(q)?.kind === 'work'))
+        : new Map<string, string>();
+      const toMap = opts.backfill ? batch.filter((c) => imported.has(c.qid)) : fresh;
+      const fetched = await fetchEntities(toMap.map((c) => c.qid));
       const records = new Map<string, WorkRecord | { skip: 'no_title' }>();
-      for (const c of fresh) {
+      for (const c of toMap) {
         const entity = fetched[c.qid];
         if (entity) records.set(c.qid, mapWork(entity, c, today));
       }
@@ -312,6 +426,8 @@ export async function runWikidataImport(
         const entity = refs[q];
         refItems.set(q, entity ? { ref: mapRef(entity), label: englishLabel(entity) || null } : null);
       }
+      for (const r of await imports.findRelationKeys([...imported.values()]))
+        existingKeys.add(relationKey(r.type, r.fromId, r.toId, r.role));
 
       for (const [i, c] of batch.entries()) {
         checkpoint();
@@ -321,13 +437,21 @@ export async function runWikidataImport(
         if (held?.live && held.kind !== 'work') {
           stats.skipped.held_as_other++;
           log(`skipped ${c.qid}: held as a ${held.kind}`);
+        } else if (opts.backfill) {
+          const workId = imported.get(c.qid);
+          if (!held && !retired.has(c.qid)) stats.skipped.not_present++;
+          else if (!workId) stats.skipped.present++;
+          else if (!record) stats.skipped.missing++;
+          else if ('skip' in record) stats.skipped[record.skip]++;
+          else await backfillWork(record, workId);
         } else if (fresh.every((f) => f.qid !== c.qid)) stats.skipped.present++;
         else if (!record) stats.skipped.missing++;
         else if ('skip' in record) stats.skipped[record.skip]++;
         else await importWork(record);
         stats.stoppedAt = start + i + 1;
       }
-      log(`ranks ${start + 1}–${stats.stoppedAt}: ${stats.imported} imported so far`);
+      const done = opts.backfill ? `${stats.backfilled ?? 0} backfilled` : `${stats.imported} imported`;
+      log(`ranks ${start + 1}–${stats.stoppedAt}: ${done} so far`);
     }
     return 'finished' as const;
   }
