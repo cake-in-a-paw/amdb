@@ -204,8 +204,16 @@ function seriesLinks(entity: WikidataEntity): { qid: string; position: number }[
   return out;
 }
 
+/**
+ * The English label, else the `mul` ("all languages") label: Wikidata keeps many names, including
+ * major film titles, only under `mul`, which by definition applies to English too.
+ */
+export function englishLabel(entity: WikidataEntity): string {
+  return (entity.labels?.en ?? entity.labels?.mul)?.value.trim() ?? '';
+}
+
 export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Date): WorkRecord | { skip: 'no_title' } {
-  const title = entity.labels?.en?.value.trim() ?? '';
+  const title = englishLabel(entity);
   if (title.length < 1 || title.length > MAX_TITLE) return { skip: 'no_title' };
 
   const isFilm = candidate.mediaType === 'film_tv';
@@ -262,13 +270,13 @@ export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Dat
   };
 }
 
-/** A creator, series, property or genre stub; null without an English label. */
+/** A creator, series, property or genre stub; null without an English (or mul) label. */
 export function mapRef(entity: WikidataEntity): {
   name: string;
   kind: 'person' | 'organization';
   description?: string;
 } | null {
-  const name = entity.labels?.en?.value.trim() ?? '';
+  const name = englishLabel(entity);
   if (name.length < 1 || name.length > MAX_TITLE) return null;
   const kind = qids(entity, 'P31').includes('Q5') ? 'person' : 'organization';
   const description = entity.descriptions?.en?.value.trim();

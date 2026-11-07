@@ -161,6 +161,16 @@ describe('mapWork', () => {
     expect('skip' in mapWork({ id: 'Q1', labels: { en: { value: 'x'.repeat(500) } } }, FILM, TODAY)).toBe(false);
   });
 
+  it('takes the title from the mul (all-languages) label when there is no en label, en first', () => {
+    // Wikidata moved many titles (Forrest Gump, The Matrix) to `mul` and dropped the `en` copy.
+    expect(ok(mapWork({ id: 'Q1', labels: { mul: { value: 'The Matrix' } } }, FILM, TODAY)).fields.title).toBe(
+      'The Matrix',
+    );
+    expect(
+      ok(mapWork({ id: 'Q1', labels: { en: { value: 'English' }, mul: { value: 'Mul' } } }, FILM, TODAY)).fields.title,
+    ).toBe('English');
+  });
+
   it('converts seconds and rejects other units', () => {
     const runtime = (amount: string, unit: string): Record<string, Claim[]> => ({
       P2047: [
@@ -188,6 +198,10 @@ describe('mapRef and genreTag', () => {
       description: 'a studio',
     });
     expect(mapRef({ id: 'Q9', labels: { de: { value: 'Acme' } } })).toBeNull();
+  });
+
+  it('mapRef falls back to the mul label', () => {
+    expect(mapRef({ id: 'Q9', labels: { mul: { value: 'Robert Zemeckis' } } })?.name).toBe('Robert Zemeckis');
   });
 
   it('genreTag strips one trailing suffix and slugs', () => {

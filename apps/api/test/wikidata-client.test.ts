@@ -58,7 +58,7 @@ describe('wikidata client', () => {
     expect(entUrl.searchParams.get('maxlag')).toBe('5');
     expect(entUrl.searchParams.get('ids')).toBe('Q1');
     expect(entUrl.searchParams.get('props')).toBe('labels|descriptions|claims');
-    expect(entUrl.searchParams.get('languages')).toBe('en');
+    expect(entUrl.searchParams.get('languages')).toBe('en|mul');
   });
 
   it('waits Retry-After seconds on a 429, then succeeds', async () => {

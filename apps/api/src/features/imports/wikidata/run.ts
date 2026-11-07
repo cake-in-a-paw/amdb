@@ -7,7 +7,7 @@ import { createChangesService } from '../../changes/service';
 import { createImportsService } from '../service';
 import { type WikidataClient, type WikidataEntity, WikidataUnavailable } from './client';
 import { discover } from './discover';
-import { genreTag, mapRef, mapWork, type WorkRecord } from './map';
+import { englishLabel, genreTag, mapRef, mapWork, type WorkRecord } from './map';
 
 const LICENSE_URL = 'https://www.wikidata.org/wiki/Wikidata:Licensing';
 /** When LICENSE_URL was last read and still said CC0 for the main namespace; re-check and bump it. */
@@ -310,7 +310,7 @@ export async function runWikidataImport(
       const refs = await fetchEntities(toFetch);
       for (const q of toFetch) {
         const entity = refs[q];
-        refItems.set(q, entity ? { ref: mapRef(entity), label: entity.labels?.en?.value ?? null } : null);
+        refItems.set(q, entity ? { ref: mapRef(entity), label: englishLabel(entity) || null } : null);
       }
 
       for (const [i, c] of batch.entries()) {

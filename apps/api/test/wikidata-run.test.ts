@@ -475,6 +475,25 @@ it('a genre whose slug belongs to a retracted tag is dropped, not recreated', as
   }
 });
 
+it('a work, director and genre labeled only in mul (all languages) import under that label', async () => {
+  const t = await setupTest();
+  try {
+    const mulOnly = (e: WikidataEntity): WikidataEntity => ({ ...e, labels: { mul: e.labels!.en! } });
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: mulOnly(film('Q1', 'Forrest Gump', { director: 'Q200', genres: ['Q300'] })),
+      Q200: mulOnly(person('Q200', 'Robert Zemeckis')),
+      Q300: mulOnly(thing('Q300', 'drama film')),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 1, skipped: expect.objectContaining({ no_title: 0 }) });
+    expect(await workIdByTitle(t.db, 'Forrest Gump')).toBeDefined();
+    expect((await t.db.select({ name: creators.name }).from(creators)).map((r) => r.name)).toEqual(['Robert Zemeckis']);
+    expect((await t.db.select({ slug: tags.slug }).from(tags)).map((r) => r.slug)).toEqual(['drama']);
+  } finally {
+    await t.close();
+  }
+});
+
 it('a final-pass link that can’t be added is counted in linksFailed and logged', async () => {
   const t = await setupTest();
   try {

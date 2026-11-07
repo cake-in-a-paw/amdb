@@ -35,14 +35,14 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 | Anime films | Q20650540 anime film | `film_tv` / `anime_film` |
 | Books | Q7725634 literary work | `book` |
 
-- Only items with an English label, applied when mapping (items without one are skipped as `no_title`), not in the query: the label join makes the film query exceed the 60-second limit. An item in two classes takes the first match in this order:
+- Only items with an English label (the `en` label, else the `mul` "all languages" label, where Wikidata now keeps many titles and names, e.g. Forrest Gump), applied when mapping (items without one are skipped as `no_title`), not in the query: the label join makes the film query exceed the 60-second limit. An item in two classes takes the first match in this order:
   anime film, anime series, film, TV series, literary work.
 - **Popularity order:** items are ranked by sitelink count (`wikibase:sitelinks`), most first,
   and imported in that order, so a capped seed holds the best-known works.
 
 | Wikidata | AMDB |
 |---|---|
-| English label | `title` |
+| English label (`en`, else `mul`) | `title` |
 | P1476 title, when not English | `originalTitle` |
 | English description | `description` |
 | P577 publication date, earliest (else P580 start time); precision day, month or year only | `releaseYear/Month/Day` |

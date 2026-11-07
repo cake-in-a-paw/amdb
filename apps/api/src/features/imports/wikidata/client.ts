@@ -150,7 +150,8 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       const params = new URLSearchParams({
         ids: ids.join('|'),
         props: 'labels|descriptions|claims',
-        languages: 'en',
+        // `mul` holds the label for all languages; many items have no separate `en` one.
+        languages: 'en|mul',
       });
       // Shape follows wbgetentities; `missing` marks absent entities, `redirects` a followed redirect.
       const url = `${ENTITY_URL}&${params}`;
