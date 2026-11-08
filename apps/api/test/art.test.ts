@@ -14,7 +14,7 @@ type Reply = Response | Promise<Response>;
 
 /** What each faked source answers. Every handler can be replaced per test. */
 interface Sources {
-  tmdb: (kind: 'movie' | 'tv', id: string) => Reply;
+  tmdb: (kind: 'movie' | 'tv', id: string, signal?: AbortSignal | null) => Reply;
   olCover: (olid: string) => Reply;
   olWork: (olid: string) => Reply;
   anilist: (id: number) => Reply;
@@ -71,7 +71,8 @@ async function setup(overrides: Partial<Sources> = {}, artDeps: Partial<ArtDeps>
       body,
     });
     const tmdb = /^\/3\/(movie|tv)\/(\d+)$/.exec(url.pathname);
-    if (url.host === 'api.themoviedb.org' && tmdb) return sources.tmdb(tmdb[1] as 'movie' | 'tv', tmdb[2]!);
+    if (url.host === 'api.themoviedb.org' && tmdb)
+      return sources.tmdb(tmdb[1] as 'movie' | 'tv', tmdb[2]!, init.signal);
     const cover = /^\/b\/olid\/(OL\d+M)-M\.jpg$/.exec(url.pathname);
     if (url.host === 'covers.openlibrary.org' && cover) return sources.olCover(cover[1]!);
     const work = /^\/works\/(OL\d+W)\.json$/.exec(url.pathname);
@@ -227,6 +228,49 @@ describe('resolving a work’s art', () => {
     s.clock.advance(1_000);
     expect(await s.art(film)).toEqual({ [film]: tmdbFound('movie', '603') });
     expect(s.callsTo('api.themoviedb.org')).toHaveLength(2);
+  });
+
+  it('a source call that never answers is cut off at the 3 s deadline, and the work is unavailable', async () => {
+    const s = await open({
+      // Settles only when the call's signal aborts, as a hung connection would.
+      tmdb: (_k, _id, signal) =>
+        new Promise<Response>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => reject(signal.reason));
+        }),
+    });
+    const id = await s.work({ tmdb_movie: '603', anilist: '21' });
+    const started = Date.now();
+    expect(await s.art(id)).toEqual({ [id]: { status: 'unavailable' } });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(2900);
+    expect(Date.now() - started).toBeLessThan(4500);
+    expect(s.callsTo('api.themoviedb.org')).toHaveLength(1);
+    expect(s.callsTo('graphql.anilist.co')).toEqual([]);
+  }, 10_000);
+
+  it('a TMDB 401 is unavailable, blocks TMDB for 60 s, and logs one line without the key or URL', async () => {
+    const logged: string[] = [];
+    for (const level of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+      vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logged.push(args.map(String).join(' ')));
+    }
+    let rejected = true;
+    const s = await open({
+      tmdb: (kind, id) => (rejected ? new Response('{"status_code":7}', { status: 401 }) : defaults.tmdb(kind, id)),
+    });
+    const film = await s.work({ tmdb_movie: '603', anilist: '21' });
+    expect(await s.art(film)).toEqual({ [film]: { status: 'unavailable' } });
+    expect(s.callsTo('api.themoviedb.org')).toHaveLength(1);
+
+    rejected = false;
+    s.clock.advance(59_000);
+    expect(await s.art(film)).toEqual({ [film]: { status: 'unavailable' } });
+    expect(s.callsTo('api.themoviedb.org')).toHaveLength(1);
+    expect(logged).toHaveLength(1);
+    expect(logged[0]).toContain('401');
+    expect(logged.join('\n')).not.toContain(KEY);
+    expect(logged.join('\n')).not.toContain('api.themoviedb.org');
+
+    s.clock.advance(1_000);
+    expect(await s.art(film)).toEqual({ [film]: tmdbFound('movie', '603') });
   });
 
   it('without a TMDB key, a film with TMDB and AniList ids is unavailable and nothing is fetched', async () => {

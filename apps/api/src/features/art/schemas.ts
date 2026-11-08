@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi';
-import { SOURCE_NAMES } from './sources';
+import { ArtSource } from '@amdb/shared';
 
 /** The most works one `/api/art` request may ask about. */
 export const MAX_ART_WORKS = 50;
@@ -17,13 +17,11 @@ export const ArtQuery = z.object({
     .openapi({ description: `Comma-separated work ids, at most ${MAX_ART_WORKS}` }),
 });
 
-const SourceName = z.enum(SOURCE_NAMES);
-
 export const ArtItemSchema = z
   .discriminatedUnion('status', [
     z.object({
       status: z.literal('found'),
-      source: SourceName,
+      source: ArtSource,
       /** Small image, for rows. */
       thumb: z.string(),
       /** Large image, for the work page. */

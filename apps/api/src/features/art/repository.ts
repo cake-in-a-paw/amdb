@@ -1,5 +1,6 @@
 import type { IdScheme } from '@amdb/shared';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { listed } from '../../platform/db/listed';
 import { resolveWinner } from '../../platform/db/merge';
 import { entities, relations } from '../../platform/db/schema';
 import type { DbOrTx } from '../../platform/db/types';
@@ -32,15 +33,7 @@ export function artRepository(db: DbOrTx) {
           await db
             .select({ id: entities.id })
             .from(entities)
-            .where(
-              and(
-                inArray(entities.id, winners),
-                eq(entities.kind, 'work'),
-                isNull(entities.removedAt),
-                isNull(entities.retractedByChange),
-                isNull(entities.mergedIntoId),
-              ),
-            )
+            .where(and(inArray(entities.id, winners), eq(entities.kind, 'work'), listed()))
         ).map((r) => r.id),
       );
       for (const [id, winner] of candidates) if (live.has(winner)) out.set(id, winner);

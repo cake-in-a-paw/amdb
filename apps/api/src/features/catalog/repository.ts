@@ -1,15 +1,9 @@
 import type { EntityKind, MediaType } from '@amdb/shared';
 import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
+import { listed } from '../../platform/db/listed';
 import type { DbOrTx } from '../../platform/db/types';
 import type { SearchCursor } from './schemas';
-
-/**
- * The entities the public sees in lists, relation groups, search and duplicates: not removed,
- * retracted (its create was rejected or reverted) or merged away. The one place that rule lives.
- */
-export const listed = () =>
-  and(isNull(entities.removedAt), isNull(entities.retractedByChange), isNull(entities.mergedIntoId));
 
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
 

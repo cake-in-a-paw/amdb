@@ -41,7 +41,7 @@ export type WikidataImportStats = {
   bytesPerWork: number;
   /** The 1-based rank of the last candidate the run dealt with. */
   stoppedAt: number;
-  /** Backfill runs only: imported works that got at least one new relation. */
+  /** Backfill runs only: imported works that got at least one new relation or external id. */
   backfilled?: number;
   /** Backfill runs only: imported works with nothing missing (or nothing that may be re-added). */
   upToDate?: number;

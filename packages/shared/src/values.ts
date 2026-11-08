@@ -3,6 +3,10 @@ import { z } from 'zod';
 export const EntityKind = z.enum(['work', 'creator', 'series', 'property', 'tag']);
 export type EntityKind = z.infer<typeof EntityKind>;
 
+/** The sites art is linked from, in the order they are tried. */
+export const ArtSource = z.enum(['tmdb', 'openlibrary', 'anilist']);
+export type ArtSource = z.infer<typeof ArtSource>;
+
 export const MediaType = z.enum(['film_tv', 'book']);
 export type MediaType = z.infer<typeof MediaType>;
 

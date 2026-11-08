@@ -1,18 +1,15 @@
 // Polite clients for the sites AMDB links art from (artwork spec, "Resolving a work's art").
 // Each has a timeout, its own rate limit and honors Retry-After (constitution II). They never
-// touch the database and never log: a TMDB URL carries the API key.
-import type { IdScheme } from '@amdb/shared';
+// touch the database. They log only a bad TMDB key's status: a TMDB URL carries the key.
+import type { ArtSource as ArtSourceName, IdScheme } from '@amdb/shared';
 import { z } from 'zod';
 import { createOutboundLimit, retryAfterMs, type OutboundLimit } from '../../platform/http/outbound-limit';
 
 export type ArtImage = { thumb: string; full: string; link: string };
-/** The sites art is linked from, in the order they are tried. */
-export const SOURCE_NAMES = ['tmdb', 'openlibrary', 'anilist'] as const;
-export type SourceName = (typeof SOURCE_NAMES)[number];
 export type Lookup = { status: 'found'; image: ArtImage } | { status: 'none' } | { status: 'unavailable' };
 
 export interface ArtSource {
-  name: SourceName;
+  name: ArtSourceName;
   schemes: readonly IdScheme[];
   lookup(scheme: IdScheme, value: string, deadline: number): Promise<Lookup>;
 }
@@ -99,6 +96,7 @@ const TmdbBody = z.object({
 });
 
 function tmdb(deps: Required<Pick<ArtDeps, 'fetch' | 'now'>> & ArtDeps, limit: OutboundLimit): ArtSource {
+  let loggedUntil = 0;
   return {
     name: 'tmdb',
     schemes: ['tmdb_movie', 'tmdb_tv'],
@@ -109,6 +107,16 @@ function tmdb(deps: Required<Pick<ArtDeps, 'fetch' | 'now'>> & ArtDeps, limit: O
       const url = `https://api.themoviedb.org/3/${kind}/${value}?${new URLSearchParams({ api_key: deps.tmdbApiKey })}`;
       const res = await call(deps, limit, url, {}, deadline);
       if (!res) return UNAVAILABLE;
+      if (res.status === 401) {
+        // A rejected key won't start working on retry: leave TMDB alone for a while, like a 429.
+        await discard(res);
+        const at = deps.now();
+        limit.blockUntil(at + DEFAULT_BACKOFF_MS);
+        // Status only, once per block: the URL carries the key.
+        if (at >= loggedUntil) console.warn('TMDB rejected the API key (401); TMDB art unavailable');
+        loggedUntil = at + DEFAULT_BACKOFF_MS;
+        return UNAVAILABLE;
+      }
       if (res.status === 404) {
         await discard(res);
         return NONE;
