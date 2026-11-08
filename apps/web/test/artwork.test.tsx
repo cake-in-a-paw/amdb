@@ -19,7 +19,16 @@ function fakeSources(tmdb: (id: string) => Reply = (id) => json({ poster_path: `
     if (url.host === 'openlibrary.org') return json({ covers: [123] });
     return new Response(null, { status: 404 });
   };
-  const art = { fetch: fetch as typeof globalThis.fetch, tmdbApiKey: 'test' };
+  // A clock that moves only when the rate limiter sleeps, so 50 lookups don't wait out TMDB's limit.
+  let clock = Date.parse('2026-11-08T12:00:00Z');
+  const art = {
+    fetch: fetch as typeof globalThis.fetch,
+    tmdbApiKey: 'test',
+    now: () => clock,
+    sleep: async (ms: number) => {
+      clock += ms;
+    },
+  };
   return { art, tmdbCalls: (id: string) => calls.filter((c) => c.includes(`/3/movie/${id}?`)).length };
 }
 
@@ -158,4 +167,87 @@ test('the footer carries the TMDB notice and logo, and links to Open Library and
   expect(within(footer).getByRole('img', { name: 'TMDB' })).toHaveAttribute('src', '/tmdb-logo.svg');
   expect(within(footer).getByRole('link', { name: 'Open Library' })).toHaveAttribute('href', 'https://openlibrary.org');
   expect(within(footer).getByRole('link', { name: 'AniList' })).toHaveAttribute('href', 'https://anilist.co');
+});
+
+/** 55 films, each with a TMDB id, all directed by one creator; browse lists them by title. */
+async function seedMany(api: TestApi) {
+  const { contributor, moderator } = await actors(api);
+  const titles = Array.from({ length: 55 }, (_, i) => `Film ${String(i + 1).padStart(2, '0')}`);
+  const changes = [
+    { op: 'create', kind: 'creator', ref: 'dir', fields: { kind: 'person', name: 'Director' } },
+    ...titles.flatMap((title, i) => [
+      { op: 'create', kind: 'work', ref: `w${i}`, fields: { mediaType: 'film_tv', subtype: 'movie', title } },
+      {
+        op: 'relate',
+        type: 'external_id',
+        from: { ref: `w${i}` },
+        data: { scheme: 'tmdb_movie', value: String(i + 1) },
+      },
+      { op: 'relate', type: 'work_creator', from: { ref: `w${i}` }, to: { ref: 'dir' }, data: { role: 'director' } },
+    ]),
+  ];
+  const created = await publish(contributor, moderator, changes);
+  return { creator: created.changes[0]?.entityId ?? '' };
+}
+
+/** The ids of every `/api/art` request the app makes from now on, one list per request. */
+function watchArtRequests(t: Awaited<ReturnType<typeof renderApp>>) {
+  const requests: string[][] = [];
+  const original = t.api.app.request.bind(t.api.app);
+  vi.spyOn(t.api.app, 'request').mockImplementation(async (input, init) => {
+    const url = new URL(String(input instanceof Request ? input.url : input), 'http://amdb.test');
+    if (url.pathname === '/api/art') requests.push((url.searchParams.get('works') ?? '').split(','));
+    return original(input, init);
+  });
+  return requests;
+}
+
+test('Load more keeps the thumbnails already shown and asks only for the new works', async () => {
+  const { art } = fakeSources();
+  const t = await renderApp('/browse', { seed: seedMany, art });
+  const list = await screen.findByRole('list', { name: 'Works' });
+  const thumbs = () => list.querySelectorAll('img[src^="https://image.tmdb.org/"]');
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(20));
+  const requests = watchArtRequests(t);
+
+  await t.user.click(screen.getByRole('button', { name: 'Load more' }));
+
+  await vi.waitFor(() => expect(thumbs()).toHaveLength(40));
+  // The first 20 never fell back to placeholders, and were not asked for again.
+  expect(list.querySelectorAll('[data-art-placeholder]').length).toBe(0);
+  expect(requests).toHaveLength(1);
+  expect(requests[0]).toHaveLength(20);
+}, 60_000);
+
+test('a list page shows thumbnails, in requests of at most 50 works', async () => {
+  const { art } = fakeSources();
+  const t = await renderApp('/', { seed: seedMany, art });
+  const requests = watchArtRequests(t);
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.creator } });
+
+  const list = await screen.findByRole('list', { name: 'Works' });
+  await vi.waitFor(() => expect(list.querySelectorAll('img[src^="https://image.tmdb.org/"]')).toHaveLength(55));
+  expect(requests.map((ids) => ids.length).sort((a, b) => a - b)).toEqual([5, 50]);
+}, 60_000);
+
+test('leaving the page cancels the pending second try', async () => {
+  let first = true;
+  const { art, tmdbCalls } = fakeSources((id) => {
+    if (id === '1' && first) {
+      first = false;
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      return new Response(null, { status: 500 });
+    }
+    return json({ poster_path: `/p${id}.jpg` });
+  });
+  const t = await renderApp('/', { seed: seedWorks, art });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.a } });
+  await vi.waitFor(() => expect(tmdbCalls('1')).toBe(1));
+  await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+
+  await t.router.navigate({ to: '/submit' });
+  await vi.waitFor(() => expect(t.router.state.location.pathname).toBe('/submit'));
+  await vi.advanceTimersByTimeAsync(20_000);
+
+  expect(tmdbCalls('1')).toBe(1);
 });

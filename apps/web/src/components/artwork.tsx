@@ -33,6 +33,7 @@ export function Poster({ title, item }: { title: string; item: ArtItem | undefin
       <img
         src={art.full}
         alt={`${art.source === 'tmdb' ? 'Poster' : 'Cover'} for ${title}`}
+        loading="lazy"
         onError={() => setFailed(art.full)}
         className="aspect-[2/3] w-40 rounded-md border border-border bg-secondary object-cover"
       />
