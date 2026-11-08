@@ -4464,6 +4464,177 @@
         }
       }
     },
+    "/api/art": {
+      "get": {
+        "description": "Art for works, linked live from TMDB, Open Library or AniList. A display aid, not dataset data: unmetered, never stored.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated work ids, at most 50"
+            },
+            "required": true,
+            "description": "Comma-separated work ids, at most 50",
+            "name": "works",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "found"
+                                ]
+                              },
+                              "source": {
+                                "type": "string",
+                                "enum": [
+                                  "tmdb",
+                                  "openlibrary",
+                                  "anilist"
+                                ]
+                              },
+                              "thumb": {
+                                "type": "string"
+                              },
+                              "full": {
+                                "type": "string"
+                              },
+                              "link": {
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "status",
+                              "source",
+                              "thumb",
+                              "full",
+                              "link"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "none"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "status"
+                            ]
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "unavailable"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "status"
+                            ]
+                          }
+                        ],
+                        "description": "`none`: no source has art (also for an unknown, removed or non-work id). `unavailable`: a source failed or timed out; ask again later."
+                      }
+                    }
+                  },
+                  "required": [
+                    "items"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query: not 1 to 50 work ids",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/health": {
       "get": {
         "responses": {

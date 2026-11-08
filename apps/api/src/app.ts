@@ -1,5 +1,8 @@
 import { createRoute } from '@hono/zod-openapi';
 import { cors } from 'hono/cors';
+import { artRoutes } from './features/art/routes';
+import { createArtService } from './features/art/service';
+import type { ArtDeps } from './features/art/sources';
 import { catalogRoutes } from './features/catalog/routes';
 import { createCatalogService } from './features/catalog/service';
 import { holdAll, type ReviewPolicy } from './features/changes/review-policy';
@@ -30,6 +33,8 @@ export interface AppDeps {
   trustedProxyHops?: number;
   /** Directory of the built web app. When set, the API serves it for every non-`/api` GET. */
   webDistDir?: string;
+  /** Where linked art comes from. Omitted means no sources: every work is `none` and nothing is fetched. */
+  art?: ArtDeps;
 }
 
 const healthRoute = createRoute({
@@ -72,6 +77,7 @@ export function createApp(deps: AppDeps) {
   );
   app.route('/', catalogRoutes(createCatalogService(deps.db)));
   app.route('/', importsRoutes(createImportsService(deps.db)));
+  app.route('/', artRoutes(createArtService(deps.db, deps.art), { trustedProxyHops: deps.trustedProxyHops ?? 1 }));
 
   app.openapi(healthRoute, (c) => c.json({ ok: true as const }, 200));
 

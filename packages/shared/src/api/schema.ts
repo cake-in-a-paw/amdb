@@ -2029,6 +2029,93 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/art": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Art for works, linked live from TMDB, Open Library or AniList. A display aid, not dataset data: unmetered, never stored. */
+        get: {
+            parameters: {
+                query: {
+                    /** @description Comma-separated work ids, at most 50 */
+                    works: string;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                [key: string]: {
+                                    /** @enum {string} */
+                                    status: "found";
+                                    /** @enum {string} */
+                                    source: "tmdb" | "openlibrary" | "anilist";
+                                    thumb: string;
+                                    full: string;
+                                    link: string;
+                                } | {
+                                    /** @enum {string} */
+                                    status: "none";
+                                } | {
+                                    /** @enum {string} */
+                                    status: "unavailable";
+                                };
+                            };
+                        };
+                    };
+                };
+                /** @description Invalid query: not 1 to 50 work ids */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Rate limited */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;

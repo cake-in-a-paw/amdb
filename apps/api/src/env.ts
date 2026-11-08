@@ -17,6 +17,11 @@ const EnvSchema = z.object({
   TRUSTED_PROXY_HOPS: z.coerce.number().int().min(1).default(1),
   /** Directory of the built web app to serve alongside the API. Unset means the API serves no web app. */
   WEB_DIST_DIR: z.string().min(1).optional(),
+  /** TMDB v3 API key, for linked posters. A secret: never logged. Unset (or empty) means TMDB art is unavailable. */
+  TMDB_API_KEY: z
+    .string()
+    .optional()
+    .transform((v) => v || undefined),
   /** Comma-separated addresses; an account created with one of them is an admin. Unset means none. */
   ADMIN_EMAILS: z
     .string()

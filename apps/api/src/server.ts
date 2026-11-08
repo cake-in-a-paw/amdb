@@ -14,6 +14,8 @@ const auth = createAuth(db, env, {
   sendSignInCode: createSignInCodeSender(email),
 });
 
+if (!env.TMDB_API_KEY) console.warn('TMDB_API_KEY is not set: films and TV show placeholders instead of posters.');
+
 const app = createApp({
   db,
   getSession: (headers) => getSessionFromAuth(auth, headers),
@@ -21,6 +23,7 @@ const app = createApp({
   webOrigin: env.WEB_ORIGIN,
   trustedProxyHops: env.TRUSTED_PROXY_HOPS,
   webDistDir: env.WEB_DIST_DIR,
+  art: { fetch, tmdbApiKey: env.TMDB_API_KEY },
 });
 
 serve({ fetch: app.fetch, port: env.PORT }, (info) => {

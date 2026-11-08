@@ -58,10 +58,12 @@ const MAY_IMPORT_CATALOG_TABLES = [
   'features/changes/repository.ts',
   // Read-only: checked below.
   'features/catalog/repository.ts',
+  // Read-only: checked below.
+  'features/art/repository.ts',
   // Reads which entities hold a wikidata id; it writes only import_runs, so it is checked per table below.
   'features/imports/repository.ts',
 ];
-const READ_ONLY = ['features/catalog/repository.ts'];
+const READ_ONLY = ['features/catalog/repository.ts', 'features/art/repository.ts'];
 /** Files that write their own tables but only read the catalog: no insert/update/delete names a catalog table. */
 const CATALOG_READ_ONLY = ['features/imports/repository.ts'];
 
