@@ -6,8 +6,8 @@ type Found = Extract<ArtItem, { status: 'found' }>;
 const credits = { tmdb: 'Poster: TMDB', openlibrary: 'Cover: Open Library', anilist: 'Cover: AniList' } as const;
 
 /** The item if it has an image that hasn't failed to load. */
-function usable(item: ArtItem | undefined, failed: string | null, pick: 'thumb' | 'full'): Found | null {
-  return item?.status === 'found' && failed !== item[pick] ? item : null;
+function usable(item: ArtItem | undefined, failed: string | null): Found | null {
+  return item?.status === 'found' && failed !== item.full ? item : null;
 }
 
 /**
@@ -16,7 +16,7 @@ function usable(item: ArtItem | undefined, failed: string | null, pick: 'thumb' 
  */
 export function Poster({ title, item }: { title: string; item: ArtItem | undefined }) {
   const [failed, setFailed] = useState<string | null>(null);
-  const art = usable(item, failed, 'full');
+  const art = usable(item, failed);
   if (!art) {
     return (
       <div
@@ -45,29 +45,5 @@ export function Poster({ title, item }: { title: string; item: ArtItem | undefin
         {credits[art.source]}
       </a>
     </div>
-  );
-}
-
-/** A list row's small image, 2:3. It has no text alternative: the row's title names it. */
-export function Thumb({ item }: { item: ArtItem | undefined }) {
-  const [failed, setFailed] = useState<string | null>(null);
-  const art = usable(item, failed, 'thumb');
-  if (!art) {
-    return (
-      <span
-        data-art-placeholder=""
-        aria-hidden="true"
-        className="aspect-[2/3] w-8 shrink-0 self-center rounded-sm border border-border bg-secondary"
-      />
-    );
-  }
-  return (
-    <img
-      src={art.thumb}
-      alt=""
-      loading="lazy"
-      onError={() => setFailed(art.thumb)}
-      className="aspect-[2/3] w-8 shrink-0 self-center rounded-sm border border-border bg-secondary object-cover"
-    />
   );
 }

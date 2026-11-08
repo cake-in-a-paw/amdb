@@ -4,7 +4,6 @@ import { EntityKind, MediaType } from '@amdb/shared';
 import { EmptyList, LoadError, Loading } from '@/components/entity-states';
 import { EntryRow } from '@/components/entry-row';
 import { LoadMore } from '@/components/load-more';
-import { useArt } from '@/lib/art';
 import { unwrap } from '@/lib/api';
 import { PAGE_SIZE } from '@/lib/entity';
 import { kindLabels, kindOrder, mediaTypeLabels } from '@/lib/labels';
@@ -45,8 +44,6 @@ function Browse() {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
   const items = list.data?.pages.flatMap((page) => page.items) ?? [];
-  // Only works have art; for other kinds there are no ids and so no request.
-  const art = useArt(api, kind === 'work' ? items.map((item) => item.id) : []);
 
   return (
     <div className="max-w-3xl py-8">
@@ -96,7 +93,7 @@ function Browse() {
       ) : (
         <ul aria-label={kindLabels[kind].plural}>
           {items.map((entry) => (
-            <EntryRow key={entry.id} entry={entry} art={kind === 'work' ? art : undefined} />
+            <EntryRow key={entry.id} entry={entry} />
           ))}
         </ul>
       )}

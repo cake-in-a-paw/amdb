@@ -2,7 +2,6 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { EntryRow } from '@/components/entry-row';
 import { Button } from '@/components/ui/button';
-import { useArt } from '@/lib/art';
 import { unwrap } from '@/lib/api';
 import { linkClass } from '@/lib/styles';
 
@@ -33,10 +32,6 @@ function CatalogList() {
     queryFn: async ({ signal }) =>
       unwrap(await api.GET('/api/browse', { params: { query: { kind: 'work', limit: 20 } }, signal })),
   });
-  const art = useArt(
-    api,
-    (works.data?.items ?? []).map((work) => work.id),
-  );
 
   return (
     <section aria-labelledby="catalog-heading">
@@ -64,7 +59,7 @@ function CatalogList() {
       ) : (
         <ul aria-labelledby="catalog-heading">
           {works.data.items.map((work) => (
-            <EntryRow key={work.id} entry={work} art={art} />
+            <EntryRow key={work.id} entry={work} />
           ))}
         </ul>
       )}

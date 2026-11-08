@@ -1,6 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import { Thumb } from '@/components/artwork';
-import type { ArtItem } from '@/lib/art';
 import { mediaTypeLabels } from '@/lib/labels';
 import type { Summary } from '@/lib/entity';
 
@@ -13,16 +11,7 @@ export function summaryDetail(entry: Pick<Summary, 'mediaType' | 'releaseYear'>)
  * One line of an index: the title, a dotted leader, and the details ("Spirited Away ······ Film &
  * TV, 2001"). A `<li>`, to sit in a list the caller names.
  */
-export function EntryRow({
-  entry,
-  detail = summaryDetail(entry),
-  art,
-}: {
-  entry: Summary;
-  detail?: string;
-  /** Art by work id, from `useArt`; given, the row shows a thumbnail (or its placeholder) left of the title. */
-  art?: Map<string, ArtItem | undefined>;
-}) {
+export function EntryRow({ entry, detail = summaryDetail(entry) }: { entry: Summary; detail?: string }) {
   return (
     <li className="border-b border-border/70">
       <Link
@@ -30,7 +19,6 @@ export function EntryRow({
         params={{ id: entry.id }}
         className="group flex min-h-11 min-w-11 items-baseline gap-3 py-2.5 hover:bg-secondary/60"
       >
-        {art && <Thumb item={art.get(entry.id)} />}
         <span className="font-serif text-lg leading-snug group-hover:underline group-hover:underline-offset-4">
           {entry.title}
         </span>

@@ -4,7 +4,6 @@ import type { EntityKind } from '@amdb/shared';
 import { EntryRow } from '@/components/entry-row';
 import { LoadError, Loading } from '@/components/entity-states';
 import { LoadMore } from '@/components/load-more';
-import { useArt, type ArtItem } from '@/lib/art';
 import { unwrap } from '@/lib/api';
 import { PAGE_SIZE, type Summary } from '@/lib/entity';
 import { kindLabels, kindOrder } from '@/lib/labels';
@@ -33,12 +32,6 @@ function Search() {
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
 
-  const found = results.data?.pages.flatMap((page) => page.items) ?? [];
-  const art = useArt(
-    api,
-    found.filter((item) => item.kind === 'work').map((item) => item.id),
-  );
-
   return (
     <div className="max-w-3xl py-8">
       <h1 className="font-serif text-3xl font-semibold">Search</h1>
@@ -49,14 +42,14 @@ function Search() {
       ) : results.isError && !results.data ? (
         <LoadError what="results" error={results.error} onRetry={() => void results.refetch()} />
       ) : (
-        <Results q={q} items={results.data.pages.flatMap((page) => page.items)} art={art} />
+        <Results q={q} items={results.data.pages.flatMap((page) => page.items)} />
       )}
       {q !== undefined && results.data && <LoadMore query={results} />}
     </div>
   );
 }
 
-function Results({ q, items, art }: { q: string; items: Summary[]; art: Map<string, ArtItem | undefined> }) {
+function Results({ q, items }: { q: string; items: Summary[] }) {
   if (items.length === 0) {
     return (
       <div className="py-4">
@@ -70,21 +63,13 @@ function Results({ q, items, art }: { q: string; items: Summary[]; art: Map<stri
   return (
     <>
       {kindOrder.map((kind) => (
-        <KindGroup key={kind} kind={kind} items={items.filter((item) => item.kind === kind)} art={art} />
+        <KindGroup key={kind} kind={kind} items={items.filter((item) => item.kind === kind)} />
       ))}
     </>
   );
 }
 
-function KindGroup({
-  kind,
-  items,
-  art,
-}: {
-  kind: EntityKind;
-  items: Summary[];
-  art: Map<string, ArtItem | undefined>;
-}) {
+function KindGroup({ kind, items }: { kind: EntityKind; items: Summary[] }) {
   if (items.length === 0) return null;
   const headingId = `search-${kind}`;
   return (
@@ -94,7 +79,7 @@ function KindGroup({
       </h2>
       <ul aria-labelledby={headingId}>
         {items.map((entry) => (
-          <EntryRow key={entry.id} entry={entry} art={kind === 'work' ? art : undefined} />
+          <EntryRow key={entry.id} entry={entry} />
         ))}
       </ul>
     </section>

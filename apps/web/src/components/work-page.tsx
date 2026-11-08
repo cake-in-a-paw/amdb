@@ -66,18 +66,11 @@ export function WorkPage({ entity }: { entity: EntityView }) {
     linkGroups.set(label, [...(linkGroups.get(label) ?? []), link]);
   }
 
-  // One request for the page's own art and every list on it.
-  const art = useArt(api, [
-    entity.id,
-    ...(related?.byCreator.flatMap((g) => g.works) ?? []).map((w) => w.id),
-    ...(related?.bySeries.flatMap((g) => g.works) ?? []).map((w) => w.id),
-    ...(related?.byProperty.flatMap((g) => g.works) ?? []).map((w) => w.id),
-    ...(relations.links ?? []).map((link) => link.work.id),
-  ]);
+  const art = useArt(api, entity.id);
 
   return (
     <div className="grid gap-8 py-6 md:grid-cols-[10rem_minmax(0,1fr)]">
-      <Poster title={title} item={art.get(entity.id)} />
+      <Poster title={title} item={art} />
       <div>
         {text(fields.description) && <p className="max-w-prose leading-relaxed">{text(fields.description)}</p>}
 
@@ -139,7 +132,6 @@ export function WorkPage({ entity }: { entity: EntityView }) {
               </>
             }
             works={works.map((entry) => ({ entry, detail: summaryDetail(entry) }))}
-            art={art}
           />
         ))}
 
@@ -157,7 +149,6 @@ export function WorkPage({ entity }: { entity: EntityView }) {
             note={`No. ${position} in the series`}
             works={(seriesGroups.get(series.id) ?? []).map((entry) => ({ entry, detail: summaryDetail(entry) }))}
             empty="No other works in the series yet."
-            art={art}
           />
         ))}
 
@@ -177,7 +168,6 @@ export function WorkPage({ entity }: { entity: EntityView }) {
               }
               works={works.map((entry) => ({ entry, detail: summaryDetail(entry) }))}
               empty="No other works in the property yet."
-              art={art}
             />
           );
         })}
@@ -187,7 +177,6 @@ export function WorkPage({ entity }: { entity: EntityView }) {
             key={label}
             title={label}
             works={links.map((link) => ({ entry: link.work, detail: summaryDetail(link.work) }))}
-            art={art}
           />
         ))}
       </div>

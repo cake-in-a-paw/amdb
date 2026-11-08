@@ -1,6 +1,5 @@
 import { useId, type ReactNode } from 'react';
 import { EntryRow } from '@/components/entry-row';
-import type { ArtItem } from '@/lib/art';
 import type { Summary } from '@/lib/entity';
 
 /**
@@ -12,7 +11,6 @@ export function RelatedWorks({
   note,
   works,
   empty,
-  art,
 }: {
   title: ReactNode;
   /** A line under the title, such as where this work stands in the series. */
@@ -20,8 +18,6 @@ export function RelatedWorks({
   works: { entry: Summary; detail?: string }[];
   /** What to say when `works` is empty; without it an empty group renders nothing. */
   empty?: string;
-  /** Art by work id, for the thumbnails. */
-  art?: Map<string, ArtItem | undefined>;
 }) {
   const headingId = useId();
   if (works.length === 0 && !empty) return null;
@@ -36,7 +32,7 @@ export function RelatedWorks({
       ) : (
         <ul aria-labelledby={headingId}>
           {works.map(({ entry, detail }) => (
-            <EntryRow key={entry.id} entry={entry} detail={detail} art={art} />
+            <EntryRow key={entry.id} entry={entry} detail={detail} />
           ))}
         </ul>
       )}

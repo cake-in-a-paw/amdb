@@ -6,7 +6,7 @@
 
 ## Intent
 
-Work pages and lists look bare without posters and covers, and almost all cover art is copyrighted,
+Work pages look bare without posters and covers, and almost all cover art is copyrighted,
 so AMDB can't host it under its CC0 rule (§4.4). The IDs that point at sites with art are Wikidata
 statements, so they are CC0 and AMDB can hold them like any other external id. AMDB stores those IDs
 and, when a page is shown, links the image live from the site that has it, with credit. AMDB never
@@ -23,9 +23,10 @@ stores the image or anything about it.
 
 - A work's page shows its poster or cover, with a credit line naming the source and linking to the
   work's page there.
-- Search results, list pages and related-works rows show a small thumbnail.
-- A work with no art, or whose source is unreachable, shows a neutral placeholder of the same size.
-  Rows stay aligned and nothing errors.
+- Art shows only on a work's own page, never in a list: no thumbnails in search results, browse,
+  list pages or related-works rows (owner, 2026-11-08).
+- A work with no art, or whose source is unreachable, shows a neutral placeholder of the same size
+  on its page, and nothing errors.
 - The ~6,000 works already imported get the new IDs without being re-imported.
 
 ## Non-goals
@@ -115,7 +116,7 @@ books; anime classes if any were imported), one after another.
 
 ### API
 
-One public endpoint, used by the work page (one id) and by lists (a page's worth):
+One public endpoint, used by the work page (one id); API callers may ask for a batch:
 
 `GET /api/art?works=<id>,<id>,…` (at most 50 ids; more is a 400 in the standard error shape)
 
@@ -176,7 +177,7 @@ limit (TMDB 20/s, Open Library 5/s, AniList 20/min, under AniList's degraded 30/
 
 - An in-process cache keyed by (source, scheme, id): `found` for 7 days, `none` for 1 day.
   `unavailable` is never cached. Bounded in size (on the order of 20,000 entries). The resolved
-  answer per work is cached too, so a list page costs at most one outbound call per uncached source
+  answer per work is cached too, so a batched request costs at most one outbound call per uncached source
   id.
 - This is a cache, not storage. It lives in memory, empties on deploy and stays far inside TMDB's
   6-month limit. Being per instance, it's listed under Production Annotations below.
@@ -199,11 +200,12 @@ limit (TMDB 20/s, Open Library 5/s, AniList 20/min, under AniList's degraded 30/
   under it, "Poster: TMDB", "Cover: Open Library" or "Cover: AniList", linking to `link`.
   `loading="lazy"`, `alt` is "Poster for {title}" or "Cover for {title}", and the fallback is the
   placeholder.
-- **Rows** (`entry-row`, search results, list pages, related works): a 2:3 thumbnail. A list fetches
-  its page's art with one `/api/art` call after the rows render, so art never delays the list.
-  Items that come back `unavailable` are requested once more, about 5 seconds later. After that the
-  placeholder stays until the next visit. The work page does the same for its one image.
-- **Placeholder:** a neutral box in the theme's muted color, the same size, with no text. It is used
+- **Lists** (search, browse, list pages, related works, home): no art, and no art requests, so rows
+  keep their plain look (owner, 2026-11-08). Art shows only on a work's own page.
+- **Retry:** if the work page's answer is `unavailable`, it asks once more about 5 seconds later.
+  After that the placeholder stays; a later visit asks afresh, since an `unavailable` answer is not
+  reused.
+- **Placeholder:** the title set on a neutral box in the theme's muted color. It is used
   for `none`, `unavailable` and while loading. A broken image (`onerror`) also falls back to it.
 - **Attribution:** the footer (`app-shell`) gets the TMDB logo, smaller than AMDB's mark, with
   TMDB's notice, and "Covers from Open Library and AniList" linking to each. It is always shown.
