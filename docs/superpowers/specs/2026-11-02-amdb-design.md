@@ -135,6 +135,10 @@ AMDB hosts only images whose license is CC0 or public domain, recorded per image
 source; otherwise the work has no cover. Hosted images are stored in a Railway bucket, as in
 rmd (ADR 0011).
 
+*Amended 2026-11-08 by `2026-11-07-artwork-design.md` (ADR 0006):* AMDB still *hosts* only CC0
+or public-domain images. Third-party art (TMDB, Open Library, AniList) is linked live from its
+source, with credit, and never stored; that follows the artwork spec.
+
 ## 5. Submission and editing
 
 ### 5.1 Who can submit
@@ -335,6 +339,11 @@ fixes it.
   queue, and a per-address limit caps it. Add a challenge (e.g. Turnstile) if the queue fills.
 - *Reads are public until plan 4.* Spec §7 wants an API key on reads. Plan 2 deploys reads
   without a key. Plan 4 adds keys and metering.
+- The linked-art cache and the per-source outbound limits (`apps/api/src/features/art/service.ts`,
+  `apps/api/src/platform/http/outbound-limit.ts`) live in process memory too, as does
+  `/api/art`'s per-address limit. They reset on deploy and are per instance, so N replicas make
+  up to N times the calls to TMDB, Open Library and AniList. Fix: a shared store before running
+  more than one instance.
 
 **Queries without the index they need**
 

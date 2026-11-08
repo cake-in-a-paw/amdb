@@ -28,6 +28,9 @@ Who may see what is defined in the specs.
 - Every importer call has a timeout and a rate limit, and honors `Retry-After`. A failing
   upstream degrades to an explicit "unavailable", never a 500, a hang, or an empty result that
   looks like "no matches".
+- Third-party art may be shown by linking live to its source, with credit. AMDB never stores,
+  imports or exports it, and it isn't part of the dataset (V). Only the identifier that locates
+  it is data.
 
 ### III. Every Change Is a Recorded Revision
 
@@ -142,4 +145,4 @@ While the pull-request rule is relaxed, an amendment still needs its ADR and ver
 not the approval. The version bump is MAJOR to remove or redefine a principle, MINOR to add one,
 PATCH to clarify.
 
-**Version**: 0.1.0 (proposed) | **Ratified**: — | **Last Amended**: —
+**Version**: 0.2.0 (proposed) | **Ratified**: — | **Last Amended**: 2026-11-08
