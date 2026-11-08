@@ -89,7 +89,8 @@ export function createArtService(db: Db, deps?: ArtDeps) {
   return {
     /** Art for each requested id, keyed by the ids as requested. */
     async art(workIds: string[]): Promise<Record<string, ArtItem>> {
-      const winners = await repo.liveWorks([...new Set(workIds)]);
+      // Uuids compare in lowercase (as Postgres returns them); the response keeps the ids as requested.
+      const winners = await repo.liveWorks([...new Set(workIds.map((id) => id.toLowerCase()))]);
       const idsOf = new Map<string, Id[]>();
       for (const row of await repo.externalIds([...new Set(winners.values())], schemes)) {
         idsOf.set(row.workId, [...(idsOf.get(row.workId) ?? []), { scheme: row.scheme, value: row.value }]);
@@ -116,7 +117,7 @@ export function createArtService(db: Db, deps?: ArtDeps) {
 
       const items: Record<string, ArtItem> = {};
       for (const id of workIds) {
-        const winner = winners.get(id);
+        const winner = winners.get(id.toLowerCase());
         items[id] = (winner === undefined ? undefined : answers.get(winner)) ?? NONE;
       }
       return items;

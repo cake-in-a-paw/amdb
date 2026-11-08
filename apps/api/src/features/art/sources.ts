@@ -6,7 +6,9 @@ import { z } from 'zod';
 import { createOutboundLimit, retryAfterMs, type OutboundLimit } from '../../platform/http/outbound-limit';
 
 export type ArtImage = { thumb: string; full: string; link: string };
-export type SourceName = 'tmdb' | 'openlibrary' | 'anilist';
+/** The sites art is linked from, in the order they are tried. */
+export const SOURCE_NAMES = ['tmdb', 'openlibrary', 'anilist'] as const;
+export type SourceName = (typeof SOURCE_NAMES)[number];
 export type Lookup = { status: 'found'; image: ArtImage } | { status: 'none' } | { status: 'unavailable' };
 
 export interface ArtSource {

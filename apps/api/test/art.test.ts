@@ -411,6 +411,13 @@ describe('which ids resolve', () => {
     expect(await s.art(loser)).toEqual({ [loser]: tmdbFound('movie', '603') });
   });
 
+  it('an id in uppercase resolves like entity reads do, keyed as requested', async () => {
+    const s = await open();
+    const id = (await s.work({ tmdb_movie: '603' })).toUpperCase();
+    expect((await s.t.as({ kind: 'none' }).get(`/api/entities/${id}`)).status).toBe(200);
+    expect(await s.art(id)).toEqual({ [id]: tmdbFound('movie', '603') });
+  });
+
   it('a removed work that was merged away is none', async () => {
     const s = await open();
     const author = s.t.as({ kind: 'user', userId: await s.t.createUser() });
