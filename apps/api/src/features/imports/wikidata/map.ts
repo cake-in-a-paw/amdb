@@ -186,15 +186,15 @@ function externalIds(entity: WikidataEntity): { scheme: IdScheme; value: string 
     const v = stringValue(snak)?.replace(/[-\s]/g, '');
     if (v && /^\d{13}$/.test(v)) add('isbn13', v);
   }
-  // Positive integers, no leading zero.
-  for (const [property, scheme] of [
-    ['P4947', 'tmdb_movie'],
-    ['P4983', 'tmdb_tv'],
-    ['P8729', 'anilist'],
+  // Positive integers, no leading zero; a TMDB movie id has at most 8 digits.
+  for (const [property, scheme, format] of [
+    ['P4947', 'tmdb_movie', /^[1-9]\d{0,7}$/],
+    ['P4983', 'tmdb_tv', /^[1-9]\d*$/],
+    ['P8729', 'anilist', /^[1-9]\d*$/],
   ] as const)
     for (const { snak } of valueSnaks(entity, property)) {
       const v = stringValue(snak)?.trim();
-      if (v && /^[1-9]\d*$/.test(v)) add(scheme, v);
+      if (v && format.test(v)) add(scheme, v);
     }
   return out;
 }

@@ -249,7 +249,7 @@ describe('mapWork bad-data guards', () => {
 
   it('tmdb and anilist: positive integers only', () => {
     const r = book({
-      P4947: [str('P4947', '603'), str('P4947', '0'), str('P4947', 'abc')],
+      P4947: [str('P4947', '603'), str('P4947', '0'), str('P4947', 'abc'), str('P4947', '123456789')],
       P4983: [str('P4983', '1396'), str('P4983', '603x')],
       P8729: [str('P8729', '21'), str('P8729', '21')],
     });
