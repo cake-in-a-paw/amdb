@@ -97,11 +97,12 @@ are skipped, so a later run only adds the new ranks.
 Upgrade to Railway Pro and grow the volume before the projection passes 3.5 GB. `--max-db-bytes`
 is the backstop: a run stops with `capped` instead of filling the disk.
 
-## 6. Backfill references
+## 6. Backfill references and ids
 
 Works imported before the importer read Wikidata's `mul` label are missing some references: a
 director, studio, series, franchise or genre whose name was only under `mul` was dropped, and a work
-link whose target was skipped was never added. A normal re-run skips those works as `present`, so
+link whose target was skipped was never added. Works are also missing the external ids Wikidata
+has gained since (TMDB, AniList). A normal re-run skips those works as `present`, so
 it never adds them. `--backfill` does:
 
 ```sh
@@ -117,13 +118,15 @@ size cap, Ctrl-C/SIGTERM, and closing a dead run by hand.
 What it does: for each candidate that an import run created (and that is still live, not merged
 away), it fetches the work from Wikidata again and adds, as one submission of the new run, the
 creator, series, franchise, genre tag and work-link relations it is missing, creating a missing
-reference with its wikidata id as a normal run would.
+reference with its wikidata id as a normal run would. It also adds the work's `tmdb_movie`,
+`tmdb_tv`, `anilist`, `imdb`, `openlibrary` and `isbn13` ids of a scheme the work never had, unless
+another live entity already holds that id.
 
-What it never does: create or edit a work, change a field, remove a relation, or touch a work's
-external ids. It never re-adds a relation that AMDB holds or ever held (so a moderator's unrelate
+What it never does: create or edit a work, change a field, remove a relation, or remove an external id.
+It never re-adds a relation or an id scheme that AMDB holds or ever held (so a moderator's unrelate
 sticks), and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
 is counted `not_present`, not imported.
 
-Read the stats: `backfilled` (works that got a relation), `relationsAdded`, `upToDate` (imported
+Read the stats: `backfilled` (works that got a relation), `relationsAdded`, `idsAdded` (external ids added), `idsSkippedHeld` (ids another entity already holds), `upToDate` (imported
 works with nothing to add), and `skipped.present` (works it may not touch). A second backfill should
 show `backfilled: 0`.

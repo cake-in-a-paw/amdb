@@ -1,4 +1,4 @@
-import type { EntityKind, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
+import type { EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
 import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { changes, entities, importRuns, relations, submissions } from '../../platform/db/schema';
@@ -150,6 +150,34 @@ export function importsRepository(db: DbOrTx) {
             or(inArray(relations.fromId, entityIds), inArray(relations.toId, entityIds)),
           ),
         );
+    },
+
+    /** Per work, every scheme of an `external_id` relation from it, live or removed (a removal must stick). */
+    async findExternalIdSchemes(workIds: string[]): Promise<{ fromId: string; scheme: IdScheme }[]> {
+      if (workIds.length === 0) return [];
+      const rows = await db
+        .selectDistinct({ fromId: relations.fromId, scheme: relations.scheme })
+        .from(relations)
+        .where(and(eq(relations.type, 'external_id'), inArray(relations.fromId, workIds)));
+      return rows.flatMap((r) => (r.scheme ? [{ fromId: r.fromId, scheme: r.scheme }] : []));
+    },
+
+    /** The given (scheme, value) pairs that a live `external_id` relation on any entity holds. */
+    async findHeldExternalIds(
+      ids: { scheme: IdScheme; value: string }[],
+    ): Promise<{ scheme: IdScheme; value: string }[]> {
+      if (ids.length === 0) return [];
+      const rows = await db
+        .select({ scheme: relations.scheme, value: relations.value })
+        .from(relations)
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            isNull(relations.removedByChange),
+            or(...ids.map((i) => and(eq(relations.scheme, i.scheme), eq(relations.value, i.value)))),
+          ),
+        );
+      return rows.flatMap((r) => (r.scheme && r.value ? [{ scheme: r.scheme, value: r.value }] : []));
     },
 
     /** The database's size on disk, as the size cap measures it. */

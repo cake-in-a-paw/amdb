@@ -247,6 +247,20 @@ describe('mapWork bad-data guards', () => {
     ]);
   });
 
+  it('tmdb and anilist: positive integers only', () => {
+    const r = book({
+      P4947: [str('P4947', '603'), str('P4947', '0'), str('P4947', 'abc')],
+      P4983: [str('P4983', '1396'), str('P4983', '603x')],
+      P8729: [str('P8729', '21'), str('P8729', '21')],
+    });
+    expect(r.externalIds).toEqual([
+      { scheme: 'wikidata', value: 'Q1' },
+      { scheme: 'tmdb_movie', value: '603' },
+      { scheme: 'tmdb_tv', value: '1396' },
+      { scheme: 'anilist', value: '21' },
+    ]);
+  });
+
   it('omits a description over 5000 characters (work and mapRef)', () => {
     const long = 'd'.repeat(5001);
     const entity: WikidataEntity = {

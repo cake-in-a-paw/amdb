@@ -43,6 +43,9 @@ export const idSchemeLabels: Record<IdScheme, string> = {
   openlibrary: 'Open Library',
   isbn13: 'ISBN-13',
   imdb: 'IMDb',
+  tmdb_movie: 'TMDB (movie)',
+  tmdb_tv: 'TMDB (TV)',
+  anilist: 'AniList',
 };
 
 /** Singular and plural names for each kind of entry. */

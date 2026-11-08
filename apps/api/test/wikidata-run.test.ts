@@ -36,6 +36,7 @@ interface FilmSpec {
   director?: string;
   directors?: string[];
   imdb?: string;
+  tmdbMovie?: string;
   follows?: string;
   genres?: string[];
   series?: { qid: string; ordinal: string };
@@ -48,6 +49,7 @@ function film(id: string, title: string, spec: FilmSpec = {}): WikidataEntity {
   if (spec.director) claims.P57 = [claim('P57', item(spec.director))];
   if (spec.directors) claims.P57 = spec.directors.map((d) => claim('P57', item(d)));
   if (spec.imdb) claims.P345 = [claim('P345', spec.imdb)];
+  if (spec.tmdbMovie) claims.P4947 = [claim('P4947', spec.tmdbMovie)];
   if (spec.follows) claims.P155 = [claim('P155', item(spec.follows))];
   if (spec.genres) claims.P136 = spec.genres.map((g) => claim('P136', item(g)));
   if (spec.series) claims.P179 = [claim('P179', item(spec.series.qid), spec.series.ordinal)];
@@ -1159,6 +1161,112 @@ it('backfill: a series or franchise relation a moderator removed is not re-added
     const links = await referenceLinks(t.db);
     expect(links).toHaveLength(2);
     expect(links.every((l) => l.removedByChange !== null)).toBe(true);
+  } finally {
+    await t.close();
+  }
+});
+
+// --- Backfill: external ids the work's Wikidata item now carries ---
+
+it('a work whose new tmdb id another work already holds still imports, without the clashing ids', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Original Cut', { tmdbMovie: '603' }),
+      Q2: film('Q2', 'Director’s Cut', { tmdbMovie: '603', imdb: 'tt0000002' }),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 2, skipped: expect.objectContaining({ duplicate_external_id: 0 }) });
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'Original Cut'))!)).toEqual([
+      'tmdb_movie:603',
+      'wikidata:Q1',
+    ]);
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'Director’s Cut'))!)).toEqual(['wikidata:Q2']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a work imported before its tmdb id was on Wikidata gains tmdb_movie', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'The Matrix') });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'The Matrix', { tmdbMovie: '603' }) });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 1, idsAdded: 1, idsSkippedHeld: 0, relationsAdded: 0 });
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'The Matrix'))!)).toEqual([
+      'tmdb_movie:603',
+      'wikidata:Q1',
+    ]);
+    const again = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(again.stats).toMatchObject({ backfilled: 0, upToDate: 1, idsAdded: 0 });
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a tmdb id a moderator removed is not added back', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'The Matrix', { tmdbMovie: '603' }) });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [tmdb] = await t.db.select().from(relations).where(eq(relations.scheme, 'tmdb_movie'));
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [{ op: 'unrelate', relationId: tmdb!.id }]);
+
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, idsAdded: 0, idsSkippedHeld: 0 });
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'The Matrix'))!)).toEqual(['wikidata:Q1']);
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, result.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: an id another live work holds is skipped, and nothing is submitted', async () => {
+  const t = await setupTest();
+  try {
+    // The second import drops the shared IMDb id (the existing retry), so Q2 never held it.
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Original Cut', { imdb: 'tt0000001' }),
+      Q2: film('Q2', 'Director’s Cut', { imdb: 'tt0000001' }),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 2, idsAdded: 0, idsSkippedHeld: 1 });
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, result.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: two works with the same new id in one run: the first gets it, the second still gets its creator', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Original Cut', { director: 'Q200' }),
+      Q2: film('Q2', 'Director’s Cut', { director: 'Q200' }),
+      Q200: unlabeled(person('Q200', 'Dana Director')),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Original Cut', { director: 'Q200', tmdbMovie: '603' }),
+      Q2: film('Q2', 'Director’s Cut', { director: 'Q200', tmdbMovie: '603' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({
+      backfilled: 2,
+      idsAdded: 1,
+      idsSkippedHeld: 1,
+      relationsAdded: 2,
+      skipped: expect.objectContaining({ invalid: 0 }),
+    });
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'Original Cut'))!)).toContain('tmdb_movie:603');
+    expect(await externalIdsOf(t.db, (await workIdByTitle(t.db, 'Director’s Cut'))!)).toEqual(['wikidata:Q2']);
+    expect(await relationsOf(t.db, 'work_creator')).toHaveLength(2);
   } finally {
     await t.close();
   }

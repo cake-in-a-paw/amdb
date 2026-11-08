@@ -56,7 +56,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 | P8345 media franchise | property |
 | P136 genre | tag, kind `genre` |
 | P144 based on / P155 follows, when the target is in AMDB | work link `adapted_from` / `sequel_of` |
-| the item's QID, P345 IMDb ID, P648 Open Library ID, P212 ISBN-13 | external ids `wikidata`, `imdb`, `openlibrary`, `isbn13` |
+| the item's QID, P345 IMDb ID, P648 Open Library ID, P212 ISBN-13, P4947 TMDB movie ID, P4983 TMDB TV ID, P8729 AniList anime ID | external ids `wikidata`, `imdb`, `openlibrary`, `isbn13`, `tmdb_movie`, `tmdb_tv`, `anilist` (the TMDB and AniList ids must be positive integers) |
 
 - A creator is a `person` if it is an instance of Q5 human, otherwise an `organization`.
   Creators, series and properties carry their own `wikidata` external id, so they are matched,
@@ -86,7 +86,8 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 ## Backfill
 
 A run with `--backfill` adds the references imported works are missing (dropped by an earlier
-importer version, or a link whose target arrived in a later run), and nothing else.
+importer version, or a link whose target arrived in a later run) and the external ids their
+items now carry, and nothing else.
 
 - It walks the same ranked candidates and acts only on works an import run created: the work's
   `create` and its live wikidata id came from the same import-run submission, and the work is live
@@ -94,8 +95,12 @@ importer version, or a link whose target arrived in a later run), and nothing el
   skipped as `not_present`, never imported.
 - Each such work gets at most one submission of the backfill run (`params.backfill: true`), through
   the same revision-logged path: creates for new references (with their wikidata id) and relations.
-  No work create or update, no unrelate, no external id on the work. A work with nothing to add gets
-  no submission and counts as `upToDate`.
+  No work create or update, no unrelate. A work with nothing to add gets no submission and counts
+  as `upToDate`.
+- External ids follow the artwork spec: a work gains each non-`wikidata` id whose scheme it never
+  had, live or removed (so a moderator's removal sticks), and that no other live entity holds or
+  an earlier work in the same run just claimed (counted `idsSkippedHeld`). A submission that
+  still fails `duplicate_external_id` is retried once without the ids, as a normal run does.
 - A removal sticks: a relation is skipped if `relations` holds any row, live or removed, with the
   same type, ends and role.
 - References resolve by the normal run's rules (works win, a QID held as another kind or removed is

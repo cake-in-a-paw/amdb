@@ -679,7 +679,10 @@
                                     "wikidata",
                                     "openlibrary",
                                     "isbn13",
-                                    "imdb"
+                                    "imdb",
+                                    "tmdb_movie",
+                                    "tmdb_tv",
+                                    "anilist"
                                   ]
                                 },
                                 "value": {
@@ -3454,7 +3457,10 @@
                                   "wikidata",
                                   "openlibrary",
                                   "isbn13",
-                                  "imdb"
+                                  "imdb",
+                                  "tmdb_movie",
+                                  "tmdb_tv",
+                                  "anilist"
                                 ]
                               },
                               "value": {

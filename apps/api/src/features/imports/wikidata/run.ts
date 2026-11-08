@@ -1,5 +1,5 @@
 // Drives a Wikidata seed import: discover → fetch → map → one revision-logged submission per work.
-import type { EntityKind, WorkLinkType } from '@amdb/shared';
+import type { EntityKind, IdScheme, WorkLinkType } from '@amdb/shared';
 import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
@@ -47,6 +47,10 @@ export type WikidataImportStats = {
   upToDate?: number;
   /** Backfill runs only: relations added to those works (a new reference's own wikidata id aside). */
   relationsAdded?: number;
+  /** Backfill runs only: external ids added to those works. */
+  idsAdded?: number;
+  /** Backfill runs only: ids a work lacked but another live entity holds (or claimed first), so not added. */
+  idsSkippedHeld?: number;
 };
 
 export type RunStatus = 'finished' | 'capped' | 'failed';
@@ -69,9 +73,9 @@ export interface RunOptions {
   maxDbBytes: number;
   batchSize?: number;
   /**
-   * Add the references (creators, series, franchises, genres, work links) that works an import run
-   * created are missing, and nothing else: no work is created or edited, and a relation that ever
-   * existed, live or removed, is never added again.
+   * Add the references (creators, series, franchises, genres, work links) and external ids that works
+   * an import run created are missing, and nothing else: no work is created or edited, and a relation
+   * or id scheme that ever existed, live or removed, is never added again.
    */
   backfill?: boolean;
 }
@@ -141,7 +145,7 @@ export async function runWikidataImport(
     bytesEnd: 0,
     bytesPerWork: 0,
     stoppedAt: 0,
-    ...(opts.backfill ? { backfilled: 0, upToDate: 0, relationsAdded: 0 } : {}),
+    ...(opts.backfill ? { backfilled: 0, upToDate: 0, relationsAdded: 0, idsAdded: 0, idsSkippedHeld: 0 } : {}),
   };
 
   // Run-local memory: entities by QID (found in AMDB or created by this run), fetched reference
@@ -336,7 +340,11 @@ export async function runWikidataImport(
     change.op === 'relate' && 'id' in change.from && change.to && 'id' in change.to
       ? relationKey(change.type, change.from.id, change.to.id, change.data.role ?? null)
       : null;
-  const count = (key: 'backfilled' | 'upToDate' | 'relationsAdded', n = 1) => {
+  /** Schemes of the external ids each work being backfilled ever had, live or removed. */
+  const schemesByWork = new Map<string, Set<IdScheme>>();
+  /** `scheme:value` keys held by a live external id: read per batch, then added to as the run submits. */
+  const heldIds = new Set<string>();
+  const count = (key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld', n = 1) => {
     stats[key] = (stats[key] ?? 0) + n;
   };
 
@@ -357,22 +365,46 @@ export async function runWikidataImport(
       return true;
     });
     const added = relates.filter((c) => c.op === 'relate' && c.type !== 'external_id').length;
-    if (added === 0) {
-      count('upToDate');
-      return;
+
+    // The work's own ids it never had (a removed one counts as had) and nobody else holds.
+    const had = schemesByWork.get(workId) ?? new Set<IdScheme>();
+    const newIds: { scheme: IdScheme; value: string }[] = [];
+    for (const id of rec.externalIds) {
+      if (id.scheme === 'wikidata' || had.has(id.scheme)) continue;
+      if (heldIds.has(`${id.scheme}:${id.value}`)) count('idsSkippedHeld');
+      else newIds.push(id);
     }
-    try {
-      const result = await changes.importSubmission(runId, [...refs.creates, ...relates]);
-      rememberCreated(refs.created, result);
-    } catch (err) {
-      if (!isItemError(err)) throw err;
-      stats.skipped.invalid++;
-      log(`skipped ${rec.qid}: ${err.code} (${err.message})`);
-      return;
+    const idChanges = (ids: typeof newIds): ChangeInput[] =>
+      ids.map(({ scheme, value }) => ({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } }));
+
+    let ids = newIds;
+    for (let retried = false; ; retried = true) {
+      if (added === 0 && ids.length === 0) {
+        count('upToDate');
+        return;
+      }
+      try {
+        const result = await changes.importSubmission(runId, [...refs.creates, ...relates, ...idChanges(ids)]);
+        rememberCreated(refs.created, result);
+        break;
+      } catch (err) {
+        if (!isItemError(err)) throw err;
+        if (err.code === 'duplicate_external_id' && !retried && ids.length > 0) {
+          // Raced with another holder of one of the ids: keep the rest of the submission.
+          count('idsSkippedHeld', ids.length);
+          ids = [];
+          continue;
+        }
+        stats.skipped.invalid++;
+        log(`skipped ${rec.qid}: ${err.code} (${err.message})`);
+        return;
+      }
     }
     for (const key of keys) existingKeys.add(key);
+    for (const { scheme, value } of ids) heldIds.add(`${scheme}:${value}`);
     count('backfilled');
     count('relationsAdded', added);
+    count('idsAdded', ids.length);
   }
 
   async function importCandidates() {
@@ -428,6 +460,14 @@ export async function runWikidataImport(
       }
       for (const r of await imports.findRelationKeys([...imported.values()]))
         existingKeys.add(relationKey(r.type, r.fromId, r.toId, r.role));
+      if (opts.backfill) {
+        for (const [id, schemes] of await imports.findExternalIdSchemes([...imported.values()]))
+          schemesByWork.set(id, schemes);
+        const wanted = works
+          .filter((r) => imported.has(r.qid))
+          .flatMap((r) => r.externalIds.filter((e) => e.scheme !== 'wikidata'));
+        for (const key of await imports.findHeldExternalIds(wanted)) heldIds.add(key);
+      }
 
       for (const [i, c] of batch.entries()) {
         checkpoint();

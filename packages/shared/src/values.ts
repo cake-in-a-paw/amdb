@@ -37,7 +37,7 @@ export type WorkLinkType = z.infer<typeof WorkLinkType>;
 export const TagKind = z.enum(['genre', 'theme', 'content_warning']);
 export type TagKind = z.infer<typeof TagKind>;
 
-export const IdScheme = z.enum(['wikidata', 'openlibrary', 'isbn13', 'imdb']);
+export const IdScheme = z.enum(['wikidata', 'openlibrary', 'isbn13', 'imdb', 'tmdb_movie', 'tmdb_tv', 'anilist']);
 export type IdScheme = z.infer<typeof IdScheme>;
 
 export const ChangeOp = z.enum(['create', 'update', 'relate', 'unrelate', 'merge']);

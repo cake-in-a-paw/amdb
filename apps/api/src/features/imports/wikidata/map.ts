@@ -186,6 +186,16 @@ function externalIds(entity: WikidataEntity): { scheme: IdScheme; value: string 
     const v = stringValue(snak)?.replace(/[-\s]/g, '');
     if (v && /^\d{13}$/.test(v)) add('isbn13', v);
   }
+  // Positive integers, no leading zero.
+  for (const [property, scheme] of [
+    ['P4947', 'tmdb_movie'],
+    ['P4983', 'tmdb_tv'],
+    ['P8729', 'anilist'],
+  ] as const)
+    for (const { snak } of valueSnaks(entity, property)) {
+      const v = stringValue(snak)?.trim();
+      if (v && /^[1-9]\d*$/.test(v)) add(scheme, v);
+    }
   return out;
 }
 

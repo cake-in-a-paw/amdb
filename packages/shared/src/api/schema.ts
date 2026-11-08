@@ -342,7 +342,7 @@ export interface paths {
                                 /** @enum {string} */
                                 linkType?: "adapted_from" | "sequel_of" | "remake_of" | "spin_off_of";
                                 /** @enum {string} */
-                                scheme?: "wikidata" | "openlibrary" | "isbn13" | "imdb";
+                                scheme?: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "anilist";
                                 value?: string;
                             };
                         } | {
@@ -1620,7 +1620,7 @@ export interface paths {
                                     /** Format: uuid */
                                     relationId: string;
                                     /** @enum {string} */
-                                    scheme: "wikidata" | "openlibrary" | "isbn13" | "imdb";
+                                    scheme: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "anilist";
                                     value: string;
                                 }[];
                                 related?: {

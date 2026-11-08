@@ -1,4 +1,4 @@
-import type { ImportSource } from '@amdb/shared';
+import type { IdScheme, ImportSource } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
 import { conflict, isUniqueViolation, notFound } from '../../platform/http/errors';
 import { importsRepository } from './repository';
@@ -57,6 +57,19 @@ export function createImportsService(db: Db) {
     /** The relations touching these entities, live or removed, so a backfill never re-adds one a moderator took out. */
     async findRelationKeys(entityIds: string[]) {
       return repo.findRelationKeys(entityIds);
+    },
+
+    /** Per work, the schemes of every external id it ever had, live or removed. */
+    async findExternalIdSchemes(workIds: string[]): Promise<Map<string, Set<IdScheme>>> {
+      const out = new Map<string, Set<IdScheme>>();
+      for (const { fromId, scheme } of await repo.findExternalIdSchemes(workIds))
+        out.set(fromId, (out.get(fromId) ?? new Set()).add(scheme));
+      return out;
+    },
+
+    /** Keys `scheme:value` of the given ids that a live external id on any entity holds. */
+    async findHeldExternalIds(ids: { scheme: IdScheme; value: string }[]): Promise<Set<string>> {
+      return new Set((await repo.findHeldExternalIds(ids)).map((i) => `${i.scheme}:${i.value}`));
     },
 
     async databaseBytes() {
