@@ -87,6 +87,9 @@ In Railway, on the `app` service, production environment, set:
 `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `EMAIL_API_KEY`, `EMAIL_FROM` and `ADMIN_EMAILS`
 (comma-separated addresses that become admins on sign-up).
 
+Optionally, also set `TMDB_API_KEY` (a TMDB v3 API key the owner creates; a secret, never logged).
+It turns on TMDB posters for films and TV; until it is set they show placeholders (ADR 0006).
+
 Then redeploy explicitly, since the first deploy already failed and setting variables may not
 trigger another:
 

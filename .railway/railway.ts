@@ -34,6 +34,8 @@ export default defineRailway(() => {
       EMAIL_API_KEY: preserve(),
       EMAIL_FROM: preserve(),
       ADMIN_EMAILS: preserve(),
+      // Optional: until it is set, TMDB art (film and TV posters) stays unavailable (ADR 0006).
+      TMDB_API_KEY: preserve(),
     },
   });
 
