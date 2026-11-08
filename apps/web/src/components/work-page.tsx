@@ -1,8 +1,10 @@
-import { Link } from '@tanstack/react-router';
+import { getRouteApi, Link } from '@tanstack/react-router';
 import type { Lifecycle, MediaType, Subtype } from '@amdb/shared';
 import type { ReactNode } from 'react';
+import { Poster } from '@/components/artwork';
 import { RelatedWorks } from '@/components/related-works';
 import { summaryDetail } from '@/components/entry-row';
+import { useArt } from '@/lib/art';
 import { entityTitle, type EntityView } from '@/lib/entity';
 import {
   formatReleaseDate,
@@ -15,22 +17,11 @@ import {
 } from '@/lib/labels';
 import { headingLinkClass, linkClass } from '@/lib/styles';
 
+const rootRoute = getRouteApi('__root__');
+
 const text = (value: unknown) => (typeof value === 'string' && value ? value : null);
 const count = (value: unknown, unit: string) =>
   typeof value === 'number' ? `${value.toLocaleString('en-US')} ${unit}` : null;
-
-/** There are no covers yet (plan 3): the title, set as a book spine would, stands in. */
-function CoverPlaceholder({ title }: { title: string }) {
-  return (
-    <div
-      role="img"
-      aria-label={`No cover yet for ${title}`}
-      className="flex aspect-[2/3] w-40 items-center justify-center rounded-md border border-border bg-secondary p-4 text-center font-serif text-xl leading-snug text-balance text-muted-foreground"
-    >
-      {title}
-    </div>
-  );
-}
 
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -42,6 +33,7 @@ function Fact({ label, children }: { label: string; children: ReactNode }) {
 }
 
 export function WorkPage({ entity }: { entity: EntityView }) {
+  const { api } = rootRoute.useRouteContext();
   const { fields, relations } = entity;
   const title = entityTitle(entity);
   const mediaType = fields.mediaType as MediaType | undefined;
@@ -74,9 +66,18 @@ export function WorkPage({ entity }: { entity: EntityView }) {
     linkGroups.set(label, [...(linkGroups.get(label) ?? []), link]);
   }
 
+  // One request for the page's own art and every list on it.
+  const art = useArt(api, [
+    entity.id,
+    ...(related?.byCreator.flatMap((g) => g.works) ?? []).map((w) => w.id),
+    ...(related?.bySeries.flatMap((g) => g.works) ?? []).map((w) => w.id),
+    ...(related?.byProperty.flatMap((g) => g.works) ?? []).map((w) => w.id),
+    ...(relations.links ?? []).map((link) => link.work.id),
+  ]);
+
   return (
     <div className="grid gap-8 py-6 md:grid-cols-[10rem_minmax(0,1fr)]">
-      <CoverPlaceholder title={title} />
+      <Poster title={title} item={art.get(entity.id)} />
       <div>
         {text(fields.description) && <p className="max-w-prose leading-relaxed">{text(fields.description)}</p>}
 
@@ -138,6 +139,7 @@ export function WorkPage({ entity }: { entity: EntityView }) {
               </>
             }
             works={works.map((entry) => ({ entry, detail: summaryDetail(entry) }))}
+            art={art}
           />
         ))}
 
@@ -155,6 +157,7 @@ export function WorkPage({ entity }: { entity: EntityView }) {
             note={`No. ${position} in the series`}
             works={(seriesGroups.get(series.id) ?? []).map((entry) => ({ entry, detail: summaryDetail(entry) }))}
             empty="No other works in the series yet."
+            art={art}
           />
         ))}
 
@@ -174,6 +177,7 @@ export function WorkPage({ entity }: { entity: EntityView }) {
               }
               works={works.map((entry) => ({ entry, detail: summaryDetail(entry) }))}
               empty="No other works in the property yet."
+              art={art}
             />
           );
         })}
@@ -183,6 +187,7 @@ export function WorkPage({ entity }: { entity: EntityView }) {
             key={label}
             title={label}
             works={links.map((link) => ({ entry: link.work, detail: summaryDetail(link.work) }))}
+            art={art}
           />
         ))}
       </div>

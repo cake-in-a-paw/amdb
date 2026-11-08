@@ -11,6 +11,8 @@ import { createAppRouter } from '@/router';
 /** The in-process API: `app`, `db`, `as(actor)` for raw requests, and `createUser`. */
 export type TestApi = Awaited<ReturnType<typeof setupTest>>;
 
+type ArtDeps = NonNullable<NonNullable<Parameters<typeof setupTest>[0]>['art']>;
+
 export type SignedInAs = 'anonymous' | 'contributor' | 'moderator' | 'admin';
 
 /**
@@ -92,9 +94,14 @@ export function stubAuth(session: Session): StubAuth {
  */
 export async function renderApp<Seeded = undefined>(
   path: string,
-  opts: { as?: SignedInAs; seed?: (api: TestApi) => Promise<Seeded> } = {},
+  opts: {
+    as?: SignedInAs;
+    seed?: (api: TestApi) => Promise<Seeded>;
+    /** Where art comes from; omitted, every work has none and nothing is fetched. */
+    art?: ArtDeps;
+  } = {},
 ) {
-  const api = await setupTest();
+  const api = await setupTest(opts.art ? { art: opts.art } : {});
   const role = opts.as ?? 'anonymous';
   const session: Session = { userId: role === 'anonymous' ? null : await api.createUser({ role }) };
   // Typed as Seeded: with no `seed`, Seeded defaults to undefined, which is what this holds.

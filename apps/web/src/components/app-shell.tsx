@@ -59,6 +59,27 @@ export function AppShell({ children }: { children: ReactNode }) {
             . Data dumps coming soon.
           </p>
         </div>
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-x-3 px-4 pb-3 text-sm text-muted-foreground sm:px-6">
+          <img src="/tmdb-logo.svg" alt="TMDB" className="h-4 w-auto" />
+          <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
+          <p>
+            Covers from{' '}
+            <a
+              href="https://openlibrary.org"
+              className={cn(navLink, 'px-0 text-muted-foreground underline underline-offset-4')}
+            >
+              Open Library
+            </a>{' '}
+            and{' '}
+            <a
+              href="https://anilist.co"
+              className={cn(navLink, 'px-0 text-muted-foreground underline underline-offset-4')}
+            >
+              AniList
+            </a>
+            .
+          </p>
+        </div>
       </footer>
     </div>
   );

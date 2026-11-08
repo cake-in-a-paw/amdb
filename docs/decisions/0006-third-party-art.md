@@ -72,7 +72,10 @@ credits, but TMDB judges the site as a whole.
 
 - Posters and covers appear without any non-CC0 data entering the dataset; the ids stay CC0.
 - Art depends on outside services at view time. An outage shows a placeholder, never an error.
-- The footer must carry TMDB's logo and notice for as long as TMDB art is shown.
+- The footer must carry TMDB's logo and notice for as long as TMDB art is shown. The logo is
+  `apps/web/public/tmdb-logo.svg`, fetched once from
+  `https://www.themoviedb.org/assets/v4/logos/v2/blue_long_2-9665a76b1ae401a510ec1e0ca40ddcb3b0cfe45f1d51b77a308fea0845885648.svg`
+  (linked from https://www.themoviedb.org/about/logos-attribution).
 - The cache and the source limits are per process (spec Production Annotations). More than one
   instance needs a shared store.
 - Revisit before any paid access ships (TMDB's non-commercial condition), or if a source's terms

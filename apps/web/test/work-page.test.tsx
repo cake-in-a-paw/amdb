@@ -135,7 +135,7 @@ test('direct links read in words, from either end', async () => {
 test('with no cover, a typographic placeholder shows the title', async () => {
   await page((s) => s.works.spiritedAway);
 
-  const cover = await screen.findByRole('img', { name: 'No cover yet for Spirited Away' });
+  const cover = await screen.findByRole('img', { name: 'No cover for Spirited Away' });
   expect(cover).toHaveTextContent('Spirited Away');
 });
 
