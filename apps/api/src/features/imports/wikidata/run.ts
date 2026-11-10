@@ -42,6 +42,8 @@ export type WikidataImportStats = {
   bytesPerWork: number;
   /** The 1-based rank of the last candidate the run dealt with. */
   stoppedAt: number;
+  /** Hand-entered creators, series and properties a submission used (and gave their wikidata id) instead of creating one. */
+  refsAdopted: number;
   /** Backfill runs only: imported works that got at least one new relation or external id. */
   backfilled?: number;
   /** Backfill runs only: imported works with nothing missing (or nothing that may be re-added). */
@@ -145,6 +147,7 @@ export async function runWikidataImport(
       invalid: 0,
     },
     linksAdded: 0,
+    refsAdopted: 0,
     linksFailed: 0,
     bytesStart: 0,
     bytesEnd: 0,
@@ -174,9 +177,12 @@ export async function runWikidataImport(
   /**
    * Hand-entered references (no wikidata id, ever) by `nameKey`: the one entry with that kind and
    * name, which a reference to it adopts (it gets the wikidata id), or null when there are none or
-   * several (the run creates its own rather than guess) or one was already adopted.
+   * several (the run creates its own rather than guess) or one was already adopted. Only nulls carry
+   * over between batches: a match is looked up again, in case a person merged or removed it meanwhile.
    */
   const handEntered = new Map<string, string | null>();
+  /** QIDs a moderator removed from some entity's wikidata id: never handed to another entry by name. */
+  const unadoptable = new Set<string>();
   /** Creators match on their kind too (a person never adopts an organization's entry). */
   const refNameKey = (kind: RefKind, creatorKind: string | null, norm: string) =>
     JSON.stringify(kind === 'creator' ? [kind, creatorKind, norm] : [kind, norm]);
@@ -219,7 +225,7 @@ export async function runWikidataImport(
       const mapped = refItems.get(qid)?.ref ?? null;
       if (!mapped) return null;
       const key = nameKey(kind, mapped);
-      const adopted = handEntered.get(key);
+      const adopted = unadoptable.has(qid) ? null : handEntered.get(key);
       // One entry per QID: a second QID under the same name in this submission gets its own.
       if (adopted && !created.some((c) => 'adopted' in c && c.adopted === adopted)) {
         created.push({ adopted, qid, kind, nameKey: key });
@@ -327,6 +333,8 @@ export async function runWikidataImport(
       if ('adopted' in key) {
         known.set(key.qid, { id: key.adopted, kind: key.kind, live: true });
         handEntered.set(key.nameKey, null);
+        stats.refsAdopted++;
+        log(`adopted hand-entered ${key.kind} ${key.adopted} for ${key.qid}`);
         continue;
       }
       const entityId = result.changes[key.index]?.entityId;
@@ -399,16 +407,20 @@ export async function runWikidataImport(
       ['series', new Map()],
       ['property', new Map()],
     ]);
-    const want = (qid: string, kind: RefKind) => {
-      const mapped = refItems.get(qid)?.ref;
-      if (!mapped || known.has(qid) || retiredRefs.has(qid)) return;
+    for (const [key, id] of handEntered) if (id !== null) handEntered.delete(key);
+    const named: [string, RefKind][] = records.flatMap((r) => [
+      ...r.creators.map(({ qid }) => [qid, 'creator'] as [string, RefKind]),
+      ...r.series.map(({ qid }) => [qid, 'series'] as [string, RefKind]),
+      ...r.franchises.map((qid) => [qid, 'property'] as [string, RefKind]),
+    ]);
+    const open = named.filter(([qid]) => refItems.get(qid)?.ref && !known.has(qid) && !retiredRefs.has(qid));
+    const removed = await imports.findRemovedWikidataIds([...new Set(open.map(([qid]) => qid))]);
+    for (const q of removed) unadoptable.add(q);
+    for (const [qid, kind] of open) {
+      if (unadoptable.has(qid)) continue;
+      const mapped = refItems.get(qid)!.ref!;
       const key = nameKey(kind, mapped);
       if (!handEntered.has(key)) wanted.get(kind)!.set(key, normalizeTitle(mapped.name));
-    };
-    for (const r of records) {
-      for (const { qid } of r.creators) want(qid, 'creator');
-      for (const { qid } of r.series) want(qid, 'series');
-      for (const qid of r.franchises) want(qid, 'property');
     }
     for (const [kind, keys] of wanted) {
       if (keys.size === 0) continue;

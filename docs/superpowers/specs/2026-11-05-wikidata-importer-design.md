@@ -81,7 +81,9 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
   recreated (2026-11-09). A reference a person entered by hand is adopted rather than duplicated
   when it is the only listed entry of its kind (and, for a creator, person or organization) under
   that normalized name and has never held a wikidata id; it gets the wikidata id. With several
-  such entries the run creates its own rather than guess (owner, 2026-11-09). A candidate AMDB holds as another kind (say, a series) is skipped as `held_as_other`. Works win: no
+  such entries the run creates its own rather than guess (owner, 2026-11-09). A QID a moderator
+  removed from any entity is never handed to an entry this way. Each adoption is logged and counted
+  in `refsAdopted`. A candidate AMDB holds as another kind (say, a series) is skipped as `held_as_other`. Works win: no
   discovered candidate, even one past `--limit`, is created as a creator, series or property. Refreshing fields a run already wrote, and deciding what happens
   when a refresh disagrees with a human edit, is left to a later importer version.
 - A work link whose target isn't in AMDB yet is kept for the end of the run and added then if the

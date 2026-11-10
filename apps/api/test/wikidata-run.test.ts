@@ -1463,3 +1463,106 @@ it('backfill: a link of one type does not block a link of another type to the sa
     await t.close();
   }
 });
+
+it('a wikidata id a moderator removed is not handed to the entry its creator was merged into', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [imported] = await t.db.select().from(creators);
+    const [wikidataId] = await t.db
+      .select({ id: relations.id })
+      .from(relations)
+      .where(and(eq(relations.fromId, imported!.entityId), eq(relations.type, 'external_id')));
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [{ op: 'unrelate', relationId: wikidataId!.id }]);
+    const entered = await enterCreator(t, 'Dana Director');
+    await publish(author, mod, [{ op: 'merge', kind: 'creator', from: imported!.entityId, into: entered }]);
+
+    const next = fakeWikidata(ranked('Q2'), {
+      Q2: film('Q2', 'Beta', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: next.client, measureBytes: bytes(), today: TODAY },
+      OPTS,
+    );
+    expect(result.stats).toMatchObject({ imported: 1, refsAdopted: 0 });
+    expect(await externalIdsOf(t.db, entered)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a hand-entered person is not adopted for an organization of the same name', async () => {
+  const t = await setupTest();
+  try {
+    const entered = await enterCreator(t, 'Studio Nine');
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: thing('Q200', 'Studio Nine'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ refsAdopted: 0 });
+    expect(await externalIdsOf(t.db, entered)).toEqual([]);
+    expect(await t.db.select().from(creators)).toHaveLength(2);
+  } finally {
+    await t.close();
+  }
+});
+
+it('two QIDs under one hand-entered name in one work: the first adopts it, the second gets its own', async () => {
+  const t = await setupTest();
+  try {
+    const entered = await enterCreator(t, 'Dana Director');
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { directors: ['Q200', 'Q201'] }),
+      Q200: person('Q200', 'Dana Director'),
+      Q201: person('Q201', 'Dana Director'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 1, refsAdopted: 1 });
+    expect(await externalIdsOf(t.db, entered)).toEqual(['wikidata:Q200']);
+    const others = (await t.db.select({ id: creators.entityId }).from(creators)).filter((r) => r.id !== entered);
+    expect(others).toHaveLength(1);
+    expect(await externalIdsOf(t.db, others[0]!.id)).toEqual(['wikidata:Q201']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a series a person entered under the same title is adopted, not duplicated', async () => {
+  const t = await setupTest();
+  try {
+    const spec = { series: { qid: 'Q400', ordinal: '2' } };
+    const before = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Part Two', spec),
+      Q400: unlabeled(thing('Q400', 'The Saga')),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const created = await publish(author, mod, [
+      { op: 'create', kind: 'series', ref: 's', fields: { title: 'The Saga' } },
+    ]);
+    const entered = created.changes[0]!.entityId!;
+
+    const after = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'Part Two', spec), Q400: thing('Q400', 'The Saga') });
+    const result = await runWikidataImport(
+      { db: t.db, client: after.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(result.stats).toMatchObject({ backfilled: 1, relationsAdded: 1, refsAdopted: 1 });
+    expect(await t.db.select({ id: series.entityId }).from(series)).toEqual([{ id: entered }]);
+    expect(await externalIdsOf(t.db, entered)).toEqual(['wikidata:Q400']);
+    expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([
+      expect.objectContaining({ fromId: entered, position: 2 }),
+    ]);
+  } finally {
+    await t.close();
+  }
+});

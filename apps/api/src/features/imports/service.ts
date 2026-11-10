@@ -44,6 +44,11 @@ export function createImportsService(db: Db) {
       return repo.findByWikidataIds(qids);
     },
 
+    /** QIDs a moderator removed from some entity's wikidata id; a run never adopts an entry for one. */
+    async findRemovedWikidataIds(qids: string[]) {
+      return repo.findRemovedWikidataIds(qids);
+    },
+
     /** Hand-entered references of `kind` under these normalized names that never held a wikidata id. */
     async findUnlinkedByName(kind: 'creator' | 'series' | 'property', norms: string[]) {
       return repo.findUnlinkedByName(kind, norms);

@@ -120,7 +120,8 @@ away), it fetches the work from Wikidata again and adds, as one submission of th
 creator, series, franchise, genre tag and work-link relations it is missing, creating a missing
 reference with its wikidata id as a normal run would. Like a normal run, when a person already
 entered that reference by hand (the only entry of its kind under that name, never given a wikidata
-id), it uses that entry and gives it the wikidata id; with several such entries it creates its own. It also adds the work's `tmdb_movie`,
+id), it uses that entry and gives it the wikidata id; with several such entries it creates its own.
+It never does this for a QID a moderator removed from any entity. It also adds the work's `tmdb_movie`,
 `tmdb_tv`, `anilist`, `imdb`, `openlibrary` and `isbn13` ids of a scheme the work never had, unless
 another live entity already holds that id.
 
@@ -130,6 +131,6 @@ sticks, even after either end is merged into another entity), never recreates a 
 moderator reverted, and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
 is counted `not_present`, not imported.
 
-Read the stats: `backfilled` (works that got a new reference relation or external id), `relationsAdded`, `idsAdded` (external ids added), `idsSkippedHeld` (ids another entity already holds), `upToDate` (imported
+Read the stats: `backfilled` (works that got a new reference relation or external id), `relationsAdded`, `idsAdded` (external ids added), `idsSkippedHeld` (ids another entity already holds), `refsAdopted` (hand-entered references used instead of creating new ones; each is logged), `upToDate` (imported
 works with nothing to add), and `skipped.present` (works it may not touch). A second backfill should
 show `backfilled: 0`.

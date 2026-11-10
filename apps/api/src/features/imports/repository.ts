@@ -190,6 +190,27 @@ export function importsRepository(db: DbOrTx) {
     },
 
     /**
+     * The QIDs among `qids` that some entity's wikidata id once held and a moderator removed: a run
+     * never gives such a QID to a hand-entered entry, wherever that removed id now sits (a merge leaves
+     * removed rows on the merged-away entity). Read-only.
+     */
+    async findRemovedWikidataIds(qids: string[]): Promise<Set<string>> {
+      if (qids.length === 0) return new Set();
+      const rows = await db
+        .selectDistinct({ qid: relations.value })
+        .from(relations)
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            inArray(relations.value, qids),
+            isNotNull(relations.removedByChange),
+          ),
+        );
+      return new Set(rows.flatMap((r) => (r.qid ? [r.qid] : [])));
+    },
+
+    /**
      * Hand-entered references a run may adopt: listed creators, series or properties of `kind` whose
      * normalized name is in `norms` and that hold no wikidata id and never did (so a moderator's
      * removal of one sticks). Every match, so the caller can tell one from several. Read-only.
