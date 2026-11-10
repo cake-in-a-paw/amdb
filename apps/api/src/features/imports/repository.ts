@@ -2,6 +2,7 @@ import type { EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType 
 import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { changes, entities, importRuns, relations, submissions } from '../../platform/db/schema';
+import { resolveWinner } from '../../platform/db/merge';
 import type { DbOrTx } from '../../platform/db/types';
 
 export type ImportRunRow = typeof importRuns.$inferSelect;
@@ -73,7 +74,7 @@ export function importsRepository(db: DbOrTx) {
 
     /**
      * The QIDs among `qids` that a retracted or removed entity once held on an external id that has
-     * since been removed: a moderator reverted the work (its id, then its create). Read-only.
+     * since been removed: a moderator reverted the work or reference (its id, then its create). Read-only.
      */
     async findRetiredWikidataIds(qids: string[]): Promise<Set<string>> {
       if (qids.length === 0) return new Set();
@@ -135,13 +136,15 @@ export function importsRepository(db: DbOrTx) {
 
     /**
      * Every relation between entities touching `entityIds` (external ids aside), live or removed: an
-     * unrelate only sets `removed_by_change`, so a removed row is how a removal is remembered. Read-only.
+     * unrelate only sets `removed_by_change`, so a removed row is how a removal is remembered. A merge
+     * repoints only live rows, so a row whose end has since merged away also comes back with that end
+     * resolved to its winner: the removal then still blocks the same relation to the winner. Read-only.
      */
     async findRelationKeys(
       entityIds: string[],
     ): Promise<{ type: RelationType; fromId: string; toId: string | null; role: string | null }[]> {
       if (entityIds.length === 0) return [];
-      return db
+      const rows = await db
         .selectDistinct({ type: relations.type, fromId: relations.fromId, toId: relations.toId, role: relations.role })
         .from(relations)
         .where(
@@ -150,6 +153,22 @@ export function importsRepository(db: DbOrTx) {
             or(inArray(relations.fromId, entityIds), inArray(relations.toId, entityIds)),
           ),
         );
+      const ends = [...new Set(rows.flatMap((r) => (r.toId ? [r.fromId, r.toId] : [r.fromId])))];
+      const merged = ends.length
+        ? await db
+            .select({ id: entities.id })
+            .from(entities)
+            .where(and(inArray(entities.id, ends), isNotNull(entities.mergedIntoId)))
+        : [];
+      if (merged.length === 0) return rows;
+      const winners = new Map<string, string>();
+      for (const { id } of merged) winners.set(id, await resolveWinner(db, id));
+      const resolved = rows.flatMap((r) => {
+        const fromId = winners.get(r.fromId) ?? r.fromId;
+        const toId = (r.toId && winners.get(r.toId)) ?? r.toId;
+        return fromId === r.fromId && toId === r.toId ? [] : [{ ...r, fromId, toId }];
+      });
+      return [...rows, ...resolved];
     },
 
     /** Per work, every scheme of an `external_id` relation from it, live or removed (a removal must stick). */

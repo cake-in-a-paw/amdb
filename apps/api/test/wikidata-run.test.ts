@@ -1271,3 +1271,78 @@ it('backfill: two works with the same new id in one run: the first gets it, the 
     await t.close();
   }
 });
+
+it('a reference a moderator reverted (its wikidata id, then its create) is not recreated by a run or a backfill', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [credit] = await relationsOf(t.db, 'work_creator');
+    const [director] = await t.db.select().from(creators);
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const [wikidataId] = await t.db
+      .select({ id: relations.id })
+      .from(relations)
+      .where(and(eq(relations.fromId, director!.entityId), eq(relations.type, 'external_id')));
+    const changeOf = async (where: ReturnType<typeof eq>) =>
+      (await t.db.select({ id: changesTable.id }).from(changesTable).where(where))[0]!.id;
+    // The credit, then the director's id, then its create: a create can't be reverted while its relations stand.
+    for (const id of [
+      await changeOf(eq(changesTable.relationId, credit!.id)),
+      await changeOf(eq(changesTable.relationId, wikidataId!.id)),
+      await changeOf(and(eq(changesTable.entityId, director!.entityId), eq(changesTable.op, 'create'))!),
+    ]) {
+      const res = await mod.post(`/api/changes/${id}/revert`);
+      expect(res.status, await res.clone().text()).toBe(200);
+    }
+
+    const next = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q2: film('Q2', 'Beta', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const run = await runWikidataImport({ db: t.db, client: next.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(run.stats).toMatchObject({ imported: 1 });
+    const backfill = await runWikidataImport(
+      { db: t.db, client: next.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(backfill.stats).toMatchObject({ backfilled: 0, upToDate: 2, relationsAdded: 0 });
+    // Only the reverted director: no second one, and no live credit to either work.
+    expect(await t.db.select({ id: creators.entityId }).from(creators)).toEqual([{ id: director!.entityId }]);
+    expect((await relationsOf(t.db, 'work_creator')).filter((r) => r.removedByChange === null)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a credit a moderator removed is not re-added after its creator merges into another', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [credit] = await relationsOf(t.db, 'work_creator');
+    const [imported] = await t.db.select().from(creators);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [{ op: 'unrelate', relationId: credit!.id }]);
+    // A person enters the same director by hand, and a moderator merges the imported one into it.
+    const entered = await publish(author, mod, [
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Dana Director', kind: 'person' } },
+    ]);
+    const kept = entered.changes[0]!.entityId!;
+    await publish(author, mod, [{ op: 'merge', kind: 'creator', from: imported!.entityId, into: kept }]);
+
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, relationsAdded: 0 });
+    expect((await relationsOf(t.db, 'work_creator')).filter((r) => r.removedByChange === null)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});

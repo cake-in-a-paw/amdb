@@ -100,10 +100,12 @@ extends it; add a short "Backfill" section to that spec in the same change.
 
 Accepted for the first backfill run; revisit if moderation activity grows.
 
-- A fully reverted reference (creator, series, property) loses its live wikidata id, so a backfill,
-  like a normal run, can create it again and relate it. Fix: treat retired reference QIDs as dropped.
-- A merge repoints only live relations, so a removed W→C1 keeps C1's id; after C1 merges into C2 a
-  backfill can add W→C2. Fix: resolve removed rows' ends through `merged_into_id` in the key check.
+- ~~A fully reverted reference (creator, series, property) loses its live wikidata id, so a backfill,
+  like a normal run, can create it again and relate it.~~ Fixed 2026-11-09: retired reference QIDs
+  are dropped like removed ones.
+- ~~A merge repoints only live relations, so a removed W→C1 keeps C1's id; after C1 merges into C2 a
+  backfill can add W→C2.~~ Fixed 2026-11-09: the key check also resolves each row's ends through
+  `merged_into_id`.
 - A reference a person added by hand without a wikidata id is not recognized, so the backfill adds a
   second entity for it. Same as a normal run.
 - The work-link key ignores `linkType`: an existing A→B link of one type blocks another type

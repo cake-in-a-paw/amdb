@@ -77,7 +77,8 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
   bad item never blocks another.
 - **Re-runs are additive.** A work whose QID is already in AMDB, or was reverted or removed from
   it, is skipped, so a second run imports only what the first didn't and a revert sticks. A
-  candidate AMDB holds as another kind (say, a series) is skipped as `held_as_other`. Works win: no
+  creator, series or property reference a moderator reverted is dropped the same way, not
+  recreated (2026-11-09). A candidate AMDB holds as another kind (say, a series) is skipped as `held_as_other`. Works win: no
   discovered candidate, even one past `--limit`, is created as a creator, series or property. Refreshing fields a run already wrote, and deciding what happens
   when a refresh disagrees with a human edit, is left to a later importer version.
 - A work link whose target isn't in AMDB yet is kept for the end of the run and added then if the

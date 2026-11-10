@@ -124,7 +124,8 @@ another live entity already holds that id.
 
 What it never does: create or edit a work, change a field, remove a relation, or remove an external id.
 It never re-adds a relation or an id scheme that AMDB holds or ever held (so a moderator's unrelate
-sticks), and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
+sticks, even after either end is merged into another entity), never recreates a reference a
+moderator reverted, and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
 is counted `not_present`, not imported.
 
 Read the stats: `backfilled` (works that got a new reference relation or external id), `relationsAdded`, `idsAdded` (external ids added), `idsSkippedHeld` (ids another entity already holds), `upToDate` (imported

@@ -161,6 +161,11 @@ export async function runWikidataImport(
    * run stops short of it. Includes candidates later skipped (their references are dropped too).
    */
   let candidateQids = new Set<string>();
+  /**
+   * Reference QIDs whose entity a moderator reverted (its wikidata id, then its create): dropped like a
+   * removed one. The QID is no longer held, so `known` can't see it, but recreating it would undo the revert.
+   */
+  const retiredRefs = new Set<string>();
 
   async function fetchEntities(qids: string[]) {
     const out: Record<string, WikidataEntity> = {};
@@ -191,6 +196,7 @@ export async function runWikidataImport(
       // Removed, or held as another kind (say, a series item imported as a work): drop the reference,
       // keep the work. A removed entity is never recreated: its wikidata id is still taken.
       if (found) return found.live && found.kind === kind ? { id: found.id } : null;
+      if (retiredRefs.has(qid)) return null;
       const already = local.get(qid);
       // One QID in two roles of different kinds (creator and franchise): the first one stands.
       if (already) return already.kind === kind ? already.ref : null;
@@ -449,9 +455,11 @@ export async function runWikidataImport(
       ]);
       const linkQids = works.flatMap((r) => r.links.map((l) => l.qid));
       await remember([...new Set([...refQids, ...linkQids])].filter((q) => !known.has(q)));
+      const unchecked = [...new Set(refQids)].filter((q) => !known.has(q) && !refItems.has(q) && !retiredRefs.has(q));
+      for (const q of await imports.findRetiredWikidataIds(unchecked)) retiredRefs.add(q);
       // Genres are tags, found by slug rather than QID, so they are always fetched (once per run).
       const toFetch = [...new Set([...refQids, ...works.flatMap((r) => r.genres)])].filter(
-        (q) => !known.has(q) && !refItems.has(q) && !candidateQids.has(q),
+        (q) => !known.has(q) && !refItems.has(q) && !candidateQids.has(q) && !retiredRefs.has(q),
       );
       const refs = await fetchEntities(toFetch);
       for (const q of toFetch) {
