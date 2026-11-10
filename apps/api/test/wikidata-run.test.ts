@@ -38,6 +38,7 @@ interface FilmSpec {
   imdb?: string;
   tmdbMovie?: string;
   follows?: string;
+  basedOn?: string;
   genres?: string[];
   series?: { qid: string; ordinal: string };
   franchise?: string;
@@ -51,6 +52,7 @@ function film(id: string, title: string, spec: FilmSpec = {}): WikidataEntity {
   if (spec.imdb) claims.P345 = [claim('P345', spec.imdb)];
   if (spec.tmdbMovie) claims.P4947 = [claim('P4947', spec.tmdbMovie)];
   if (spec.follows) claims.P155 = [claim('P155', item(spec.follows))];
+  if (spec.basedOn) claims.P144 = [claim('P144', item(spec.basedOn))];
   if (spec.genres) claims.P136 = spec.genres.map((g) => claim('P136', item(g)));
   if (spec.series) claims.P179 = [claim('P179', item(spec.series.qid), spec.series.ordinal)];
   if (spec.franchise) claims.P8345 = [claim('P8345', item(spec.franchise))];
@@ -1342,6 +1344,121 @@ it('backfill: a credit a moderator removed is not re-added after its creator mer
     const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
     expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, relationsAdded: 0 });
     expect((await relationsOf(t.db, 'work_creator')).filter((r) => r.removedByChange === null)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+/** Enters a creator by hand, as a person would (no wikidata id), and returns its id. */
+async function enterCreator(t: Awaited<ReturnType<typeof setupTest>>, name: string) {
+  const author = t.as({ kind: 'user', userId: await t.createUser() });
+  const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+  const created = await publish(author, mod, [
+    { op: 'create', kind: 'creator', ref: 'c', fields: { name, kind: 'person' } },
+  ]);
+  return created.changes[0]!.entityId!;
+}
+
+it('a creator a person entered under the same name is credited and gets the wikidata id, not duplicated', async () => {
+  const t = await setupTest();
+  try {
+    const entered = await enterCreator(t, 'Dana  director');
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q2: film('Q2', 'Beta', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect(result.stats).toMatchObject({ imported: 2 });
+
+    expect(await t.db.select({ id: creators.entityId }).from(creators)).toEqual([{ id: entered }]);
+    expect(await externalIdsOf(t.db, entered)).toEqual(['wikidata:Q200']);
+    const credits = await relationsOf(t.db, 'work_creator');
+    expect(credits.map((r) => r.toId)).toEqual([entered, entered]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a name two hand-entered creators share is not guessed: the import creates its own', async () => {
+  const t = await setupTest();
+  try {
+    const first = await enterCreator(t, 'Dana Director');
+    const second = await enterCreator(t, 'Dana Director');
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+
+    const all = (await t.db.select({ id: creators.entityId }).from(creators)).map((r) => r.id);
+    expect(all).toHaveLength(3);
+    const [imported] = all.filter((id) => id !== first && id !== second);
+    expect(await externalIdsOf(t.db, imported!)).toEqual(['wikidata:Q200']);
+    expect(await externalIdsOf(t.db, first)).toEqual([]);
+    expect(await externalIdsOf(t.db, second)).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a creator whose wikidata id a moderator removed is not matched by name again', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [director] = await t.db.select().from(creators);
+    const [credit] = await relationsOf(t.db, 'work_creator');
+    const [wikidataId] = await t.db
+      .select({ id: relations.id })
+      .from(relations)
+      .where(and(eq(relations.fromId, director!.entityId), eq(relations.type, 'external_id')));
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [
+      { op: 'unrelate', relationId: credit!.id },
+      { op: 'unrelate', relationId: wikidataId!.id },
+    ]);
+
+    const next = fakeWikidata(ranked('Q2'), {
+      Q2: film('Q2', 'Beta', { director: 'Q200' }),
+      Q200: person('Q200', 'Dana Director'),
+    });
+    await runWikidataImport({ db: t.db, client: next.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    // The moderator's removal stands: the old entry keeps no id, and the import made its own.
+    expect(await externalIdsOf(t.db, director!.entityId)).toEqual([]);
+    expect(await t.db.select().from(creators)).toHaveLength(2);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a link of one type does not block a link of another type to the same work', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Part Two', { follows: 'Q2' }),
+      Q2: film('Q2', 'Part One'),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect((await relationsOf(t.db, 'work_link')).map((r) => r.linkType)).toEqual(['sequel_of']);
+
+    const after = fakeWikidata(ranked('Q1', 'Q2'), {
+      Q1: film('Q1', 'Part Two', { follows: 'Q2', basedOn: 'Q2' }),
+      Q2: film('Q2', 'Part One'),
+    });
+    const result = await runWikidataImport(
+      { db: t.db, client: after.client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+    expect(result.stats).toMatchObject({ backfilled: 1, relationsAdded: 1 });
+    expect((await relationsOf(t.db, 'work_link')).map((r) => r.linkType).toSorted()).toEqual([
+      'adapted_from',
+      'sequel_of',
+    ]);
   } finally {
     await t.close();
   }

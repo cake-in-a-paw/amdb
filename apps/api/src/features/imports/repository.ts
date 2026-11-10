@@ -1,7 +1,17 @@
-import type { EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
-import { and, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
+import type { CreatorKind, EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
+import { and, eq, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
-import { changes, entities, importRuns, relations, submissions } from '../../platform/db/schema';
+import { listed } from '../../platform/db/listed';
+import {
+  changes,
+  creators,
+  entities,
+  importRuns,
+  properties,
+  relations,
+  series,
+  submissions,
+} from '../../platform/db/schema';
 import { resolveWinner } from '../../platform/db/merge';
 import type { DbOrTx } from '../../platform/db/types';
 
@@ -142,10 +152,18 @@ export function importsRepository(db: DbOrTx) {
      */
     async findRelationKeys(
       entityIds: string[],
-    ): Promise<{ type: RelationType; fromId: string; toId: string | null; role: string | null }[]> {
+    ): Promise<
+      { type: RelationType; fromId: string; toId: string | null; role: string | null; linkType: string | null }[]
+    > {
       if (entityIds.length === 0) return [];
       const rows = await db
-        .selectDistinct({ type: relations.type, fromId: relations.fromId, toId: relations.toId, role: relations.role })
+        .selectDistinct({
+          type: relations.type,
+          fromId: relations.fromId,
+          toId: relations.toId,
+          role: relations.role,
+          linkType: relations.linkType,
+        })
         .from(relations)
         .where(
           and(
@@ -169,6 +187,38 @@ export function importsRepository(db: DbOrTx) {
         return fromId === r.fromId && toId === r.toId ? [] : [{ ...r, fromId, toId }];
       });
       return [...rows, ...resolved];
+    },
+
+    /**
+     * Hand-entered references a run may adopt: listed creators, series or properties of `kind` whose
+     * normalized name is in `norms` and that hold no wikidata id and never did (so a moderator's
+     * removal of one sticks). Every match, so the caller can tell one from several. Read-only.
+     */
+    async findUnlinkedByName(
+      kind: 'creator' | 'series' | 'property',
+      norms: string[],
+    ): Promise<{ id: string; norm: string; creatorKind: CreatorKind | null }[]> {
+      if (norms.length === 0) return [];
+      const neverHadWikidata = notExists(
+        db
+          .select({ one: sql`1` })
+          .from(relations)
+          .where(
+            and(eq(relations.fromId, entities.id), eq(relations.type, 'external_id'), eq(relations.scheme, 'wikidata')),
+          ),
+      );
+      if (kind === 'creator')
+        return db
+          .select({ id: entities.id, norm: creators.nameNorm, creatorKind: creators.kind })
+          .from(creators)
+          .innerJoin(entities, eq(entities.id, creators.entityId))
+          .where(and(inArray(creators.nameNorm, norms), listed(), neverHadWikidata));
+      const table = kind === 'series' ? series : properties;
+      return db
+        .select({ id: entities.id, norm: table.titleNorm, creatorKind: sql<null>`null` })
+        .from(table)
+        .innerJoin(entities, eq(entities.id, table.entityId))
+        .where(and(inArray(table.titleNorm, norms), listed(), neverHadWikidata));
     },
 
     /** Per work, every scheme of an `external_id` relation from it, live or removed (a removal must stick). */

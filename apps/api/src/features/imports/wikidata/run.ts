@@ -2,6 +2,7 @@
 import type { EntityKind, IdScheme, WorkLinkType } from '@amdb/shared';
 import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
+import { normalizeTitle } from '../../catalog/normalize';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
 import { createChangesService } from '../../changes/service';
 import { createImportsService } from '../service';
@@ -91,7 +92,11 @@ interface DeferredLink {
 }
 
 /** What a create in a submission stands for, so its returned entity id can be remembered. */
-type CreatedKey = { index: number; qid: string; kind: EntityKind } | { index: number; slug: string };
+type CreatedKey =
+  | { index: number; qid: string; kind: EntityKind }
+  | { index: number; slug: string }
+  /** A hand-entered reference the submission gave this QID: no create, so no index. */
+  | { adopted: string; qid: string; kind: EntityKind; nameKey: string };
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
@@ -166,6 +171,17 @@ export async function runWikidataImport(
    * removed one. The QID is no longer held, so `known` can't see it, but recreating it would undo the revert.
    */
   const retiredRefs = new Set<string>();
+  /**
+   * Hand-entered references (no wikidata id, ever) by `nameKey`: the one entry with that kind and
+   * name, which a reference to it adopts (it gets the wikidata id), or null when there are none or
+   * several (the run creates its own rather than guess) or one was already adopted.
+   */
+  const handEntered = new Map<string, string | null>();
+  /** Creators match on their kind too (a person never adopts an organization's entry). */
+  const refNameKey = (kind: RefKind, creatorKind: string | null, norm: string) =>
+    JSON.stringify(kind === 'creator' ? [kind, creatorKind, norm] : [kind, norm]);
+  const nameKey = (kind: RefKind, ref: { name: string; kind: string }) =>
+    refNameKey(kind, ref.kind, normalizeTitle(ref.name));
 
   async function fetchEntities(qids: string[]) {
     const out: Record<string, WikidataEntity> = {};
@@ -200,10 +216,22 @@ export async function runWikidataImport(
       const already = local.get(qid);
       // One QID in two roles of different kinds (creator and franchise): the first one stands.
       if (already) return already.kind === kind ? already.ref : null;
-      // Works win: a later candidate becomes a work, so it can't also be created as a reference.
-      if (candidateQids.has(qid)) return null;
       const mapped = refItems.get(qid)?.ref ?? null;
       if (!mapped) return null;
+      const key = nameKey(kind, mapped);
+      const adopted = handEntered.get(key);
+      // One entry per QID: a second QID under the same name in this submission gets its own.
+      if (adopted && !created.some((c) => 'adopted' in c && c.adopted === adopted)) {
+        created.push({ adopted, qid, kind, nameKey: key });
+        relates.push({
+          op: 'relate',
+          type: 'external_id',
+          from: { id: adopted },
+          data: { scheme: 'wikidata', value: qid },
+        });
+        local.set(qid, { ref: { id: adopted }, kind });
+        return { id: adopted };
+      }
       const ref = nextRef();
       const description = mapped.description === undefined ? {} : { description: mapped.description };
       const fields =
@@ -296,6 +324,11 @@ export async function runWikidataImport(
   /** Remembers what a committed submission created; a failed one rolled back, so it created nothing. */
   function rememberCreated(created: CreatedKey[], result: { changes: { entityId: string | null }[] }) {
     for (const key of created) {
+      if ('adopted' in key) {
+        known.set(key.qid, { id: key.adopted, kind: key.kind, live: true });
+        handEntered.set(key.nameKey, null);
+        continue;
+      }
       const entityId = result.changes[key.index]?.entityId;
       if (!entityId) throw new Error(`importSubmission returned no entity for change ${key.index + 1}`);
       if ('slug' in key) tagIds.set(key.slug, entityId);
@@ -339,12 +372,17 @@ export async function runWikidataImport(
    * again, so a moderator's unrelate sticks and nothing is duplicated.
    */
   const existingKeys = new Set<string>();
-  const relationKey = (type: string, fromId: string, toId: string | null, role: string | null) =>
-    JSON.stringify([type, fromId, toId, role]);
+  const relationKey = (
+    type: string,
+    fromId: string,
+    toId: string | null,
+    role: string | null,
+    linkType: string | null,
+  ) => JSON.stringify([type, fromId, toId, role, linkType]);
   /** A relate's key when both its ends are already in AMDB; null when one is created in the same submission. */
   const keyOf = (change: ChangeInput) =>
     change.op === 'relate' && 'id' in change.from && change.to && 'id' in change.to
-      ? relationKey(change.type, change.from.id, change.to.id, change.data.role ?? null)
+      ? relationKey(change.type, change.from.id, change.to.id, change.data.role ?? null, change.data.linkType ?? null)
       : null;
   /** Schemes of the external ids each work being backfilled ever had, live or removed. */
   const schemesByWork = new Map<string, Set<IdScheme>>();
@@ -353,6 +391,39 @@ export async function runWikidataImport(
   const count = (key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld', n = 1) => {
     stats[key] = (stats[key] ?? 0) + n;
   };
+
+  /** Looks up, once per name, the hand-entered entries the batch's new references could adopt. */
+  async function findHandEntered(records: WorkRecord[]) {
+    const wanted = new Map<RefKind, Map<string, string>>([
+      ['creator', new Map()],
+      ['series', new Map()],
+      ['property', new Map()],
+    ]);
+    const want = (qid: string, kind: RefKind) => {
+      const mapped = refItems.get(qid)?.ref;
+      if (!mapped || known.has(qid) || retiredRefs.has(qid)) return;
+      const key = nameKey(kind, mapped);
+      if (!handEntered.has(key)) wanted.get(kind)!.set(key, normalizeTitle(mapped.name));
+    };
+    for (const r of records) {
+      for (const { qid } of r.creators) want(qid, 'creator');
+      for (const { qid } of r.series) want(qid, 'series');
+      for (const qid of r.franchises) want(qid, 'property');
+    }
+    for (const [kind, keys] of wanted) {
+      if (keys.size === 0) continue;
+      const rows = await imports.findUnlinkedByName(kind, [...new Set(keys.values())]);
+      const ids = new Map<string, string[]>();
+      for (const row of rows) {
+        const key = refNameKey(kind, row.creatorKind, row.norm);
+        ids.set(key, [...(ids.get(key) ?? []), row.id]);
+      }
+      for (const key of keys.keys()) {
+        const found = ids.get(key) ?? [];
+        handEntered.set(key, found.length === 1 ? found[0]! : null);
+      }
+    }
+  }
 
   /** Adds what an imported work is missing, as one relate-only submission (plus creates for new references). */
   async function backfillWork(rec: WorkRecord, workId: string) {
@@ -458,6 +529,8 @@ export async function runWikidataImport(
       const unchecked = [...new Set(refQids)].filter((q) => !known.has(q) && !refItems.has(q) && !retiredRefs.has(q));
       for (const q of await imports.findRetiredWikidataIds(unchecked)) retiredRefs.add(q);
       // Genres are tags, found by slug rather than QID, so they are always fetched (once per run).
+      // Works win: a candidate is never fetched as a reference, so it has no mapping and `entityRef`
+      // drops it; a later candidate becomes a work, so it can't also be created as a reference.
       const toFetch = [...new Set([...refQids, ...works.flatMap((r) => r.genres)])].filter(
         (q) => !known.has(q) && !refItems.has(q) && !candidateQids.has(q) && !retiredRefs.has(q),
       );
@@ -466,8 +539,9 @@ export async function runWikidataImport(
         const entity = refs[q];
         refItems.set(q, entity ? { ref: mapRef(entity), label: englishLabel(entity) || null } : null);
       }
+      await findHandEntered(works);
       for (const r of await imports.findRelationKeys([...imported.values()]))
-        existingKeys.add(relationKey(r.type, r.fromId, r.toId, r.role));
+        existingKeys.add(relationKey(r.type, r.fromId, r.toId, r.role, r.linkType));
       if (opts.backfill) {
         for (const [id, schemes] of await imports.findExternalIdSchemes([...imported.values()]))
           schemesByWork.set(id, schemes);

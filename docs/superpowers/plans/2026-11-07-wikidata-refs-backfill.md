@@ -106,9 +106,11 @@ Accepted for the first backfill run; revisit if moderation activity grows.
 - ~~A merge repoints only live relations, so a removed W→C1 keeps C1's id; after C1 merges into C2 a
   backfill can add W→C2.~~ Fixed 2026-11-09: the key check also resolves each row's ends through
   `merged_into_id`.
-- A reference a person added by hand without a wikidata id is not recognized, so the backfill adds a
-  second entity for it. Same as a normal run.
-- The work-link key ignores `linkType`: an existing A→B link of one type blocks another type
-  (conservative; the merge dedup key includes it).
-- The works-win guard in `entityRef` is redundant today (candidates never reach `refItems`); kept as
-  a safety net, so no test can make it decide anything.
+- ~~A reference a person added by hand without a wikidata id is not recognized, so the backfill adds a
+  second entity for it. Same as a normal run.~~ Fixed 2026-11-09 (owner's choice): a run or backfill
+  adopts the one listed entry of that kind and name that never held a wikidata id, and gives it the
+  id; with several such entries it creates its own.
+- ~~The work-link key ignores `linkType`: an existing A→B link of one type blocks another type.~~
+  Fixed 2026-11-09: the key includes `linkType`, as the merge dedup key does.
+- ~~The works-win guard in `entityRef` is redundant today (candidates never reach `refItems`).~~
+  Removed 2026-11-09: works win where references are fetched, which the works-win tests cover.

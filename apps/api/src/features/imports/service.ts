@@ -44,7 +44,12 @@ export function createImportsService(db: Db) {
       return repo.findByWikidataIds(qids);
     },
 
-    /** Candidates a moderator reverted out of AMDB; a run treats them as present so the revert sticks. */
+    /** Hand-entered references of `kind` under these normalized names that never held a wikidata id. */
+    async findUnlinkedByName(kind: 'creator' | 'series' | 'property', norms: string[]) {
+      return repo.findUnlinkedByName(kind, norms);
+    },
+
+    /** QIDs a moderator reverted out of AMDB (a work or a reference); a run treats them as taken so the revert sticks. */
     async findRetiredWikidataIds(qids: string[]) {
       return repo.findRetiredWikidataIds(qids);
     },

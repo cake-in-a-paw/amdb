@@ -118,7 +118,9 @@ size cap, Ctrl-C/SIGTERM, and closing a dead run by hand.
 What it does: for each candidate that an import run created (and that is still live, not merged
 away), it fetches the work from Wikidata again and adds, as one submission of the new run, the
 creator, series, franchise, genre tag and work-link relations it is missing, creating a missing
-reference with its wikidata id as a normal run would. It also adds the work's `tmdb_movie`,
+reference with its wikidata id as a normal run would. Like a normal run, when a person already
+entered that reference by hand (the only entry of its kind under that name, never given a wikidata
+id), it uses that entry and gives it the wikidata id; with several such entries it creates its own. It also adds the work's `tmdb_movie`,
 `tmdb_tv`, `anilist`, `imdb`, `openlibrary` and `isbn13` ids of a scheme the work never had, unless
 another live entity already holds that id.
 
