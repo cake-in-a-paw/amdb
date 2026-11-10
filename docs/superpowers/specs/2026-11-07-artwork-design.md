@@ -166,9 +166,8 @@ limit (TMDB 20/s, Open Library 5/s, AniList 20/min, under AniList's degraded 30/
 `Retry-After` by reporting `unavailable` until it passes, and the importer's User-Agent
 (`AMDB-importer/0.1 (https://github.com/cake-in-a-paw/amdb)`, or an `AMDB/0.1` form of it).
 - A call waits for room under its source's limit, but only within the request's overall 3-second
-  deadline. Ids still waiting when the deadline passes are `unavailable`. So the first view of a
-  page of uncached books gets as many covers as fit in the deadline, and the web asks again for the
-  rest (below). *(My call.)*
+  deadline. Ids still waiting when the deadline passes are `unavailable`, and the work page asks
+  once more (below). *(My call.)*
 - `/api/art` has a per-IP limit, using the existing `rateLimit` middleware (a 429 in the standard
   error shape, listed in the OpenAPI operation). This stops one client from using up a source's limit
   for everyone. "Unmetered" means it costs no credits, not that it is unlimited. *(My call.)*

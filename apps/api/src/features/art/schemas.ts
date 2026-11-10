@@ -22,7 +22,7 @@ export const ArtItemSchema = z
     z.object({
       status: z.literal('found'),
       source: ArtSource,
-      /** Small image, for rows. */
+      /** Small image, for API callers; the web shows only `full`. */
       thumb: z.string(),
       /** Large image, for the work page. */
       full: z.string(),
