@@ -44,6 +44,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 |---|---|
 | English label (`en`, else `mul`) | `title` |
 | P1476 title, when not English | `originalTitle` |
+| English aliases (`aliases.en`; not `mul`), trimmed, minus any equal to the title or original title, deduped, first 50 | works: `alternateTitles`; creators: `alternateNames` (series, properties and tags take none) |
 | English description | `description` |
 | P577 publication date, earliest (else P580 start time); precision day, month or year only | `releaseYear/Month/Day` |
 | date in the past / future / none | `lifecycle` `released` / `upcoming` / `unknown` |

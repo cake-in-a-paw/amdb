@@ -241,7 +241,12 @@ export async function runWikidataImport(
       const description = mapped.description === undefined ? {} : { description: mapped.description };
       const fields =
         kind === 'creator'
-          ? { name: mapped.name, kind: mapped.kind, ...description }
+          ? {
+              name: mapped.name,
+              kind: mapped.kind,
+              ...description,
+              ...(mapped.alternateNames ? { alternateNames: mapped.alternateNames } : {}),
+            }
           : { title: mapped.name, ...description };
       created.push({ index: offset + creates.length, qid, kind });
       creates.push({ op: 'create', kind, ref, fields });

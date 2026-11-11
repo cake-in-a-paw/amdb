@@ -57,7 +57,7 @@ describe('wikidata client', () => {
     expect(entUrl.searchParams.get('action')).toBe('wbgetentities');
     expect(entUrl.searchParams.get('maxlag')).toBe('5');
     expect(entUrl.searchParams.get('ids')).toBe('Q1');
-    expect(entUrl.searchParams.get('props')).toBe('labels|descriptions|claims');
+    expect(entUrl.searchParams.get('props')).toBe('labels|descriptions|aliases|claims');
     expect(entUrl.searchParams.get('languages')).toBe('en|mul');
   });
 

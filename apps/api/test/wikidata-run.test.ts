@@ -501,6 +501,27 @@ it('a work, director and genre labeled only in mul (all languages) import under 
   }
 });
 
+it('a new creator is created with its English aliases; the work carries its own', async () => {
+  const t = await setupTest();
+  try {
+    const aliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
+      ...e,
+      aliases: { en: values.map((value) => ({ value })) },
+    });
+    const { client } = fakeWikidata(ranked('Q1'), {
+      Q1: aliased(film('Q1', 'The Film', { director: 'Q200' }), 'Film, The', 'the film'),
+      Q200: aliased(person('Q200', 'Robert Zemeckis'), 'Bob Zemeckis', 'robert zemeckis'),
+    });
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const [work] = await t.db.select({ alt: works.alternateTitles }).from(works).where(eq(works.title, 'The Film'));
+    expect(work?.alt).toEqual(['Film, The']);
+    const [creator] = await t.db.select({ alt: creators.alternateNames }).from(creators);
+    expect(creator?.alt).toEqual(['Bob Zemeckis']);
+  } finally {
+    await t.close();
+  }
+});
+
 it('a final-pass link that can’t be added is counted in linksFailed and logged', async () => {
   const t = await setupTest();
   try {

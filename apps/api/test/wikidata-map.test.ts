@@ -187,6 +187,65 @@ describe('mapWork', () => {
   });
 });
 
+describe('English aliases', () => {
+  const alias = (...values: string[]): WikidataEntity => ({
+    id: 'Q208460',
+    labels: { en: { value: 'Nineteen Eighty-Four' } },
+    aliases: { en: values.map((value) => ({ language: 'en', value })) },
+  });
+
+  it('maps English aliases, dropping the title', () => {
+    const r = ok(
+      mapWork(
+        alias('Nineteen Eighty-Four by George Orwell', '1984', 'nineteen eighty-four', '  ', ' 1984 '),
+        BOOK,
+        TODAY,
+      ),
+    );
+    expect(r.fields.alternateTitles).toEqual(['Nineteen Eighty-Four by George Orwell', '1984']);
+  });
+
+  it('drops an alias equal to the original title, and omits the key when none remain', () => {
+    const e = {
+      ...withClaims({
+        P1476: [
+          {
+            rank: 'normal',
+            mainsnak: { snaktype: 'value', datavalue: { value: { language: 'fr', text: 'Un Titre' } } },
+          },
+        ],
+      }),
+      aliases: { en: [{ value: 'un titre' }] },
+    };
+    const f = ok(mapWork(e, FILM, TODAY)).fields;
+    expect(f.originalTitle).toBe('Un Titre');
+    expect('alternateTitles' in f).toBe(false);
+  });
+
+  it('caps the list at 50', () => {
+    const many = Array.from({ length: 60 }, (_, i) => `Alias ${i}`);
+    expect(ok(mapWork(alias(...many), BOOK, TODAY)).fields.alternateTitles).toHaveLength(50);
+  });
+
+  it('ignores non-English aliases', () => {
+    const e: WikidataEntity = {
+      ...alias(),
+      aliases: { de: [{ value: 'Neunzehnhundertvierundachtzig' }], mul: [{ value: 'MulAlias' }] },
+    };
+    expect('alternateTitles' in ok(mapWork(e, BOOK, TODAY)).fields).toBe(false);
+  });
+
+  it('mapRef carries alternateNames, omitted when empty', () => {
+    const e: WikidataEntity = {
+      id: 'Q9',
+      labels: { en: { value: 'George Orwell' } },
+      aliases: { en: [{ value: 'Eric Blair' }, { value: 'george orwell' }] },
+    };
+    expect(mapRef(e)).toEqual({ name: 'George Orwell', kind: 'organization', alternateNames: ['Eric Blair'] });
+    expect(mapRef({ id: 'Q9', labels: { en: { value: 'Acme' } } })).toEqual({ name: 'Acme', kind: 'organization' });
+  });
+});
+
 describe('mapRef and genreTag', () => {
   it('mapRef: Q5 human → person, otherwise organization, null without an English label', () => {
     expect(mapRef(fixture('person'))).toEqual({ name: 'Jane Director', kind: 'person' });

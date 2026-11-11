@@ -1,5 +1,13 @@
 // Pure mapping from a Wikidata entity to an AMDB work record. No I/O; the importer writes the result.
-import type { CreatorRole, IdScheme, Lifecycle, MediaType, Subtype } from '@amdb/shared';
+import {
+  ALTERNATE_NAMES_MAX,
+  dedupeNames,
+  type CreatorRole,
+  IdScheme,
+  Lifecycle,
+  MediaType,
+  Subtype,
+} from '@amdb/shared';
 import type { Claim, Snak, WikidataEntity } from './client.js';
 import type { Candidate } from './discover.js';
 
@@ -13,6 +21,7 @@ export interface WorkRecord {
     subtype: Subtype | null;
     title: string;
     originalTitle?: string;
+    alternateTitles?: string[];
     description?: string;
     releaseYear?: number;
     releaseMonth?: number;
@@ -222,6 +231,14 @@ export function englishLabel(entity: WikidataEntity): string {
   return (entity.labels?.en ?? entity.labels?.mul)?.value.trim() ?? '';
 }
 
+/** English aliases, trimmed and without empty or over-long ones, minus any equal to a main name; at most 50. */
+function englishAliases(entity: WikidataEntity, main: (string | null | undefined)[]): string[] {
+  const aliases = (entity.aliases?.en ?? [])
+    .map((a) => a.value.trim())
+    .filter((a) => a.length > 0 && a.length <= MAX_TITLE);
+  return dedupeNames(main, aliases).slice(0, ALTERNATE_NAMES_MAX);
+}
+
 export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Date): WorkRecord | { skip: 'no_title' } {
   const title = englishLabel(entity);
   if (title.length < 1 || title.length > MAX_TITLE) return { skip: 'no_title' };
@@ -236,6 +253,8 @@ export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Dat
   };
   const original = originalTitle(entity, title);
   if (original) fields.originalTitle = original;
+  const alternateTitles = englishAliases(entity, [title, original]);
+  if (alternateTitles.length > 0) fields.alternateTitles = alternateTitles;
   const description = entity.descriptions?.en?.value.trim();
   if (description && description.length <= MAX_DESCRIPTION) fields.description = description;
   if (date) {
@@ -285,12 +304,19 @@ export function mapRef(entity: WikidataEntity): {
   name: string;
   kind: 'person' | 'organization';
   description?: string;
+  alternateNames?: string[];
 } | null {
   const name = englishLabel(entity);
   if (name.length < 1 || name.length > MAX_TITLE) return null;
   const kind = qids(entity, 'P31').includes('Q5') ? 'person' : 'organization';
   const description = entity.descriptions?.en?.value.trim();
-  return description && description.length <= MAX_DESCRIPTION ? { name, kind, description } : { name, kind };
+  const alternateNames = englishAliases(entity, [name]);
+  return {
+    name,
+    kind,
+    ...(description && description.length <= MAX_DESCRIPTION ? { description } : {}),
+    ...(alternateNames.length > 0 ? { alternateNames } : {}),
+  };
 }
 
 const GENRE_SUFFIX = / (film|television series|television program|novel|literature)$/;

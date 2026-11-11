@@ -42,6 +42,7 @@ export interface WikidataEntity {
   id: string;
   labels?: Record<string, { value: string; language?: string }>;
   descriptions?: Record<string, { value: string; language?: string }>;
+  aliases?: Record<string, { value: string; language?: string }[]>;
   claims?: Record<string, Claim[]>;
 }
 
@@ -149,7 +150,7 @@ export function createWikidataClient(deps: WikidataClientDeps): WikidataClient {
       if (ids.length === 0) return {};
       const params = new URLSearchParams({
         ids: ids.join('|'),
-        props: 'labels|descriptions|claims',
+        props: 'labels|descriptions|aliases|claims',
         // `mul` holds the label for all languages; many items have no separate `en` one.
         languages: 'en|mul',
       });
