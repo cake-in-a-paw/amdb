@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto';
 import {
+  ALTERNATE_NAMES_MAX,
   CreatorRole,
+  duplicateNameIndex,
   type EntityKind,
   FieldsFor,
   type MediaType,
@@ -136,6 +138,38 @@ const notEditable = (op: string, what: 'fields' | 'data') =>
 const shapeFor = (op: 'create' | 'update', kind: EntityKind) =>
   op === 'create' ? FieldsFor[kind] : UpdateFieldsFor[kind];
 
+/** The field holding a kind's alternate names, if it has one. */
+const ALTERNATE_FIELD: Partial<Record<EntityKind, 'alternateTitles' | 'alternateNames'>> = {
+  work: 'alternateTitles',
+  creator: 'alternateNames',
+};
+
+/**
+ * Rejects a submitted alternate-name list that is too long or repeats the main title, the original
+ * title or an earlier name. `current` holds the entity's stored `title`/`originalTitle`/`name`, which
+ * the payload's own values override.
+ */
+function checkAlternateNames(kind: EntityKind, payload: Record<string, unknown>, current: Record<string, unknown>) {
+  const field = ALTERNATE_FIELD[kind];
+  const names = field && payload[field];
+  if (!field || !Array.isArray(names)) return;
+  if (names.length > ALTERNATE_NAMES_MAX) {
+    throw badRequest('too_many_names', `A submission may carry at most ${ALTERNATE_NAMES_MAX} alternate names`, {
+      field,
+      max: ALTERNATE_NAMES_MAX,
+    });
+  }
+  const merged = { ...current, ...payload };
+  // A cleared original title is null, which duplicateNameIndex ignores.
+  const index = duplicateNameIndex(
+    [merged.title, merged.originalTitle, merged.name].map((v) => (typeof v === 'string' ? v : null)),
+    names as string[], // zod validated the field as an array of strings
+  );
+  if (index >= 0) {
+    throw badRequest('duplicate_name', 'An alternate name repeats the title or an earlier name', { field, index });
+  }
+}
+
 /** A validated change and the row it will be stored as. */
 interface Planned {
   input: ChangeInput;
@@ -270,6 +304,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           const parsed = FieldsFor[change.kind].safeParse(change.fields);
           if (!parsed.success) throw invalidFields(index, parsed.error);
           const payload: Record<string, unknown> = parsed.data;
+          checkAlternateNames(change.kind, payload, {});
           if (change.kind === 'tag' && typeof payload.slug === 'string') {
             const existing = await repo.findTagBySlug(payload.slug);
             if (existing) throw duplicateSlug(payload.slug, existing);
@@ -303,6 +338,13 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           if (change.kind === 'tag' && typeof payload.slug === 'string') {
             const existing = await repo.findTagBySlug(payload.slug);
             if (existing && existing !== target.id) throw duplicateSlug(payload.slug, existing);
+          }
+          // Only the entity's stored names matter, and only when the change sets the list.
+          if (ALTERNATE_FIELD[change.kind] && ALTERNATE_FIELD[change.kind]! in payload) {
+            const stored = target.dependsOn
+              ? {}
+              : await repo.currentFields(change.kind, target.id, ['title', 'originalTitle', 'name']);
+            checkAlternateNames(change.kind, payload, stored);
           }
           // A reserved entity has no row yet, so there is nothing to record as its base.
           const base = target.dependsOn ? null : await repo.currentFields(change.kind, target.id, keys);

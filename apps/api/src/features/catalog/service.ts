@@ -14,7 +14,15 @@ import {
 } from './schemas';
 
 /** Columns derived from others, not shown as fields. */
-const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
+const DERIVED = new Set([
+  'entityId',
+  'titleNorm',
+  'nameNorm',
+  'search',
+  'alternateTitlesNorm',
+  'alternateNamesNorm',
+  'altSearch',
+]);
 
 const byPosition = <T extends { position?: number }>(items: T[]) =>
   items.toSorted((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));

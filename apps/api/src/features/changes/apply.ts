@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { type EntityKind, FieldsFor, normalizeTitle } from '@amdb/shared';
+import { type EntityKind, FieldsFor, joinNorms, normalizeTitle } from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
 import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
@@ -53,7 +53,15 @@ export function fieldsOf(payload: Record<string, unknown> | null): Record<string
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
 
 /** Columns derived from others, never part of a kind's fields. */
-const DERIVED = new Set(['entityId', 'titleNorm', 'nameNorm', 'search']);
+const DERIVED = new Set([
+  'entityId',
+  'titleNorm',
+  'nameNorm',
+  'search',
+  'alternateTitlesNorm',
+  'alternateNamesNorm',
+  'altSearch',
+]);
 /** Fields whose null is a value (`subtype` is null for a book), not "absent". */
 const NULLABLE = new Set(['subtype']);
 
@@ -105,6 +113,8 @@ async function writeRow(
         releaseDay: f.releaseDay ?? null,
         lifecycle: f.lifecycle,
         attributes: f.attributes ?? {},
+        alternateTitles: f.alternateTitles ?? [],
+        alternateTitlesNorm: joinNorms(f.alternateTitles ?? []),
       };
       if (mode === 'insert') await tx.insert(works).values({ entityId: id, ...values });
       else await tx.update(works).set(values).where(eq(works.entityId, id));
@@ -117,6 +127,8 @@ async function writeRow(
         nameNorm: normalizeTitle(f.name),
         kind: f.kind,
         description: f.description ?? null,
+        alternateNames: f.alternateNames ?? [],
+        alternateNamesNorm: joinNorms(f.alternateNames ?? []),
       };
       if (mode === 'insert') await tx.insert(creators).values({ entityId: id, ...values });
       else await tx.update(creators).set(values).where(eq(creators.entityId, id));

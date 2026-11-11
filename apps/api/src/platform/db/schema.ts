@@ -163,12 +163,19 @@ export const works = pgTable(
     releaseDay: smallint('release_day'),
     lifecycle: text('lifecycle').$type<Lifecycle>().notNull().default('unknown'),
     attributes: jsonb('attributes').$type<Record<string, unknown>>().notNull().default({}),
+    alternateTitles: text('alternate_titles')
+      .array()
+      .notNull()
+      .default(sql`'{}'`),
+    alternateTitlesNorm: text('alternate_titles_norm').notNull().default(''),
     search: tsvector('search').generatedAlwaysAs(
       sql`to_tsvector('simple', coalesce(title_norm, '') || ' ' || coalesce(original_title_norm, ''))`,
     ),
+    altSearch: tsvector('alt_search').generatedAlwaysAs(sql`to_tsvector('simple', alternate_titles_norm)`),
   },
   (t) => [
     index('works_search_idx').using('gin', t.search),
+    index('works_alt_search_idx').using('gin', t.altSearch),
     check('works_subtype', sql`(${t.mediaType} = 'film_tv') = (${t.subtype} IS NOT NULL)`),
     check('works_release_month_needs_year', sql`${t.releaseMonth} IS NULL OR ${t.releaseYear} IS NOT NULL`),
     check('works_release_day_needs_month', sql`${t.releaseDay} IS NULL OR ${t.releaseMonth} IS NOT NULL`),
@@ -192,6 +199,11 @@ export const creators = pgTable('creators', {
   nameNorm: text('name_norm').notNull(),
   kind: text('kind').$type<CreatorKind>().notNull(),
   description: text('description'),
+  alternateNames: text('alternate_names')
+    .array()
+    .notNull()
+    .default(sql`'{}'`),
+  alternateNamesNorm: text('alternate_names_norm').notNull().default(''),
 });
 
 export const series = pgTable('series', {

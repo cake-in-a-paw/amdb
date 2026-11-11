@@ -27,6 +27,10 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
     case 'invalid_role':
     case 'duplicate_ref':
       return "Some of this isn't valid. Check it and try again.";
+    case 'duplicate_name':
+      return 'An alternate name repeats the title or another alternate name. Remove it and try again.';
+    case 'too_many_names':
+      return 'There are too many alternate names in one submission. Remove some and try again.';
     case 'unknown_entity':
     case 'unknown_ref':
       return "An entry named here doesn't exist (any more). Check it and try again.";

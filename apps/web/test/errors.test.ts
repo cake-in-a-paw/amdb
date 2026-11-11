@@ -117,6 +117,8 @@ describe('every error code the API can send', () => {
     [400, 'invalid_role'],
     [400, 'invalid_cursor'],
     [400, 'duplicate_ref'],
+    [400, 'duplicate_name'],
+    [400, 'too_many_names'],
     [400, 'unknown_entity'],
     [400, 'unknown_ref'],
     [400, 'unknown_relation'],
