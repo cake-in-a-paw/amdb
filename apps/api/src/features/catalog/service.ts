@@ -36,6 +36,8 @@ interface SummaryRow {
   title: string;
   mediaType: MediaType | null;
   releaseYear: number | null;
+  /** Search only: 1 for a match through alternate names alone. Browse rows have none. */
+  rank?: number;
 }
 
 /** One page of summaries from `limit` + 1 rows, with a cursor when another page exists. */
@@ -44,7 +46,8 @@ function pageOf(rows: SummaryRow[], limit: number) {
   const last = items.at(-1);
   return {
     items: items.map(toSummary),
-    nextCursor: rows.length > limit && last ? encodeKeyCursor({ title: last.title, id: last.id }) : null,
+    nextCursor:
+      rows.length > limit && last ? encodeKeyCursor({ rank: last.rank ?? 0, title: last.title, id: last.id }) : null,
   };
 }
 

@@ -214,3 +214,97 @@ it('an accented tag is found by "amelie" as an existing entity and as a pending 
     await t.close();
   }
 });
+
+async function publishNineteenEightyFour(author: Parameters<typeof publish>[0], mod: Parameters<typeof publish>[1]) {
+  const created = await publish(author, mod, [
+    { ...work('1984', { releaseYear: 1956 }), ref: 'f1' },
+    { ...work('1984', { releaseYear: 2023 }), ref: 'f2' },
+    { ...work('Nineteen Eighty-Four', { alternateTitles: ['1984'] }, 'book'), ref: 'b' },
+  ]);
+  const [f1, f2, b] = created.changes.map((c) => c.entityId!);
+  return { films: [f1!, f2!].toSorted(), book: b! };
+}
+
+it('"1984" finds the novel after the films', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    const { films, book } = await publishNineteenEightyFour(author, mod);
+    const { items } = await search('q=1984');
+    expect(items.map((i) => i.id)).toEqual([...films, book]);
+    expect(Object.keys(items[2]!).toSorted()).toEqual(['id', 'kind', 'mediaType', 'title']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('"mark twain" finds Samuel Clemens', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    await publish(author, mod, [
+      {
+        op: 'create',
+        kind: 'creator',
+        ref: 'c',
+        fields: { name: 'Samuel Clemens', kind: 'person', alternateNames: ['Mark Twain'] },
+      },
+    ]);
+    expect((await search('q=mark+twain')).items.map((i) => i.title)).toEqual(['Samuel Clemens']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('cursor crosses into alias matches', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    const { films, book } = await publishNineteenEightyFour(author, mod);
+    const seen: string[] = [];
+    let cursor = '';
+    for (let i = 0; i < 5; i++) {
+      const page = await search(`q=1984&limit=1${cursor}`);
+      seen.push(...page.items.map((x) => x.id));
+      if (!page.nextCursor) break;
+      cursor = `&cursor=${page.nextCursor}`;
+    }
+    expect(seen).toEqual([...films, book]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('a cursor without a rank still works', async () => {
+  const { t, author, mod, search } = await setup();
+  try {
+    const { films } = await publishNineteenEightyFour(author, mod);
+    const old = Buffer.from(JSON.stringify({ title: '1984', id: films[0] })).toString('base64url');
+    expect((await search(`q=1984&cursor=${old}`)).items.map((i) => i.id)).toEqual([films[1], expect.any(String)]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('duplicate check matches an alternate title', async () => {
+  const { t, author, mod, anon } = await setup();
+  try {
+    await publish(author, mod, [work('Nineteen Eighty-Four', { alternateTitles: ['1984'] }, 'book')]);
+    const body = (await (await anon.get('/api/duplicates?kind=work&title=1984&mediaType=book')).json()) as {
+      existing: Summary[];
+    };
+    expect(body.existing.map((e) => e.title)).toEqual(['Nineteen Eighty-Four']);
+  } finally {
+    await t.close();
+  }
+});
+
+it("a pending create's names are not matched", async () => {
+  const { t, author, anon } = await setup();
+  try {
+    await submit(author, [work('Nineteen Eighty-Four', { alternateTitles: ['1984'] }, 'book')]);
+    const body = (await (await anon.get('/api/duplicates?kind=work&title=1984&mediaType=book')).json()) as {
+      pending: unknown[];
+    };
+    expect(body.pending).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});

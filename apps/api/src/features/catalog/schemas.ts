@@ -84,8 +84,12 @@ export const SearchQuery = z
   });
 export type SearchQuery = z.infer<typeof SearchQuery>;
 
-/** The decoded search cursor: the last result's sort title and id. */
-export const SearchCursor = z.object({ title: z.string(), id: z.uuid() });
+/** The decoded search cursor: the last result's rank (1 for an alternate-name-only match), sort title and id. A cursor without a rank decodes as 0. */
+export const SearchCursor = z.object({
+  rank: z.union([z.literal(0), z.literal(1)]).default(0),
+  title: z.string(),
+  id: z.uuid(),
+});
 export type SearchCursor = z.infer<typeof SearchCursor>;
 
 export const BrowseQuery = z

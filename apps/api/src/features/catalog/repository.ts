@@ -59,9 +59,11 @@ export function catalogRepository(db: DbOrTx) {
     },
 
     /**
-     * Listed entities matching `norm` (a normalized query), ordered by title then id; fetches
-     * `limit` + 1. Works match on every term, the last as a prefix, against `works.search`; the
-     * other kinds match `like %norm%` on their normalized title or name.
+     * Listed entities matching `norm` (a normalized query), ordered by rank, title, then id;
+     * fetches `limit` + 1. Works match on every term, the last as a prefix, against `works.search`
+     * or `works.alt_search`; the other kinds match `like %norm%` on their normalized title or name
+     * (creators also on alternate names). Rank is 1 for a row matched only through alternate
+     * names, else 0.
      */
     async search(
       norm: string,
@@ -74,8 +76,22 @@ export function catalogRepository(db: DbOrTx) {
       const tsquery = terms.map((t, i) => (i === terms.length - 1 ? `${t}:*` : t)).join(' & ');
       const pattern = `%${likeEscape(norm)}%`;
       const kind = filter.mediaType ? 'work' : filter.kind;
+      const mainMatch = or(
+        sql`${works.search} @@ to_tsquery('simple', ${tsquery})`,
+        sql`${creators.nameNorm} like ${pattern}`,
+        sql`${series.titleNorm} like ${pattern}`,
+        sql`${properties.titleNorm} like ${pattern}`,
+        sql`${tags.nameNorm} like ${pattern}`,
+      );
+      const altMatch = or(
+        sql`${works.altSearch} @@ to_tsquery('simple', ${tsquery})`,
+        sql`${creators.alternateNamesNorm} like ${pattern}`,
+      );
+      // 1 when the row matched only through alternate names, so those sort after every main match.
+      // A `case` treats a null condition (a kind without the column) as false.
+      const rankExpr = sql<number>`(case when ${mainMatch} then 0 when ${altMatch} then 1 else 0 end)`;
       return db
-        .select(summaryColumns)
+        .select({ ...summaryColumns, rank: rankExpr })
         .from(entities)
         .leftJoin(works, eq(works.entityId, entities.id))
         .leftJoin(creators, eq(creators.entityId, entities.id))
@@ -87,17 +103,13 @@ export function catalogRepository(db: DbOrTx) {
             listed(),
             kind ? eq(entities.kind, kind) : undefined,
             filter.mediaType ? eq(works.mediaType, filter.mediaType) : undefined,
-            or(
-              sql`${works.search} @@ to_tsquery('simple', ${tsquery})`,
-              sql`${creators.nameNorm} like ${pattern}`,
-              sql`${series.titleNorm} like ${pattern}`,
-              sql`${properties.titleNorm} like ${pattern}`,
-              sql`${tags.nameNorm} like ${pattern}`,
-            ),
-            after ? sql`(${titleExpr}, ${entities.id}) > (${after.title}, ${after.id}::uuid)` : undefined,
+            or(mainMatch, altMatch),
+            after
+              ? sql`(${rankExpr}, ${titleExpr}, ${entities.id}) > (${after.rank}, ${after.title}, ${after.id}::uuid)`
+              : undefined,
           ),
         )
-        .orderBy(asc(titleExpr), asc(entities.id))
+        .orderBy(asc(rankExpr), asc(titleExpr), asc(entities.id))
         .limit(limit + 1);
     },
 
@@ -169,8 +181,8 @@ export function catalogRepository(db: DbOrTx) {
     },
 
     /**
-     * The duplicate check's matching, the same for existing and pending: the normalized title or
-     * name contains `norm`. Listed entities, by title; fetches at most `limit`.
+     * The duplicate check's matching, the same for existing and pending: the normalized title,
+     * name or alternate name contains `norm`. Listed entities, by title; fetches at most `limit`.
      */
     async existingMatching(norm: string, filter: { kind: EntityKind; mediaType?: MediaType }, limit: number) {
       const pattern = `%${likeEscape(norm)}%`;
@@ -189,7 +201,9 @@ export function catalogRepository(db: DbOrTx) {
             filter.mediaType ? eq(works.mediaType, filter.mediaType) : undefined,
             or(
               sql`${works.titleNorm} like ${pattern}`,
+              sql`${works.alternateTitlesNorm} like ${pattern}`,
               sql`${creators.nameNorm} like ${pattern}`,
+              sql`${creators.alternateNamesNorm} like ${pattern}`,
               sql`${series.titleNorm} like ${pattern}`,
               sql`${properties.titleNorm} like ${pattern}`,
               sql`${tags.nameNorm} like ${pattern}`,
