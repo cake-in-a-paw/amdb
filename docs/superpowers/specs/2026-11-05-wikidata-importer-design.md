@@ -44,7 +44,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 |---|---|
 | English label (`en`, else `mul`) | `title` |
 | P1476 title, when not English | `originalTitle` |
-| English aliases (`aliases.en`; not `mul`), trimmed, minus any equal to the title or original title, deduped, first 50 | works: `alternateTitles`; creators: `alternateNames` (series, properties and tags take none) |
+| English aliases (`aliases.en`; not `mul`), trimmed, empty ones and those over 500 characters dropped, minus any equal to the title or original title, deduped, first 50 | works: `alternateTitles`; creators: `alternateNames` (series, properties and tags take none) |
 | English description | `description` |
 | P577 publication date, earliest (else P580 start time); precision day, month or year only | `releaseYear/Month/Day` |
 | date in the past / future / none | `lifecycle` `released` / `upcoming` / `unknown` |
@@ -105,9 +105,11 @@ items now carry, plus English aliases for name lists nothing ever touched, and n
   No work create, no unrelate, and no update but two: the work's `alternateTitles` and each
   credited imported creator's `alternateNames` (created by an import run, as for works), set to the
   item's English aliases when no change of any status ever had that key in its payload, no merge
-  ever went into the entity, and no redacted create or update on it hides what it held (counted
-  `namesAdded`; a creator credited by several works gets one update per run). A submission
-  rejected `duplicate_name` or `too_many_names` (a name now matches a title a person changed) is
+  ever went into or out of the entity, and no redacted create or update on it hides what it held
+  (counted `namesAdded`; a creator credited by several works gets one update per run). The aliases
+  are first checked against the main names the entity holds in AMDB (read per batch: a work's title
+  and original title, a creator's name), and a list left empty is no update. A submission rejected
+  `duplicate_name` or `too_many_names` (a name matches a title a person changed during the run) is
   retried without the name updates. A work with nothing to add gets no submission and counts as
   `upToDate`.
 - External ids follow the artwork spec: a work gains each non-`wikidata` id whose scheme it never
