@@ -78,6 +78,13 @@
       "when": 1794421540657,
       "tag": "0010_alternate_names",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794425598962,
+      "tag": "0011_names_backfill_indexes",
+      "breakpoints": true
     }
   ]
 }

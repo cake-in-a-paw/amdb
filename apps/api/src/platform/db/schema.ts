@@ -314,6 +314,14 @@ export const changes = pgTable(
     index('changes_pending_create_idx')
       .on(t.kind, t.titleNorm)
       .where(sql`${t.op} = 'create' AND ${t.status} = 'pending'`),
+    index('changes_entity_id_idx').on(t.entityId),
+    // A merge's `into`, as submitted and as resolved when it applied: how merges into an entity are found.
+    index('changes_merge_into_idx')
+      .on(sql`(${t.payload}->>'into')`)
+      .where(sql`${t.op} = 'merge'`),
+    index('changes_merge_inverse_into_idx')
+      .on(sql`(${t.inverse}->>'into')`)
+      .where(sql`${t.op} = 'merge'`),
   ],
 );
 

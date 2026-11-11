@@ -351,7 +351,7 @@ fixes it.
   creates' `title_norm`) match a leading-wildcard `like '%…%'`, which no btree index serves. Fix:
   `pg_trgm` GIN indexes on the `*_norm` columns.
 - Search orders by a `coalesce(...)` of the kinds' title columns, which no index covers.
-- Missing indexes: `changes.entity_id`, a GIN index on `changes.depends_on`, `changes.relation_id`,
+- Missing indexes: a GIN index on `changes.depends_on`, `changes.relation_id`,
   `changes.resubmit_of`, an expression index on `changes.payload->>'revertOf'`,
   `submissions.author_user_id` and `submissions.anon_hash`. Every lookup on them is a scan.
 - Redaction's scrub (`scrubRedacted`) scans every change on the entity's merge family and, for a

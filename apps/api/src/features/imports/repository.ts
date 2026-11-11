@@ -163,7 +163,7 @@ export function importsRepository(db: DbOrTx) {
     async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames'): Promise<Set<string>> {
       if (entityIds.length === 0) return new Set();
       const edits = await db
-        .selectDistinct({ id: changes.entityId })
+        .selectDistinct({ entityId: changes.entityId })
         .from(changes)
         .where(
           and(
@@ -172,28 +172,17 @@ export function importsRepository(db: DbOrTx) {
             or(sql`${changes.payload} ? ${key}`, isNotNull(changes.redactedAt)),
           ),
         );
-      // `into` may have resolved further when the merge applied; the inverse holds where it went.
-      const merges = await db
-        .selectDistinct({
-          payloadInto: sql<string | null>`${changes.payload}->>'into'`,
-          inverseInto: sql<string | null>`${changes.inverse}->>'into'`,
-        })
-        .from(changes)
-        .where(
-          and(
-            eq(changes.op, 'merge'),
-            or(
-              inArray(sql`${changes.payload}->>'into'`, entityIds),
-              inArray(sql`${changes.inverse}->>'into'`, entityIds),
-            ),
-          ),
-        );
-      const wanted = new Set(entityIds);
-      return new Set(
-        [...edits.map((r) => r.id), ...merges.flatMap((r) => [r.payloadInto, r.inverseInto])].filter(
-          (id): id is string => id !== null && wanted.has(id),
-        ),
-      );
+      // `into` as submitted, and as resolved when the merge applied (the inverse's). One query per
+      // column, each matching its partial index's expression and predicate (`op` a literal, not bound).
+      const merged: string[] = [];
+      for (const into of [sql<string>`${changes.payload}->>'into'`, sql<string>`${changes.inverse}->>'into'`]) {
+        const rows = await db
+          .selectDistinct({ id: into })
+          .from(changes)
+          .where(and(sql`${changes.op} = 'merge'`, inArray(into, entityIds)));
+        merged.push(...rows.map((r) => r.id));
+      }
+      return new Set([...edits.flatMap((r) => (r.entityId ? [r.entityId] : [])), ...merged]);
     },
 
     /**
