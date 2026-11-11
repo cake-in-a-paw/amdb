@@ -132,3 +132,24 @@ On `https://amdb.ty-pe.com`:
   throttled. If both share a bucket, the record is proxied or `TRUSTED_PROXY_HOPS` is wrong.
 
 Verify: every item above passes. Then record the live site in the owner's hosting notes.
+
+## Deploying 0011
+
+The API applies pending migrations at boot, all in one transaction. Migration 0011 builds three
+indexes on `changes` (about 1.5M rows in production); built inside that transaction they would
+hold 0010's locks on `works` and `creators` until they finish, blocking reads of both. So build
+them first, without a lock, in a psql session on the production database
+(`railway connect postgres`), with the owner's go-ahead:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "changes_entity_id_idx" ON "changes" USING btree ("entity_id");
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "changes_merge_into_idx" ON "changes" USING btree (("payload"->>'into')) WHERE "changes"."op" = 'merge';
+CREATE INDEX CONCURRENTLY IF NOT EXISTS "changes_merge_inverse_into_idx" ON "changes" USING btree (("inverse"->>'into')) WHERE "changes"."op" = 'merge';
+```
+
+Run each statement on its own (`CONCURRENTLY` can't run in a transaction block). Then deploy:
+0011 says `IF NOT EXISTS`, so it finds the indexes and skips them.
+
+Verify: before deploying, `\d changes` lists all three indexes and none is marked `INVALID`. A
+build that failed leaves an invalid index behind; drop it (`DROP INDEX CONCURRENTLY ...`) and run
+its statement again.
