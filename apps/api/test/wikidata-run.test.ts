@@ -1788,3 +1788,73 @@ it('backfill: names that clash with a title a person changed are dropped, and th
     await t.close();
   }
 });
+
+it('backfill: a work and creator whose import create already carried names get no update', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), withAliases);
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 2, namesAdded: 0 });
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, result.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: after its names are dropped, a work still drops an id another work just took', async () => {
+  const t = await setupTest();
+  try {
+    const spec = { directors: ['Q200', 'Q201'] };
+    const before = fakeWikidata(ranked('Q1'), {
+      Q1: film('Q1', 'Alpha', spec),
+      Q200: unaliased.Q200,
+      Q201: unlabeled(person('Q201', 'Second Director')),
+    });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const alpha = (await workIdByTitle(t.db, 'Alpha'))!;
+    await publish(author, mod, [{ op: 'update', kind: 'work', entityId: alpha, fields: { title: 'Alpha One' } }]);
+
+    const now = fakeWikidata(ranked('Q1'), {
+      Q1: aliased(film('Q1', 'Alpha', { ...spec, tmdbMovie: '603' }), 'Alpha One'),
+      Q200: withAliases.Q200,
+      Q201: person('Q201', 'Second Director'),
+    });
+    // Once the run has read which ids are held (it fetches the imported director after that), a person
+    // enters another work with the same tmdb id: the submission's names fail first, then its id.
+    let raced = false;
+    const client = {
+      ...now.client,
+      entities: async (ids: string[]) => {
+        if (!raced && ids.includes('Q200')) {
+          raced = true;
+          await publish(author, mod, [
+            {
+              op: 'create',
+              kind: 'work',
+              ref: 'w',
+              fields: { mediaType: 'film_tv', subtype: 'movie', title: 'Other' },
+            },
+            { op: 'relate', type: 'external_id', from: { ref: 'w' }, data: { scheme: 'tmdb_movie', value: '603' } },
+          ]);
+        }
+        return now.client.entities(ids);
+      },
+    };
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(raced).toBe(true);
+    expect(result.stats).toMatchObject({
+      backfilled: 1,
+      relationsAdded: 1,
+      idsAdded: 0,
+      idsSkippedHeld: 1,
+      namesAdded: 0,
+      skipped: expect.objectContaining({ invalid: 0 }),
+    });
+    expect(await relationsOf(t.db, 'work_creator')).toHaveLength(2);
+  } finally {
+    await t.close();
+  }
+});

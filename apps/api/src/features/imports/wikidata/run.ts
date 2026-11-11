@@ -505,24 +505,25 @@ export async function runWikidataImport(
     }
 
     let ids = newIds;
-    for (let retried = false; ; retried = true) {
+    // Each retry empties the list it drops, so each happens at most once, in either order.
+    for (;;) {
       if (added === 0 && ids.length === 0 && names.length === 0) {
         count('upToDate');
         return;
       }
       try {
-        // The updates go last, so `refs.created`'s indices still hold.
+        // The creates go first, so `refs.created`'s indices hold.
         const result = await changes.importSubmission(runId, [
           ...refs.creates,
           ...relates,
-          ...idChanges(ids),
           ...names,
+          ...idChanges(ids),
         ]);
         rememberCreated(refs.created, result);
         break;
       } catch (err) {
         if (!isItemError(err)) throw err;
-        if (err.code === 'duplicate_external_id' && !retried && ids.length > 0) {
+        if (err.code === 'duplicate_external_id' && ids.length > 0) {
           // Raced with another holder of one of the ids: keep the rest of the submission.
           count('idsSkippedHeld', ids.length);
           ids = [];
