@@ -675,6 +675,8 @@ test('editing only the description leaves a stored list alone, even one repeatin
   const posts = watchSubmissions(t);
 
   const description = await screen.findByLabelText(/^Description/);
+  // The stored "Beta" now repeats the title, but nobody typed it, so it isn't reported as dropped.
+  expect(screen.queryByText(/Not saved/)).not.toBeInTheDocument();
   await t.user.type(description, 'New words');
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
@@ -683,4 +685,85 @@ test('editing only the description leaves a stored list alone, even one repeatin
   expect((await posts())[0]?.changes).toEqual([
     { op: 'update', kind: 'work', entityId: t.seeded, fields: { description: 'New words' } },
   ]);
+});
+
+test('an entry a merge left with over 50 names can still be edited, until its names are changed', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const book = (title: string, alternateTitles: string[]) => ({
+        op: 'create',
+        kind: 'work',
+        ref: title,
+        fields: { mediaType: 'book', subtype: null, title, alternateTitles },
+      });
+      const made = await publish(contributor, moderator, [
+        book(
+          'Alpha',
+          Array.from({ length: 50 }, (_, i) => `Alpha ${i}`),
+        ),
+        book(
+          'Beta',
+          Array.from({ length: 9 }, (_, i) => `Beta ${i}`),
+        ),
+      ]);
+      const [alpha, beta] = made.changes.map((c) => c.entityId ?? '');
+      // A merge keeps every name: Alpha ends with 60.
+      await publish(contributor, moderator, [{ op: 'merge', kind: 'work', from: beta, into: alpha }]);
+      return alpha ?? '';
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  expect(String((names as HTMLTextAreaElement).value).split('\n')).toHaveLength(60);
+  await t.user.type(screen.getByLabelText(/^Description/), 'New words');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: t.seeded, fields: { description: 'New words' } },
+  ]);
+});
+
+test('changing a list a merge left over 50 names asks for 50 at most', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const book = (title: string, alternateTitles: string[]) => ({
+        op: 'create',
+        kind: 'work',
+        ref: title,
+        fields: { mediaType: 'book', subtype: null, title, alternateTitles },
+      });
+      const made = await publish(contributor, moderator, [
+        book(
+          'Alpha',
+          Array.from({ length: 50 }, (_, i) => `Alpha ${i}`),
+        ),
+        book(
+          'Beta',
+          Array.from({ length: 9 }, (_, i) => `Beta ${i}`),
+        ),
+      ]);
+      const [alpha, beta] = made.changes.map((c) => c.entityId ?? '');
+      await publish(contributor, moderator, [{ op: 'merge', kind: 'work', from: beta, into: alpha }]);
+      return alpha ?? '';
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  fireEvent.change(names, { target: { value: `${(names as HTMLTextAreaElement).value}\nOne more` } });
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(names).toHaveAttribute('aria-invalid', 'true');
+  expect(names).toHaveAccessibleDescription('One name per line At most 50 names');
+  expect(await posts()).toHaveLength(0);
 });

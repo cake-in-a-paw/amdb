@@ -46,7 +46,7 @@ function EditForm({ entity, identity }: { entity: EntityView; identity: string }
   const [checked, setChecked] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [focusError, setFocusError] = useState(0);
-  const errors: FormErrors = checked ? validateForm(form) : {};
+  const errors: FormErrors = checked ? validateForm(form, current) : {};
   const changes = buildEdit(entity, form);
 
   useEffect(() => {
@@ -69,7 +69,7 @@ function EditForm({ entity, identity }: { entity: EntityView; identity: string }
   function onSubmit(event: FormEvent) {
     event.preventDefault();
     setChecked(true);
-    if (Object.keys(validateForm(form)).length > 0) {
+    if (Object.keys(validateForm(form, current)).length > 0) {
       setFocusError((n) => n + 1);
       return;
     }
@@ -92,6 +92,7 @@ function EditForm({ entity, identity }: { entity: EntityView; identity: string }
             onChange={setForm}
             errors={{ ...serverFieldErrors(submit.error), ...errors }}
             entityId={entity.id}
+            stored={current.fields}
             lockKind
             lockMediaType
             headingLevel={3}

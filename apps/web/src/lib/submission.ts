@@ -141,12 +141,31 @@ const mainTitles = (fields: Record<string, unknown>) =>
   [fields.title, fields.name, fields.originalTitle].map((v) => (typeof v === 'string' ? v : null));
 
 /**
- * The name lines `toFields` leaves out because they repeat a title or an earlier line, as typed
- * (trimmed), so the form can say what won't be saved.
+ * Whether the names list would be saved as something other than `stored` (an existing entry's
+ * inputs; none for a new entry): only then is it sent, so only then is it checked.
  */
-export function droppedNames(kind: EntityKind, inputs: Record<string, string>): string[] {
+function namesChanged(kind: EntityKind, inputs: Record<string, string>, stored?: Record<string, string>): boolean {
   const key = namesKey[kind];
-  if (!key) return [];
+  if (!key) return false;
+  if (!stored) return true;
+  const list = (fields: Record<string, unknown>) => (Array.isArray(fields[key]) ? fields[key] : []);
+  const now = list(toFields(kind, inputs));
+  const before = list(toFields(kind, stored));
+  return now.length !== before.length || now.some((name, i) => name !== before[i]);
+}
+
+/**
+ * The name lines `toFields` leaves out because they repeat a title or an earlier line, as typed
+ * (trimmed), so the form can say what won't be saved. None while an edit leaves the list as
+ * `stored`: it isn't sent, so a stored name that has come to repeat the title stays.
+ */
+export function droppedNames(
+  kind: EntityKind,
+  inputs: Record<string, string>,
+  stored?: Record<string, string>,
+): string[] {
+  const key = namesKey[kind];
+  if (!key || !namesChanged(kind, inputs, stored)) return [];
   const seen = new Set(
     mainTitles(toFields(kind, { ...inputs, [key]: '' }))
       .filter((m): m is string => m !== null)
@@ -325,15 +344,23 @@ function attributeIssues(attributes: unknown): { field: string; message: string 
   return [];
 }
 
-/** The fields' schema issues, by input; a work's attributes are named by their own input. */
-export function fieldErrors(kind: EntityKind, inputs: Record<string, string>): FormErrors {
+/**
+ * The fields' schema issues, by input; a work's attributes are named by their own input. For an
+ * edit, `stored` is the entry's inputs: the 50-name limit holds only for a list being changed, as
+ * a merge can leave more.
+ */
+export function fieldErrors(
+  kind: EntityKind,
+  inputs: Record<string, string>,
+  stored?: Record<string, string>,
+): FormErrors {
   const fields = toFields(kind, inputs);
   const parsed = FieldsFor[kind].safeParse(fields);
   const errors: FormErrors = {};
   const names = namesKey[kind];
   // Counted as it would be saved: lines that repeat the title or an earlier line don't count.
   const saved = names ? fields[names] : undefined;
-  if (names && Array.isArray(saved) && saved.length > ALTERNATE_NAMES_MAX)
+  if (names && Array.isArray(saved) && saved.length > ALTERNATE_NAMES_MAX && namesChanged(kind, inputs, stored))
     errors[names] = `At most ${ALTERNATE_NAMES_MAX} names`;
   if (parsed.success) return errors;
   for (const issue of parsed.error.issues) {
@@ -351,9 +378,10 @@ const positiveInteger = (raw: string) => /^\d+$/.test(raw.trim()) && Number(raw.
 /**
  * Checks the form with the same field schemas the API uses (from `@amdb/shared`), plus the rules
  * the API applies to each relation, so the form and the API agree. Empty means it can be sent.
+ * `stored` is the entry an edit starts from (see `fieldErrors`).
  */
-export function validateForm(form: EntryForm): FormErrors {
-  const errors = fieldErrors(form.kind, form.fields);
+export function validateForm(form: EntryForm, stored?: EntryForm): FormErrors {
+  const errors = fieldErrors(form.kind, form.fields, stored?.fields);
   if (form.kind !== 'work') return errors;
   const media = form.fields.mediaType;
   form.credits.forEach((c, i) => {

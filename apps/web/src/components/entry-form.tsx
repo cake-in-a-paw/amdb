@@ -9,7 +9,7 @@ import type { EntryForm as EntryFormValue, FormErrors } from '@/lib/submission';
  * The fields for one entry of any kind: the kind's own fields (a work's by media type), the
  * duplicate check under the title, and a work's relations. Controlled: the caller owns the value
  * (a draft, or an existing entry's fields to edit) and the errors. `lockKind`, `lockMediaType`,
- * `relations` and `entityId` (left out of its own duplicate check) are for changing an existing entry.
+ * `relations`, `entityId` (left out of its own duplicate check) and `stored` are for changing an existing entry.
  */
 export function EntryForm({
   value,
@@ -57,7 +57,7 @@ export function EntryForm({
             excludeId={options.entityId}
             level={options.headingLevel}
           />
-          {value.kind === 'creator' && <NamesField name="alternateNames" {...props} />}
+          {value.kind === 'creator' && <NamesField name="alternateNames" stored={options.stored} {...props} />}
           {value.kind === 'creator' && (
             <SelectField name="kind" label="Person or organization" options={creatorKindLabels} {...props} />
           )}

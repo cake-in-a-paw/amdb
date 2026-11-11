@@ -147,16 +147,19 @@ export function NamesField({
   value,
   onChange,
   errors,
+  stored,
 }: {
   name: 'alternateTitles' | 'alternateNames';
   value: EntryForm;
   onChange: (next: EntryForm) => void;
   errors: FormErrors;
+  /** The edited entry's inputs as stored: a list left as it is gets no note. */
+  stored?: Record<string, string> | undefined;
 }) {
   const hintId = `${inputId(name)}-hint`;
   const droppedId = `${inputId(name)}-dropped`;
   const error = errors[name];
-  const dropped = droppedNames(value.kind, value.fields);
+  const dropped = droppedNames(value.kind, value.fields, stored);
   const describedBy = [hintId, dropped.length > 0 && droppedId, error && errorId(name)].filter(Boolean).join(' ');
   return (
     <Field name={name} label="Also known as" errors={errors}>

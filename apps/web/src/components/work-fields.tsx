@@ -32,6 +32,8 @@ interface Props {
 export interface WorkOptions {
   /** The entry being edited, left out of its own duplicate check. */
   entityId?: string | undefined;
+  /** The edited entry's inputs as stored: a names list left as it is isn't checked or noted. */
+  stored?: Record<string, string> | undefined;
   /** The kind of entry can't be changed. */
   lockKind?: boolean | undefined;
   /** The media type can't be changed. */
@@ -70,6 +72,7 @@ export function WorkFields({
   onChange,
   errors,
   entityId,
+  stored,
   lockMediaType = false,
   relations = true,
   headingLevel,
@@ -128,7 +131,7 @@ export function WorkFields({
           level={headingLevel}
         />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
-        <NamesField name="alternateTitles" {...props} />
+        <NamesField name="alternateTitles" stored={stored} {...props} />
       </div>
       <fieldset className="grid gap-4 sm:grid-cols-3">
         <legend className="mb-1 text-sm font-medium">Release date (as much as you know)</legend>
