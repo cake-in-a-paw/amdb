@@ -178,6 +178,8 @@ async function writeRow(
 
 /** The kinds with a list of other names, and the field that holds it. */
 const NAMES_KEY = { work: 'alternateTitles', creator: 'alternateNames' } as const;
+/** Each named kind's main names, which a merge copies into the winner's list. */
+const MAIN_NAMES = { work: ['title', 'originalTitle'], creator: ['name'] } as const;
 type NamedKind = keyof typeof NAMES_KEY;
 const isNamed = (kind: EntityKind): kind is NamedKind => kind in NAMES_KEY;
 
@@ -203,20 +205,14 @@ async function namesOf(tx: Tx, kind: NamedKind, id: string): Promise<{ main: (st
  * For a merge: adds the loser's names (main and other) to the winner's list, deduped, and returns
  * what the inverse needs to put the list back. Null when the merge adds no names.
  */
-async function unionNames(
-  tx: Tx,
-  kind: NamedKind,
-  fromId: string,
-  intoId: string,
-  intoSources: Record<string, string>,
-) {
+async function unionNames(tx: Tx, kind: NamedKind, fromId: string, intoId: string, sources: Record<string, string>) {
   const winner = await namesOf(tx, kind, intoId);
   const loser = await namesOf(tx, kind, fromId);
   const union = dedupeNames(winner.main, [...winner.list, ...loser.main.filter((m) => m !== null), ...loser.list]);
-  if (isDeepStrictEqual(union, winner.list)) return null;
+  if (isDeepStrictEqual(union, dedupeNames(winner.main, winner.list))) return null;
   await writeAlternateNames(tx, kind, intoId, union);
   const key = NAMES_KEY[kind];
-  return { key, value: winner.list, source: intoSources[key] ?? null };
+  return { key, value: winner.list, source: sources[key] ?? null };
 }
 
 /** Writes just an entity's names list and its norm column, as `writeRow` would. */
@@ -909,6 +905,65 @@ export async function scrubRedacted(tx: Tx, change: ChangeRow): Promise<void> {
         })
         .where(eq(changes.id, m.id));
     }
+  }
+}
+
+const isNames = (v: unknown): v is string[] => Array.isArray(v) && v.every((n) => typeof n === 'string');
+
+/**
+ * Removes the names a redacted create or update wrote (its names list, and the main names a merge
+ * copies into a winner's list) wherever merges carried them: the names lists of its entity's
+ * whole merge family, merge inverses' `intoNames`, the family's `set_fields` inverses (names
+ * dropped) and `base`s (`REDACTED_VALUE`, so the change stays stale). Names match by
+ * `normalizeTitle`, so an identical name someone else added is removed too; that is accepted for
+ * a legal removal. A change never applied wrote nothing and is skipped. Call while the change
+ * still has its payload.
+ */
+export async function scrubMergedNames(tx: Tx, change: ChangeRow): Promise<void> {
+  if ((change.op !== 'create' && change.op !== 'update') || !change.entityId || !change.inverse) return;
+  const kind = change.kind;
+  if (!isNamed(kind)) return;
+  const key = NAMES_KEY[kind];
+  const fields = fieldsOf(change.payload);
+  const written = [...(isNames(fields[key]) ? fields[key] : []), ...MAIN_NAMES[kind].map((k) => fields[k])];
+  const norms = new Set(written.filter((n) => typeof n === 'string').map(normalizeTitle));
+  if (!norms.size) return;
+  const keep = (names: string[]) => names.filter((n) => !norms.has(normalizeTitle(n)));
+  const family = await mergeFamily(tx, await resolveWinner(tx, await contentEntityOf(tx, change)));
+  for (const id of family) {
+    const { list } = await namesOf(tx, kind, id);
+    const kept = keep(list);
+    if (kept.length !== list.length) await writeAlternateNames(tx, kind, id, kept);
+  }
+  const others = await tx
+    .select()
+    .from(changes)
+    .where(and(ne(changes.id, change.id), or(inArray(changes.entityId, family), eq(changes.op, 'merge'))));
+  for (const other of others) {
+    const parsed = InverseSchema.safeParse(other.inverse);
+    const inverse = parsed.success ? parsed.data : null;
+    let scrubbed: Inverse | null = null;
+    if (inverse?.op === 'unmerge' && inverse.intoNames && family.includes(inverse.into)) {
+      const value = keep(inverse.intoNames.value);
+      if (value.length !== inverse.intoNames.value.length) {
+        scrubbed = { ...inverse, intoNames: { ...inverse.intoNames, value } };
+      }
+    }
+    const held = inverse?.op === 'set_fields' && family.includes(inverse.entityId) ? inverse.fields[key] : null;
+    if (inverse?.op === 'set_fields' && isNames(held) && keep(held).length !== held.length) {
+      scrubbed = { ...inverse, fields: { ...inverse.fields, [key]: keep(held) } };
+    }
+    const base = other.base;
+    const based = base?.[key];
+    const eraseBase = !!base && isNames(based) && keep(based).length !== based.length;
+    if (!scrubbed && !eraseBase) continue;
+    await tx
+      .update(changes)
+      .set({
+        inverse: scrubbed ?? other.inverse,
+        base: base && eraseBase ? { ...base, [key]: REDACTED_VALUE } : base,
+      })
+      .where(eq(changes.id, other.id));
   }
 }
 

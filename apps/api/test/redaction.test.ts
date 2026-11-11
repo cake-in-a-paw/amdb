@@ -502,3 +502,92 @@ it('redacting a relate erases its role and value from the relation row', async (
     await t.close();
   }
 });
+
+/** A winner whose names list an update set, and a loser merged into it, so the merge took over the list. */
+async function mergedNames(s: Awaited<ReturnType<typeof setup>>) {
+  const { author, mod } = s;
+  const person = (name: string, alternateNames?: string[]) => ({
+    ...creator(name),
+    fields: { name, kind: 'person', ...(alternateNames && { alternateNames }) },
+  });
+  const winner = (await publish(author, mod, [person('Samuel Clemens')])).changes[0]!.entityId!;
+  const named = await publish(author, mod, [
+    { op: 'update', kind: 'creator', entityId: winner, fields: { alternateNames: ['Secret Alias'] } },
+  ]);
+  const loserMade = await publish(author, mod, [person('Private Name', ['Hidden Name'])]);
+  const loser = loserMade.changes[0]!.entityId!;
+  const merged = await publish(author, mod, [{ op: 'merge', kind: 'creator', from: loser, into: winner }]);
+  const names = async () =>
+    ((await (await s.anon.get(`/api/entities/${winner}`)).json()) as { fields: { alternateNames?: string[] } }).fields
+      .alternateNames ?? [];
+  expect(await names()).toEqual(['Secret Alias', 'Private Name', 'Hidden Name']);
+  const found = async (q: string) =>
+    ((await (await s.anon.get(`/api/search?q=${encodeURIComponent(q)}`)).json()) as { items: unknown[] }).items;
+  return {
+    winner,
+    loser,
+    update: named.changes[0]!.id,
+    loserCreate: loserMade.changes[0]!.id,
+    merge: merged.changes[0]!.id,
+    names,
+    found,
+  };
+}
+
+it('redacting an update whose names a merge took over removes them from the winner', async () => {
+  const s = await setup();
+  try {
+    const m = await mergedNames(s);
+    const res = await s.redact(s.admin, m.update, { reason: 'Legal' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await m.names()).toEqual(['Private Name', 'Hidden Name']);
+    expect(await m.found('secret alias')).toEqual([]);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('redacting a merged loser’s create removes its names from the winner', async () => {
+  const s = await setup();
+  try {
+    const m = await mergedNames(s);
+    const res = await s.redact(s.admin, m.loserCreate, { reason: 'Legal', removeEntity: true });
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await m.names()).toEqual(['Secret Alias']);
+    expect(await m.found('private name')).toEqual([]);
+    expect(await m.found('hidden name')).toEqual([]);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('reverting a merge after a redaction doesn’t bring the redacted names back', async () => {
+  const s = await setup();
+  try {
+    const m = await mergedNames(s);
+    expect((await s.redact(s.admin, m.update, { reason: 'Legal' })).status).toBe(200);
+    const res = await s.mod.post(`/api/changes/${m.merge}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await m.names()).toEqual([]);
+    expect(await (await s.anon.get(`/api/entities/${m.winner}/history`)).text()).not.toContain('Secret Alias');
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('reverting a later names update after a redaction doesn’t bring the redacted names back', async () => {
+  const s = await setup();
+  try {
+    const m = await mergedNames(s);
+    const later = await publish(s.author, s.mod, [
+      { op: 'update', kind: 'creator', entityId: m.winner, fields: { alternateNames: ['Mark Twain'] } },
+    ]);
+    expect((await s.redact(s.admin, m.update, { reason: 'Legal' })).status).toBe(200);
+    const res = await s.mod.post(`/api/changes/${later.changes[0]!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect(await m.names()).toEqual(['Private Name', 'Hidden Name']);
+    expect(await (await s.mod.get(`/api/submissions/${later.id}`)).text()).not.toContain('Secret Alias');
+  } finally {
+    await s.t.close();
+  }
+});
