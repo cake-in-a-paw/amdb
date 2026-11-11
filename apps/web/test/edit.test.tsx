@@ -618,3 +618,69 @@ test('emptying the list sends an empty array, and leaving it alone sends nothing
     { op: 'update', kind: 'creator', entityId: t.seeded, fields: { alternateNames: [] } },
   ]);
 });
+
+test('a live note lists the lines that will not be saved, and only then', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+
+  const names = await screen.findByLabelText(NAMES);
+  fireEvent.change(names, { target: { value: 'Sen\nChihiro' } });
+  expect(screen.queryByText(/Not saved/)).not.toBeInTheDocument();
+  expect(names).toHaveAccessibleDescription('One name per line');
+
+  fireEvent.change(names, { target: { value: 'Sen\n  spirited away \nSEN\nChihiro' } });
+  const note = 'Not saved, already listed: spirited away, SEN';
+  expect(screen.getByText(note)).toBeInTheDocument();
+  expect(names).toHaveAccessibleDescription(`One name per line ${note}`);
+  // The textarea itself is left as typed.
+  expect(names).toHaveValue('Sen\n  spirited away \nSEN\nChihiro');
+});
+
+test('the 50 limit counts the names that would be saved', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  const lines = Array.from({ length: 49 }, (_, i) => `Name ${i}`);
+  fireEvent.change(names, { target: { value: [...lines, 'name 0', 'Spirited Away'].join('\n') } });
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  const sent = (await posts())[0]?.changes[0] as { fields: { alternateTitles: string[] } };
+  expect(sent.fields.alternateTitles).toEqual(lines);
+});
+
+test('editing only the description leaves a stored list alone, even one repeating the title', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        {
+          op: 'create',
+          kind: 'work',
+          ref: 'w',
+          fields: { mediaType: 'book', subtype: null, title: 'Alpha', alternateTitles: ['Beta', 'Gamma'] },
+        },
+      ]);
+      const id = made.changes[0]?.entityId ?? '';
+      // A title-only update doesn't set the list, so it can come to repeat the title.
+      await publish(contributor, moderator, [{ op: 'update', kind: 'work', entityId: id, fields: { title: 'beta' } }]);
+      return id;
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
+  const posts = watchSubmissions(t);
+
+  const description = await screen.findByLabelText(/^Description/);
+  await t.user.type(description, 'New words');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'work', entityId: t.seeded, fields: { description: 'New words' } },
+  ]);
+});

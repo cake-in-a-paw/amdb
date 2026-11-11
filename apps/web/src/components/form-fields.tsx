@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { EntryForm, FormErrors } from '@/lib/submission';
+import { droppedNames, type EntryForm, type FormErrors } from '@/lib/submission';
 
 /** Text fields and selects: the 44px floor, on the surface color. */
 export const fieldClass =
@@ -154,15 +154,23 @@ export function NamesField({
   errors: FormErrors;
 }) {
   const hintId = `${inputId(name)}-hint`;
+  const droppedId = `${inputId(name)}-dropped`;
   const error = errors[name];
+  const dropped = droppedNames(value.kind, value.fields);
+  const describedBy = [hintId, dropped.length > 0 && droppedId, error && errorId(name)].filter(Boolean).join(' ');
   return (
     <Field name={name} label="Also known as" errors={errors}>
       <p id={hintId} className="text-sm text-muted-foreground">
         One name per line
       </p>
+      {dropped.length > 0 && (
+        <p id={droppedId} className="text-sm text-muted-foreground">
+          Not saved, already listed: {dropped.join(', ')}
+        </p>
+      )}
       <textarea
         {...fieldProps(name, errors)}
-        aria-describedby={error ? `${hintId} ${errorId(name)}` : hintId}
+        aria-describedby={describedBy}
         rows={3}
         value={value.fields[name] ?? ''}
         onChange={(e) => onChange({ ...value, fields: { ...value.fields, [name]: e.target.value } })}

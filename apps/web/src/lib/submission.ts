@@ -7,6 +7,7 @@ import {
   WorkFieldsBase,
   WorkLinkType,
   dedupeNames,
+  normalizeTitle,
   type MediaType,
 } from '@amdb/shared';
 import type { paths } from '@amdb/shared/api';
@@ -136,6 +137,29 @@ function value(raw: string | undefined, number: boolean): string | number | unde
   return number ? Number(text) : text;
 }
 
+const mainTitles = (fields: Record<string, unknown>) =>
+  [fields.title, fields.name, fields.originalTitle].map((v) => (typeof v === 'string' ? v : null));
+
+/**
+ * The name lines `toFields` leaves out because they repeat a title or an earlier line, as typed
+ * (trimmed), so the form can say what won't be saved.
+ */
+export function droppedNames(kind: EntityKind, inputs: Record<string, string>): string[] {
+  const key = namesKey[kind];
+  if (!key) return [];
+  const seen = new Set(
+    mainTitles(toFields(kind, { ...inputs, [key]: '' }))
+      .filter((m): m is string => m !== null)
+      .map(normalizeTitle),
+  );
+  return nameLines(inputs[key]).filter((line) => {
+    const norm = normalizeTitle(line);
+    if (seen.has(norm)) return true;
+    seen.add(norm);
+    return false;
+  });
+}
+
 /** The form's inputs for `kind` as the API's `create` fields. Empty inputs are left out. */
 export function toFields(kind: EntityKind, inputs: Record<string, string>): Record<string, unknown> {
   const fields: Record<string, unknown> = {};
@@ -146,8 +170,7 @@ export function toFields(kind: EntityKind, inputs: Record<string, string>): Reco
   const names = namesKey[kind];
   if (names) {
     // A name that repeats a title or an earlier name is dropped, as the API would refuse it.
-    const main = [fields.title, fields.name, fields.originalTitle].map((v) => (typeof v === 'string' ? v : null));
-    const list = dedupeNames(main, nameLines(inputs[names]));
+    const list = dedupeNames(mainTitles(fields), nameLines(inputs[names]));
     if (list.length > 0) fields[names] = list;
   }
   if (kind !== 'work') return fields;
@@ -308,7 +331,9 @@ export function fieldErrors(kind: EntityKind, inputs: Record<string, string>): F
   const parsed = FieldsFor[kind].safeParse(fields);
   const errors: FormErrors = {};
   const names = namesKey[kind];
-  if (names && nameLines(inputs[names]).length > ALTERNATE_NAMES_MAX)
+  // Counted as it would be saved: lines that repeat the title or an earlier line don't count.
+  const saved = names ? fields[names] : undefined;
+  if (names && Array.isArray(saved) && saved.length > ALTERNATE_NAMES_MAX)
     errors[names] = `At most ${ALTERNATE_NAMES_MAX} names`;
   if (parsed.success) return errors;
   for (const issue of parsed.error.issues) {
