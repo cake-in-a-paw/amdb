@@ -91,6 +91,32 @@ it('a name equal to the title is 400 duplicate_name', async () => {
   }
 });
 
+it('a name repeating an earlier one, by case only, is 400 duplicate_name at the later index', async () => {
+  const { t, rejected } = await setup();
+  try {
+    const err = await rejected([work({ alternateTitles: ['A', 'a'] })]);
+    expect(err.code).toBe('duplicate_name');
+    expect(err.details).toEqual({ field: 'alternateTitles', index: 1 });
+  } finally {
+    await t.close();
+  }
+});
+
+it('an update setting the list to null is 400 invalid_fields: a list is cleared with []', async () => {
+  const { t, author, mod, entity, rejected } = await setup();
+  try {
+    const id = (await publish(author, mod, [work({ alternateTitles: ['A', 'B'] })])).changes[0]!.entityId!;
+    const err = await rejected([update('work', id, { alternateTitles: null })]);
+    expect(err.code).toBe('invalid_fields');
+    expect(err.details).toEqual([
+      { path: 'changes.0.fields.alternateTitles', message: 'Invalid input: expected array, received null' },
+    ]);
+    expect((await entity(id)).fields.alternateTitles).toEqual(['A', 'B']);
+  } finally {
+    await t.close();
+  }
+});
+
 it('51 names is 400 too_many_names', async () => {
   const { t, rejected } = await setup();
   try {

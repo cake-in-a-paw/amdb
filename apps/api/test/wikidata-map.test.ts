@@ -222,6 +222,11 @@ describe('English aliases', () => {
     expect('alternateTitles' in f).toBe(false);
   });
 
+  it('drops an alias over 500 characters and keeps one of 500', () => {
+    const r = ok(mapWork(alias('a'.repeat(500), 'b'.repeat(501)), BOOK, TODAY));
+    expect(r.fields.alternateTitles).toEqual(['a'.repeat(500)]);
+  });
+
   it('caps the list at 50', () => {
     const many = Array.from({ length: 60 }, (_, i) => `Alias ${i}`);
     expect(ok(mapWork(alias(...many), BOOK, TODAY)).fields.alternateTitles).toHaveLength(50);
