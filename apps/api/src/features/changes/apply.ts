@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { type EntityKind, FieldsFor, joinNorms, normalizeTitle } from '@amdb/shared';
+import { dedupeNames, type EntityKind, FieldsFor, joinNorms, normalizeTitle } from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
 import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
@@ -32,7 +32,9 @@ export const InverseSchema = z.discriminatedUnion('op', [
   /**
    * Inverse of a merge: `from` is live again and the relations repointed to `into` go back
    * (`movedAsTo` are those whose `to` end moved, the rest moved their `from` end); relations the
-   * merge dropped as duplicates are restored.
+   * merge dropped as duplicates are restored. `intoNames` is the winner's names list before the
+   * merge added the loser's names, and the change that had set it; absent when the merge added none
+   * (and on merges applied before merges took names).
    */
   z.object({
     op: z.literal('unmerge'),
@@ -41,6 +43,13 @@ export const InverseSchema = z.discriminatedUnion('op', [
     movedRelationIds: z.array(z.uuid()),
     movedAsTo: z.array(z.uuid()),
     removedRelationIds: z.array(z.uuid()),
+    intoNames: z
+      .object({
+        key: z.enum(['alternateTitles', 'alternateNames']),
+        value: z.array(z.string()),
+        source: z.string().nullable(),
+      })
+      .optional(),
   }),
 ]);
 export type Inverse = z.infer<typeof InverseSchema>;
@@ -164,6 +173,64 @@ async function writeRow(
       );
       return;
     }
+  }
+}
+
+/** The kinds with a list of other names, and the field that holds it. */
+const NAMES_KEY = { work: 'alternateTitles', creator: 'alternateNames' } as const;
+type NamedKind = keyof typeof NAMES_KEY;
+const isNamed = (kind: EntityKind): kind is NamedKind => kind in NAMES_KEY;
+
+/** An entity's main names (title and original title, or name) and its list of other names. */
+async function namesOf(tx: Tx, kind: NamedKind, id: string): Promise<{ main: (string | null)[]; list: string[] }> {
+  if (kind === 'work') {
+    const [row] = await tx
+      .select({ title: works.title, originalTitle: works.originalTitle, list: works.alternateTitles })
+      .from(works)
+      .where(eq(works.entityId, id));
+    if (!row) throw new Error(`entity ${id} has no work row`);
+    return { main: [row.title, row.originalTitle], list: row.list };
+  }
+  const [row] = await tx
+    .select({ name: creators.name, list: creators.alternateNames })
+    .from(creators)
+    .where(eq(creators.entityId, id));
+  if (!row) throw new Error(`entity ${id} has no creator row`);
+  return { main: [row.name], list: row.list };
+}
+
+/**
+ * For a merge: adds the loser's names (main and other) to the winner's list, deduped, and returns
+ * what the inverse needs to put the list back. Null when the merge adds no names.
+ */
+async function unionNames(
+  tx: Tx,
+  kind: NamedKind,
+  fromId: string,
+  intoId: string,
+  intoSources: Record<string, string>,
+) {
+  const winner = await namesOf(tx, kind, intoId);
+  const loser = await namesOf(tx, kind, fromId);
+  const union = dedupeNames(winner.main, [...winner.list, ...loser.main.filter((m) => m !== null), ...loser.list]);
+  if (isDeepStrictEqual(union, winner.list)) return null;
+  await writeAlternateNames(tx, kind, intoId, union);
+  const key = NAMES_KEY[kind];
+  return { key, value: winner.list, source: intoSources[key] ?? null };
+}
+
+/** Writes just an entity's names list and its norm column, as `writeRow` would. */
+async function writeAlternateNames(tx: Tx, kind: NamedKind, id: string, names: string[]) {
+  if (kind === 'work') {
+    await tx
+      .update(works)
+      .set({ alternateTitles: names, alternateTitlesNorm: joinNorms(names) })
+      .where(eq(works.entityId, id));
+  } else {
+    await tx
+      .update(creators)
+      .set({ alternateNames: names, alternateNamesNorm: joinNorms(names) })
+      .where(eq(creators.entityId, id));
   }
 }
 
@@ -383,8 +450,15 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       if (removed.length) {
         await tx.update(relations).set({ removedByChange: change.id }).where(inArray(relations.id, removed));
       }
+      const intoNames = isNamed(change.kind)
+        ? await unionNames(tx, change.kind, fromId, intoId, target.fieldSources)
+        : null;
+      const intoSources = intoNames ? { ...target.fieldSources, [intoNames.key]: change.id } : target.fieldSources;
       await tx.update(entities).set({ mergedIntoId: intoId, updatedAt: new Date() }).where(eq(entities.id, fromId));
-      await tx.update(entities).set({ updatedAt: new Date() }).where(eq(entities.id, intoId));
+      await tx
+        .update(entities)
+        .set({ fieldSources: intoSources, updatedAt: new Date() })
+        .where(eq(entities.id, intoId));
       return {
         op: 'unmerge',
         from: fromId,
@@ -392,6 +466,7 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
         movedRelationIds: moved,
         movedAsTo,
         removedRelationIds: removed,
+        ...(intoNames && { intoNames }),
       };
     }
   }
@@ -482,6 +557,9 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       if (loser.mergedIntoId !== inverse.into)
         throw stale(`Entity ${inverse.from} is no longer merged into ${inverse.into}`);
       if (target.mergedIntoId) throw stale(`Entity ${inverse.into} was merged into another entity since`);
+      if (inverse.intoNames && target.fieldSources[inverse.intoNames.key] !== change.id) {
+        throw stale(`${inverse.intoNames.key} of ${inverse.into} changed since this merge`);
+      }
       const moved = inverse.movedRelationIds.length
         ? await tx.select().from(relations).where(inArray(relations.id, inverse.movedRelationIds)).for('update')
         : [];
@@ -586,7 +664,18 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
           .where(inArray(relations.id, inverse.removedRelationIds));
       }
       await tx.update(entities).set({ mergedIntoId: null, updatedAt: new Date() }).where(eq(entities.id, inverse.from));
-      await tx.update(entities).set({ updatedAt: new Date() }).where(eq(entities.id, inverse.into));
+      const sources = { ...target.fieldSources };
+      if (inverse.intoNames) {
+        const { key, value, source } = inverse.intoNames;
+        if (!isNamed(target.kind)) throw new Error(`unmerge of ${target.kind} ${inverse.into} carries ${key}`);
+        await writeAlternateNames(tx, target.kind, inverse.into, value);
+        if (source === null) delete sources[key];
+        else sources[key] = source;
+      }
+      await tx
+        .update(entities)
+        .set({ fieldSources: sources, updatedAt: new Date() })
+        .where(eq(entities.id, inverse.into));
       return;
     }
   }

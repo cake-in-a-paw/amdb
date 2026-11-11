@@ -1,4 +1,6 @@
+import { eq } from 'drizzle-orm';
 import { expect, it } from 'vitest';
+import { entities } from '../src/platform/db/schema';
 import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
@@ -8,7 +10,12 @@ const film = (title: string) => ({
   ref: 'w',
   fields: { mediaType: 'film_tv', subtype: 'movie', title },
 });
-const creator = (name: string, ref = 'c') => ({ op: 'create', kind: 'creator', ref, fields: { name, kind: 'person' } });
+const creator = (name: string, ref = 'c', extra: Record<string, unknown> = {}) => ({
+  op: 'create',
+  kind: 'creator',
+  ref,
+  fields: { name, kind: 'person', ...extra },
+});
 const directed = (workRef: unknown, creatorRef: unknown) => ({
   op: 'relate',
   type: 'work_creator',
@@ -223,6 +230,147 @@ it('a merge into a merged entity lands on the winner, and a later change blocks 
     // The later merge (stray into the loser) is itself revertible.
     expect((await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`)).status).toBe(200);
     expect((await get(stray)).status).toBe(200);
+  } finally {
+    await t.close();
+  }
+});
+
+/** The entity's field sources, read from the table (the API doesn't serve them). */
+async function sourcesOf(t: Awaited<ReturnType<typeof setupTest>>, id: string) {
+  const [row] = await t.db.select({ s: entities.fieldSources }).from(entities).where(eq(entities.id, id));
+  return row?.s;
+}
+
+/** Publishes one creator and returns its entity id and the id of the change that created it. */
+async function oneCreator(
+  author: Parameters<typeof publish>[0],
+  mod: Parameters<typeof publish>[1],
+  ...args: Parameters<typeof creator>
+) {
+  const created = await publish(author, mod, [creator(...args)]);
+  return { id: created.changes[0]!.entityId!, changeId: created.changes[0]!.id };
+}
+
+it('merging a creator unions names', async () => {
+  const { t, author, mod, anon, entity } = await setup();
+  try {
+    const clemens = await oneCreator(author, mod, 'Samuel Clemens');
+    const twain = await oneCreator(author, mod, 'Mark Twain', 'c', { alternateNames: ['Twain'] });
+    const merged = await publish(author, mod, [merge('creator', twain.id, clemens.id)]);
+    expect((await entity(clemens.id)).fields.alternateNames).toEqual(['Mark Twain', 'Twain']);
+    expect((await sourcesOf(t, clemens.id))?.alternateNames).toBe(merged.changes[0]!.id);
+    const res = await anon.get('/api/search?q=mark+twain');
+    expect(((await res.json()) as { items: { id: string }[] }).items.map((i) => i.id)).toEqual([clemens.id]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('unmerge restores the winner’s list and source exactly', async () => {
+  const { t, author, mod, entity } = await setup();
+  try {
+    // A winner whose list was set by its create, and one that never had a list.
+    const sam = await oneCreator(author, mod, 'Samuel Clemens', 'c', { alternateNames: ['Sam'] });
+    const bare = await oneCreator(author, mod, 'S. L. Clemens');
+    const twain = await oneCreator(author, mod, 'Mark Twain', 'c', { alternateNames: ['Twain'] });
+    const twain2 = await oneCreator(author, mod, 'M. Twain');
+    for (const [winner, loser] of [
+      [sam, twain],
+      [bare, twain2],
+    ] as const) {
+      const before = await sourcesOf(t, winner.id);
+      const merged = await publish(author, mod, [merge('creator', loser.id, winner.id)]);
+      expect((await sourcesOf(t, winner.id))?.alternateNames).toBe(merged.changes[0]!.id);
+      const res = await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect((await entity(winner.id)).fields.alternateNames ?? []).toEqual(winner === sam ? ['Sam'] : []);
+      expect(await sourcesOf(t, winner.id)).toEqual(before);
+    }
+    expect((await sourcesOf(t, sam.id))?.alternateNames).toBe(sam.changeId);
+    expect(await sourcesOf(t, bare.id)).not.toHaveProperty('alternateNames');
+  } finally {
+    await t.close();
+  }
+});
+
+it('unmerge after a names edit is stale_change', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const clemens = await oneCreator(author, mod, 'Samuel Clemens');
+    const twain = await oneCreator(author, mod, 'Mark Twain');
+    const merged = await publish(author, mod, [merge('creator', twain.id, clemens.id)]);
+    await publish(author, mod, [
+      { op: 'update', kind: 'creator', entityId: clemens.id, fields: { alternateNames: ['Twain'] } },
+    ]);
+    const res = await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('stale_change');
+  } finally {
+    await t.close();
+  }
+});
+
+it('a merge that adds no names leaves the winner’s list and its source alone', async () => {
+  const { t, author, mod, entity } = await setup();
+  try {
+    const clemens = await oneCreator(author, mod, 'Samuel Clemens', 'c', { alternateNames: ['Mark Twain'] });
+    const twain = await oneCreator(author, mod, 'mark twain', 'c', { alternateNames: ['Samuel Clemens'] });
+    const merged = await publish(author, mod, [merge('creator', twain.id, clemens.id)]);
+    expect((await entity(clemens.id)).fields.alternateNames).toEqual(['Mark Twain']);
+    expect((await sourcesOf(t, clemens.id))?.alternateNames).toBe(clemens.changeId);
+    // Its inverse doesn't touch the list, so a later names edit doesn't block reverting it.
+    await publish(author, mod, [
+      { op: 'update', kind: 'creator', entityId: clemens.id, fields: { alternateNames: ['Twain'] } },
+    ]);
+    expect((await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`)).status).toBe(200);
+    expect((await entity(clemens.id)).fields.alternateNames).toEqual(['Twain']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('work merge adds title and original title, deduped', async () => {
+  const { t, author, mod, entity } = await setup();
+  try {
+    const work = (title: string, originalTitle: string, alternateTitles: string[]) => ({
+      op: 'create',
+      kind: 'work',
+      ref: 'w',
+      fields: { mediaType: 'film_tv', subtype: 'movie', title, originalTitle, alternateTitles },
+    });
+    const a = await publish(author, mod, [work('Spirited Away', 'Sen to Chihiro no Kamikakushi', ['Chihiro'])]);
+    const b = await publish(author, mod, [
+      work('Sen to Chihiro no kamikakushi', '千と千尋の神隠し', ['chihiro', 'The Spiriting Away of Sen and Chihiro']),
+    ]);
+    const winner = a.changes[0]!.entityId!;
+    await publish(author, mod, [merge('work', b.changes[0]!.entityId!, winner)]);
+    expect((await entity(winner)).fields.alternateTitles).toEqual([
+      'Chihiro',
+      '千と千尋の神隠し',
+      'The Spiriting Away of Sen and Chihiro',
+    ]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('edit after a large merge', async () => {
+  const { t, author, mod, entity } = await setup();
+  try {
+    const names = (prefix: string) => Array.from({ length: 30 }, (_, i) => `${prefix} ${i}`);
+    const a = await oneCreator(author, mod, 'Winner', 'c', { alternateNames: names('Alpha') });
+    const b = await oneCreator(author, mod, 'Loser', 'c', { alternateNames: names('Beta') });
+    await publish(author, mod, [merge('creator', b.id, a.id)]);
+    expect((await entity(a.id)).fields.alternateNames).toHaveLength(61);
+    const res = await author.post('/api/submissions', {
+      cc0: true,
+      changes: [{ op: 'update', kind: 'creator', entityId: a.id, fields: { description: 'Many names' } }],
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const created = (await res.json()) as { changes: { id: string }[] };
+    const approved = await mod.post(`/api/changes/${created.changes[0]!.id}/approve`);
+    expect(approved.status, await approved.clone().text()).toBe(200);
+    expect((await entity(a.id)).fields.description).toBe('Many names');
   } finally {
     await t.close();
   }
