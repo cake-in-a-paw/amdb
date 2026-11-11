@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { actors, publish, renderApp, seed, type TestApi } from './harness';
 
@@ -522,4 +522,99 @@ test('a pending series link counts as a waiting edit on the work, though it is r
   await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.works.spiritedAway } });
 
   expect(await screen.findByText(/Your edit is waiting for review/)).toBeInTheDocument();
+});
+
+const NAMES = 'Also known as';
+
+test('edit adds a name and submits the array', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  expect(names).toHaveAccessibleDescription('One name per line');
+  await t.user.type(names, 'Sen to Chihiro no Kamikakushi');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    {
+      op: 'update',
+      kind: 'work',
+      entityId: t.seeded.works.spiritedAway,
+      fields: { alternateTitles: ['Sen to Chihiro no Kamikakushi'] },
+    },
+  ]);
+});
+
+test('duplicate lines and the title are dropped before submit', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  fireEvent.change(names, { target: { value: 'spirited away\n  Sen  \n\nsen\nChihiro\n' } });
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    {
+      op: 'update',
+      kind: 'work',
+      entityId: t.seeded.works.spiritedAway,
+      fields: { alternateTitles: ['Sen', 'Chihiro'] },
+    },
+  ]);
+});
+
+test('51 lines blocks submit', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  fireEvent.change(names, { target: { value: Array.from({ length: 51 }, (_, i) => `Name ${i}`).join('\n') } });
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(names).toHaveAttribute('aria-invalid', 'true');
+  expect(names).toHaveAccessibleDescription('One name per line At most 50 names');
+  expect(await posts()).toHaveLength(0);
+
+  fireEvent.change(names, { target: { value: Array.from({ length: 50 }, (_, i) => `Name ${i}`).join('\n') } });
+  expect(names).not.toHaveAttribute('aria-invalid');
+});
+
+test('emptying the list sends an empty array, and leaving it alone sends nothing', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        {
+          op: 'create',
+          kind: 'creator',
+          ref: 'c',
+          fields: { name: 'Kafka', kind: 'person', alternateNames: ['Franz'] },
+        },
+      ]);
+      return made.changes[0]?.entityId ?? '';
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
+  const posts = watchSubmissions(t);
+
+  const names = await screen.findByLabelText(NAMES);
+  expect(names).toHaveValue('Franz');
+  expect(screen.getByRole('button', { name: 'Submit for review' })).toBeDisabled();
+  await t.user.clear(names);
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    { op: 'update', kind: 'creator', entityId: t.seeded, fields: { alternateNames: [] } },
+  ]);
 });

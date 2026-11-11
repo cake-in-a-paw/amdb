@@ -135,3 +135,17 @@ export function describeResubmitError(error: unknown): string {
     return 'This change was removed, so it can’t be resubmitted.';
   return describeError(error, "Couldn't resubmit. Try again.");
 }
+
+/**
+ * The field a `duplicate_name` or `too_many_names` answer names (`details.field`), keyed to that
+ * input with the usual wording, so the error shows by the field even when the form's own check
+ * passed (another change landed first). Empty for any other answer.
+ */
+export function serverFieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError) || (error.code !== 'duplicate_name' && error.code !== 'too_many_names')) return {};
+  const field: unknown =
+    typeof error.details === 'object' && error.details !== null && 'field' in error.details
+      ? error.details.field
+      : undefined;
+  return typeof field === 'string' ? { [field]: describeError(error) } : {};
+}

@@ -74,3 +74,22 @@ test('a list page with no works says so', async () => {
   expect(await screen.findByRole('heading', { level: 1, name: 'Empty Shelf' })).toBeInTheDocument();
   expect(screen.getByText('No works yet.')).toBeInTheDocument();
 });
+
+test('creator page shows Also known as', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        {
+          op: 'create',
+          kind: 'creator',
+          ref: 'c',
+          fields: { name: 'Kafka', kind: 'person', alternateNames: ['Franz', 'F. K.'] },
+        },
+      ]);
+      return made.changes[0]?.entityId ?? '';
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded } });
+  expect(await screen.findByText('Also known as: Franz · F. K.')).toBeInTheDocument();
+});

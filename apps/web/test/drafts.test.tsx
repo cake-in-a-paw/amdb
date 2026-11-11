@@ -328,6 +328,17 @@ describe('drafts are kept per contributor', () => {
   });
 });
 
+describe('names and a saved draft', () => {
+  test('old draft loads', async () => {
+    // Saved before alternate names existed: its fields have no names key.
+    localStorage.setItem(KEY, JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title: 'Old draft' } }));
+    await renderApp('/submit');
+
+    expect(await screen.findByLabelText('Title')).toHaveValue('Old draft');
+    expect(screen.getByLabelText('Also known as')).toHaveValue('');
+  });
+});
+
 describe("search's title and a saved draft", () => {
   test('a saved draft opens, and the title from the address is offered instead of lost', async () => {
     localStorage.setItem(KEY, JSON.stringify({ ...emptyForm(), fields: { mediaType: 'book', title: 'Old draft' } }));

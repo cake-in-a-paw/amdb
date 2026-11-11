@@ -147,3 +147,27 @@ test('the page offers Edit and History', async () => {
   await t.user.click(screen.getByRole('link', { name: 'History' }));
   expect(t.router.state.location.pathname).toBe(`/entities/${id}/history`);
 });
+
+test('work page shows Also known as', async () => {
+  const t = await renderApp('/', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const made = await publish(contributor, moderator, [
+        {
+          op: 'create',
+          kind: 'work',
+          ref: 'w',
+          fields: { mediaType: 'book', subtype: null, title: 'Named', alternateTitles: ['Alias A', 'Alias B'] },
+        },
+        { op: 'create', kind: 'work', ref: 'p', fields: { mediaType: 'book', subtype: null, title: 'Plain' } },
+      ]);
+      return { named: made.changes[0]?.entityId ?? '', plain: made.changes[1]?.entityId ?? '' };
+    },
+  });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.named } });
+  expect(await screen.findByText('Also known as: Alias A · Alias B')).toBeInTheDocument();
+
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.plain } });
+  expect(await screen.findByRole('heading', { level: 1, name: 'Plain' })).toBeInTheDocument();
+  expect(screen.queryByText(/Also known as/)).not.toBeInTheDocument();
+});

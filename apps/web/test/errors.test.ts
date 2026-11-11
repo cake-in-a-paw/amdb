@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 import { ApiError, unwrap } from '@/lib/api';
-import { describeError, describeSubmitError, existingIdOf } from '@/lib/errors';
+import { describeError, describeSubmitError, existingIdOf, serverFieldErrors } from '@/lib/errors';
 
 const failure = (status: number, code: string, headers: Record<string, string> = {}) =>
   new Response(JSON.stringify({ error: { code, message: 'api words' } }), {
@@ -195,4 +195,11 @@ describe('every error code the API can send', () => {
     const listed = new Set([...codes.map(([, code]) => code), ...unreachable]);
     expect([...thrown].filter((code) => !listed.has(code ?? ''))).toEqual([]);
   });
+});
+
+test('a duplicate_name answer is shown on the names field it names', () => {
+  const dup = new ApiError(400, 'duplicate_name', 'api words', { field: 'alternateTitles', index: 1 });
+  expect(serverFieldErrors(dup)).toEqual({ alternateTitles: describeError(dup) });
+  expect(serverFieldErrors(new ApiError(400, 'invalid_fields', 'api words'))).toEqual({});
+  expect(serverFieldErrors(null)).toEqual({});
 });

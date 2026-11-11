@@ -9,7 +9,7 @@ import { SubmissionResult } from '@/components/submission-result';
 import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { draftKeys, useDraft } from '@/lib/drafts';
-import { describeSubmitError, existingIdOf } from '@/lib/errors';
+import { describeSubmitError, existingIdOf, serverFieldErrors } from '@/lib/errors';
 import { meQueryOptions, useIdentity } from '@/lib/me';
 import { linkClass } from '@/lib/styles';
 import {
@@ -150,7 +150,7 @@ function SubmitForm({ identity, offered }: { identity: string; offered: string |
       <form ref={formRef} onSubmit={onSubmit} noValidate className="mt-8">
         {/* Read-only while it is sent: a 201 clears the draft, so nothing typed meanwhile may be lost. */}
         <fieldset disabled={submit.isPending} className="grid min-w-0 gap-8">
-          <EntryForm value={form} onChange={setForm} errors={errors} />
+          <EntryForm value={form} onChange={setForm} errors={{ ...serverFieldErrors(submit.error), ...errors }} />
           <NoteField id="submit-note" value={form.note} onChange={(note) => setForm({ ...form, note })} />
           <Cc0Agreement checked={cc0} onChange={setCc0} />
           {submit.isError && (

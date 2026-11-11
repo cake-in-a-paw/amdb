@@ -1,6 +1,6 @@
 import type { EntityKind } from '@amdb/shared';
 import { DuplicateCheck } from '@/components/duplicate-check';
-import { DescriptionField, SelectField, TextField } from '@/components/form-fields';
+import { DescriptionField, NamesField, SelectField, TextField } from '@/components/form-fields';
 import { WorkFields, type WorkOptions } from '@/components/work-fields';
 import { creatorKindLabels, kindLabels, kindOrder, tagKindLabels } from '@/lib/labels';
 import type { EntryForm as EntryFormValue, FormErrors } from '@/lib/submission';
@@ -57,6 +57,7 @@ export function EntryForm({
             excludeId={options.entityId}
             level={options.headingLevel}
           />
+          {value.kind === 'creator' && <NamesField name="alternateNames" {...props} />}
           {value.kind === 'creator' && (
             <SelectField name="kind" label="Person or organization" options={creatorKindLabels} {...props} />
           )}

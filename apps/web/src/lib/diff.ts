@@ -1,6 +1,6 @@
 import type { EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
-import { emptyForm, relationChanges, toFields, type ChangeInput, type EntryForm } from '@/lib/submission';
+import { emptyForm, nameListKeys, relationChanges, toFields, type ChangeInput, type EntryForm } from '@/lib/submission';
 
 export function same(a: unknown, b: unknown): boolean {
   if (a === b) return true;
@@ -14,13 +14,15 @@ export function same(a: unknown, b: unknown): boolean {
 
 /**
  * The keys of `after` that differ from `before`, as the API's `update` wants them: only what
- * changed, and `null` for a field that was there and is now gone (which clears it).
+ * changed, and `null` for a field that was there and is now gone (which clears it). A names list
+ * that is now empty is `[]`: the list is cleared by sending it empty.
  */
 export function diffFields(before: Record<string, unknown>, after: Record<string, unknown>): Record<string, unknown> {
   const changed: Record<string, unknown> = {};
   for (const key of new Set([...Object.keys(before), ...Object.keys(after)])) {
     if (same(before[key], after[key])) continue;
-    changed[key] = after[key] === undefined ? null : after[key];
+    if (after[key] !== undefined) changed[key] = after[key];
+    else changed[key] = nameListKeys.includes(key) ? [] : null;
   }
   return changed;
 }

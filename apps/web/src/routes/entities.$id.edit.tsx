@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { unwrap } from '@/lib/api';
 import { buildEdit } from '@/lib/diff';
 import { draftKeys } from '@/lib/drafts';
-import { describeSubmitError } from '@/lib/errors';
+import { describeSubmitError, serverFieldErrors } from '@/lib/errors';
 import { entityQueryOptions, type EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
 import { useIdentity } from '@/lib/me';
@@ -90,7 +90,7 @@ function EditForm({ entity, identity }: { entity: EntityView; identity: string }
           <EntryForm
             value={form}
             onChange={setForm}
-            errors={errors}
+            errors={{ ...serverFieldErrors(submit.error), ...errors }}
             entityId={entity.id}
             lockKind
             lockMediaType

@@ -140,3 +140,34 @@ export function DescriptionField({
     </Field>
   );
 }
+
+/** The alternate names of a work or creator, one per line, bound to `value.fields[name]`. */
+export function NamesField({
+  name,
+  value,
+  onChange,
+  errors,
+}: {
+  name: 'alternateTitles' | 'alternateNames';
+  value: EntryForm;
+  onChange: (next: EntryForm) => void;
+  errors: FormErrors;
+}) {
+  const hintId = `${inputId(name)}-hint`;
+  const error = errors[name];
+  return (
+    <Field name={name} label="Also known as" errors={errors}>
+      <p id={hintId} className="text-sm text-muted-foreground">
+        One name per line
+      </p>
+      <textarea
+        {...fieldProps(name, errors)}
+        aria-describedby={error ? `${hintId} ${errorId(name)}` : hintId}
+        rows={3}
+        value={value.fields[name] ?? ''}
+        onChange={(e) => onChange({ ...value, fields: { ...value.fields, [name]: e.target.value } })}
+        className={`${fieldClass} py-2`}
+      />
+    </Field>
+  );
+}

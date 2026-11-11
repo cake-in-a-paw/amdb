@@ -1,4 +1,5 @@
 import { expect, test } from 'vitest';
+import { valueText } from '@/lib/change-text';
 import { buildEdit, diffFields } from '@/lib/diff';
 import type { EntityView } from '@/lib/entity';
 import { formFromEntity } from '@/lib/entity-form';
@@ -43,4 +44,16 @@ test('a series position written differently but meaning the same number is no ch
 
 test('equal records give nothing', () => {
   expect(diffFields({ subtype: null, title: 'A' }, { subtype: null, title: 'A' })).toEqual({});
+});
+
+test('diff shows lists', () => {
+  // A changed list is sent whole; a list emptied is sent as [], not null.
+  expect(diffFields({ alternateTitles: ['A'] }, { alternateTitles: ['A', 'B'] })).toEqual({
+    alternateTitles: ['A', 'B'],
+  });
+  expect(diffFields({ alternateTitles: ['A'] }, {})).toEqual({ alternateTitles: [] });
+  expect(diffFields({ alternateTitles: ['A'] }, { alternateTitles: ['A'] })).toEqual({});
+  // And a list reads as its names joined by ", ".
+  expect(valueText(['A', 'B'])).toBe('A, B');
+  expect(valueText([])).toBe('cleared');
 });

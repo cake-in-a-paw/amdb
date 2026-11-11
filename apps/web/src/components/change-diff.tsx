@@ -70,6 +70,8 @@ function Rows({ data }: { data: Record<string, unknown> }) {
   );
 }
 
+const isEmptyList = (v: unknown) => Array.isArray(v) && v.length === 0;
+
 const relationWords: Record<string, string> = {
   work_creator: 'Credit',
   series_work: 'Series entry',
@@ -117,7 +119,7 @@ function UpdateDiff({ change, titles }: { change: QueuedChange; titles: Titles }
               <th scope="row" className="pr-4 text-left font-normal text-muted-foreground">
                 {fieldLabel(key)}
               </th>
-              <td className="pr-4">{before[key] == null ? '—' : valueText(before[key])}</td>
+              <td className="pr-4">{before[key] == null || isEmptyList(before[key]) ? '—' : valueText(before[key])}</td>
               <td className="font-medium">{valueText(value)}</td>
             </tr>
           ))}

@@ -1,10 +1,12 @@
 import {
+  ALTERNATE_NAMES_MAX,
   CreatorRole,
   EntityKind,
   FieldsFor,
   IdScheme,
   WorkFieldsBase,
   WorkLinkType,
+  dedupeNames,
   type MediaType,
 } from '@amdb/shared';
 import type { paths } from '@amdb/shared/api';
@@ -97,6 +99,21 @@ const stringKeys: Record<EntityKind, string[]> = {
   property: ['title', 'description'],
   tag: ['kind', 'name', 'slug'],
 };
+
+/** The key of the alternate names list a kind keeps: held in the form as one name per line. */
+export const namesKey: Partial<Record<EntityKind, 'alternateTitles' | 'alternateNames'>> = {
+  work: 'alternateTitles',
+  creator: 'alternateNames',
+};
+export const nameListKeys: string[] = Object.values(namesKey);
+
+/** The names typed one per line: trimmed, blank lines dropped. */
+const nameLines = (raw: string | undefined): string[] =>
+  (raw ?? '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line !== '');
+
 const workNumberKeys = ['releaseYear', 'releaseMonth', 'releaseDay'];
 
 /** A work's attributes by media type: which inputs belong in `attributes`, and which are numbers. */
@@ -126,6 +143,13 @@ export function toFields(kind: EntityKind, inputs: Record<string, string>): Reco
     if (v !== undefined) fields[key] = v;
   };
   for (const key of stringKeys[kind]) put(key, value(inputs[key], false));
+  const names = namesKey[kind];
+  if (names) {
+    // A name that repeats a title or an earlier name is dropped, as the API would refuse it.
+    const main = [fields.title, fields.name, fields.originalTitle].map((v) => (typeof v === 'string' ? v : null));
+    const list = dedupeNames(main, nameLines(inputs[names]));
+    if (list.length > 0) fields[names] = list;
+  }
   if (kind !== 'work') return fields;
 
   for (const key of workNumberKeys) put(key, value(inputs[key], true));
@@ -151,6 +175,9 @@ export function toInputs(kind: EntityKind, fields: Record<string, unknown>): Rec
     if (typeof v === 'string' || typeof v === 'number') inputs[key] = String(v);
   };
   for (const key of stringKeys[kind]) take(fields, key);
+  const names = namesKey[kind];
+  const list = names ? fields[names] : undefined;
+  if (names && Array.isArray(list)) inputs[names] = list.filter((n) => typeof n === 'string').join('\n');
   if (kind !== 'work') return inputs;
   for (const key of workNumberKeys) take(fields, key);
   const attributes = fields.attributes;
@@ -231,6 +258,9 @@ function plainWords(field: string, message: string): string {
     case 'name':
     case 'originalTitle':
       return 'Enter 1 to 500 characters.';
+    case 'alternateTitles':
+    case 'alternateNames':
+      return 'Each name needs 1 to 500 characters.';
     case 'description':
       return 'Keep it under 5,000 characters.';
     case 'slug':
@@ -277,6 +307,9 @@ export function fieldErrors(kind: EntityKind, inputs: Record<string, string>): F
   const fields = toFields(kind, inputs);
   const parsed = FieldsFor[kind].safeParse(fields);
   const errors: FormErrors = {};
+  const names = namesKey[kind];
+  if (names && nameLines(inputs[names]).length > ALTERNATE_NAMES_MAX)
+    errors[names] = `At most ${ALTERNATE_NAMES_MAX} names`;
   if (parsed.success) return errors;
   for (const issue of parsed.error.issues) {
     const found =

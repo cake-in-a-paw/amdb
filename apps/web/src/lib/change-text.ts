@@ -12,6 +12,9 @@ export function authorName(
 /** A value from a change's fields, short enough for a line of history or the queue. */
 export function valueText(value: unknown): string {
   if (value === null) return 'cleared';
+  // A list of names (alternate titles) reads as the names; an empty one clears the list.
+  if (Array.isArray(value) && value.every((v) => typeof v === 'string'))
+    return value.length === 0 ? 'cleared' : value.join(', ');
   const text = typeof value === 'string' ? value : typeof value === 'object' ? JSON.stringify(value) : String(value);
   return text.length > 280 ? `${text.slice(0, 280)}…` : text;
 }

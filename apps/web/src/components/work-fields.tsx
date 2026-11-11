@@ -1,7 +1,15 @@
 import { useState, type ReactNode } from 'react';
 import { CreatorRole, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
 import { DuplicateCheck } from '@/components/duplicate-check';
-import { DescriptionField, Field, fieldClass, fieldProps, SelectField, TextField } from '@/components/form-fields';
+import {
+  DescriptionField,
+  Field,
+  fieldClass,
+  fieldProps,
+  NamesField,
+  SelectField,
+  TextField,
+} from '@/components/form-fields';
 import { RelationPicker } from '@/components/relation-picker';
 import { Button } from '@/components/ui/button';
 import {
@@ -120,6 +128,7 @@ export function WorkFields({
           level={headingLevel}
         />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
+        <NamesField name="alternateTitles" {...props} />
       </div>
       <fieldset className="grid gap-4 sm:grid-cols-3">
         <legend className="mb-1 text-sm font-medium">Release date (as much as you know)</legend>
