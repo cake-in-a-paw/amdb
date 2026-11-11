@@ -1,5 +1,5 @@
 // Drives a Wikidata seed import: discover → fetch → map → one revision-logged submission per work.
-import { normalizeTitle, type EntityKind, type IdScheme, type WorkLinkType } from '@amdb/shared';
+import { dedupeNames, normalizeTitle, type EntityKind, type IdScheme, type WorkLinkType } from '@amdb/shared';
 import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
@@ -413,6 +413,13 @@ export async function runWikidataImport(
    */
   const nameableCreators = new Map<string, string>();
   const namedCreators = new Set<string>();
+  /**
+   * The main names AMDB holds now (per batch) for the works and creators a backfill may name: a
+   * person may have renamed one to what Wikidata lists as an alias, which the list then leaves out.
+   */
+  const mainNames = new Map<string, string[]>();
+  /** `list` without the names that repeat what entity `id` holds as its main names. */
+  const unlisted = (id: string, list: string[]) => dedupeNames(mainNames.get(id) ?? [], list);
   const count = (
     key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld' | 'namesAdded',
     n = 1,
@@ -487,19 +494,17 @@ export async function runWikidataImport(
       ids.map(({ scheme, value }) => ({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } }));
 
     // Name lists no change ever touched: the work's, and each imported creator's it credits.
+    // A list left empty once checked against what AMDB holds is no update.
     let names: ChangeInput[] = [];
     const named: string[] = [];
-    if (rec.fields.alternateTitles && !titlesTouched.has(workId))
-      names.push({
-        op: 'update',
-        kind: 'work',
-        entityId: workId,
-        fields: { alternateTitles: rec.fields.alternateTitles },
-      });
+    const alternateTitles = titlesTouched.has(workId) ? [] : unlisted(workId, rec.fields.alternateTitles ?? []);
+    if (alternateTitles.length > 0)
+      names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
     for (const { qid } of rec.creators) {
       const id = nameableCreators.get(qid);
-      const alternateNames = refItems.get(qid)?.ref?.alternateNames;
-      if (!id || !alternateNames || namedCreators.has(id) || named.includes(id)) continue;
+      if (!id || namedCreators.has(id) || named.includes(id)) continue;
+      const alternateNames = unlisted(id, refItems.get(qid)?.ref?.alternateNames ?? []);
+      if (alternateNames.length === 0) continue;
       names.push({ op: 'update', kind: 'creator', entityId: id, fields: { alternateNames } });
       named.push(id);
     }
@@ -530,8 +535,8 @@ export async function runWikidataImport(
           continue;
         }
         if ((err.code === 'duplicate_name' || err.code === 'too_many_names') && names.length > 0) {
-          // A name matches what AMDB holds now (a title a person changed, or Wikidata's old label):
-          // the lists are left for a person, and the rest of the submission goes in.
+          // A name matches what AMDB holds now, though checked against it (a title changed since it
+          // was read): the lists are left for a person, and the rest of the submission goes in.
           log(`dropped names for ${rec.qid}: ${err.code} (${err.message})`);
           names = [];
           continue;
@@ -627,6 +632,11 @@ export async function runWikidataImport(
         const touched = await imports.findNamesTouched([...importedCreators.values()], 'alternateNames');
         nameableCreators.clear();
         for (const [qid, id] of importedCreators) if (!touched.has(id)) nameableCreators.set(qid, id);
+        mainNames.clear();
+        const nameableWorks = [...imported.values()].filter((id) => !titlesTouched.has(id));
+        for (const [id, held] of await imports.findMainNames('work', nameableWorks)) mainNames.set(id, held);
+        for (const [id, held] of await imports.findMainNames('creator', [...nameableCreators.values()]))
+          mainNames.set(id, held);
         // AMDB holds these already, so they weren't fetched as references: fetch them for their aliases.
         const unfetched = [...nameableCreators.keys()].filter((q) => !refItems.has(q));
         const fetchedCreators = await fetchEntities(unfetched);

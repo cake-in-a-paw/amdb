@@ -69,7 +69,12 @@ export function createImportsService(db: Db) {
       return repo.findImportedCreators(qids);
     },
 
-    /** The ids among these whose name list a person or run ever set, or a merge went into: a backfill leaves them be. */
+    /** The main names (a work's title and original title, a creator's name) these hold now, by id. */
+    async findMainNames(kind: 'work' | 'creator', entityIds: string[]) {
+      return repo.findMainNames(kind, entityIds);
+    },
+
+    /** The ids among these whose name list a person or run ever set, or that a merge went into or out of: a backfill leaves them be. */
     async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames') {
       return repo.findNamesTouched(entityIds, key);
     },

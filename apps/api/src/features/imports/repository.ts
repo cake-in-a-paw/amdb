@@ -11,6 +11,7 @@ import {
   relations,
   series,
   submissions,
+  works,
 } from '../../platform/db/schema';
 import { resolveWinner } from '../../platform/db/merge';
 import type { DbOrTx } from '../../platform/db/types';
@@ -156,9 +157,29 @@ export function importsRepository(db: DbOrTx) {
     },
 
     /**
+     * The main names each of these works (title, original title) or creators (name) holds now, by id:
+     * a backfill's aliases are checked against these, not Wikidata's label. Read-only.
+     */
+    async findMainNames(kind: 'work' | 'creator', entityIds: string[]): Promise<Map<string, string[]>> {
+      if (entityIds.length === 0) return new Map();
+      if (kind === 'work') {
+        const rows = await db
+          .select({ id: works.entityId, title: works.title, originalTitle: works.originalTitle })
+          .from(works)
+          .where(inArray(works.entityId, entityIds));
+        return new Map(rows.map((r) => [r.id, r.originalTitle === null ? [r.title] : [r.title, r.originalTitle]]));
+      }
+      const rows = await db
+        .select({ id: creators.entityId, name: creators.name })
+        .from(creators)
+        .where(inArray(creators.entityId, entityIds));
+      return new Map(rows.map((r) => [r.id, [r.name]]));
+    },
+
+    /**
      * The ids among `entityIds` whose name list a change ever touched: a create or update of any status
      * (pending, rejected and reverted ones included) whose payload has `key`, a redacted create or update
-     * (its payload is gone, so it may have), or a merge into the entity. Read-only.
+     * (its payload is gone, so it may have), or a merge into or out of the entity. Read-only.
      */
     async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames'): Promise<Set<string>> {
       if (entityIds.length === 0) return new Set();
@@ -168,8 +189,14 @@ export function importsRepository(db: DbOrTx) {
         .where(
           and(
             inArray(changes.entityId, entityIds),
-            inArray(changes.op, ['create', 'update']),
-            or(sql`${changes.payload} ? ${key}`, isNotNull(changes.redactedAt)),
+            or(
+              and(
+                inArray(changes.op, ['create', 'update']),
+                or(sql`${changes.payload} ? ${key}`, isNotNull(changes.redactedAt)),
+              ),
+              // A merge's `entity_id` is its loser: once merged away, even if unmerged since.
+              eq(changes.op, 'merge'),
+            ),
           ),
         );
       // `into` as submitted, and as resolved when the merge applied (the inverse's). One query per
