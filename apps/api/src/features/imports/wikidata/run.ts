@@ -43,9 +43,9 @@ export type WikidataImportStats = {
   stoppedAt: number;
   /** Hand-entered creators, series and properties a submission used (and gave their wikidata id) instead of creating one. */
   refsAdopted: number;
-  /** Backfill runs only: imported works that got at least one new relation or external id. */
+  /** Backfill runs only: imported works that got at least one new relation, external id or name list (theirs or a creator's). */
   backfilled?: number;
-  /** Backfill runs only: imported works with nothing missing (or nothing that may be re-added). */
+  /** Backfill runs only: imported works with nothing missing (or nothing that may be re-added or named). */
   upToDate?: number;
   /** Backfill runs only: relations added to those works (a new reference's own wikidata id aside). */
   relationsAdded?: number;
@@ -53,6 +53,8 @@ export type WikidataImportStats = {
   idsAdded?: number;
   /** Backfill runs only: ids a work lacked but another live entity holds (or claimed first), so not added. */
   idsSkippedHeld?: number;
+  /** Backfill runs only: imported works and creators given their English aliases (no change had ever set or merged their list). */
+  namesAdded?: number;
 };
 
 export type RunStatus = 'finished' | 'capped' | 'failed';
@@ -76,8 +78,9 @@ export interface RunOptions {
   batchSize?: number;
   /**
    * Add the references (creators, series, franchises, genres, work links) and external ids that works
-   * an import run created are missing, and nothing else: no work is created or edited, and a relation
-   * or id scheme that ever existed, live or removed, is never added again.
+   * an import run created are missing, and their and their imported creators' English aliases when no
+   * change ever touched the list: no work is created, no other field is edited, and a relation or id
+   * scheme that ever existed, live or removed, is never added again.
    */
   backfill?: boolean;
 }
@@ -152,7 +155,9 @@ export async function runWikidataImport(
     bytesEnd: 0,
     bytesPerWork: 0,
     stoppedAt: 0,
-    ...(opts.backfill ? { backfilled: 0, upToDate: 0, relationsAdded: 0, idsAdded: 0, idsSkippedHeld: 0 } : {}),
+    ...(opts.backfill
+      ? { backfilled: 0, upToDate: 0, relationsAdded: 0, idsAdded: 0, idsSkippedHeld: 0, namesAdded: 0 }
+      : {}),
   };
 
   // Run-local memory: entities by QID (found in AMDB or created by this run), fetched reference
@@ -400,7 +405,18 @@ export async function runWikidataImport(
   const schemesByWork = new Map<string, Set<IdScheme>>();
   /** `scheme:value` keys held by a live external id: read per batch, then added to as the run submits. */
   const heldIds = new Set<string>();
-  const count = (key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld', n = 1) => {
+  /** Imported works whose `alternateTitles` a change ever touched (per batch): a backfill never sets those. */
+  const titlesTouched = new Set<string>();
+  /**
+   * Imported creators by QID whose `alternateNames` no change ever touched (per batch), less those this
+   * run already named: a creator several works credit gets one update per run.
+   */
+  const nameableCreators = new Map<string, string>();
+  const namedCreators = new Set<string>();
+  const count = (
+    key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld' | 'namesAdded',
+    n = 1,
+  ) => {
     stats[key] = (stats[key] ?? 0) + n;
   };
 
@@ -470,14 +486,38 @@ export async function runWikidataImport(
     const idChanges = (ids: typeof newIds): ChangeInput[] =>
       ids.map(({ scheme, value }) => ({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } }));
 
+    // Name lists no change ever touched: the work's, and each imported creator's it credits.
+    let names: ChangeInput[] = [];
+    const named: string[] = [];
+    if (rec.fields.alternateTitles && !titlesTouched.has(workId))
+      names.push({
+        op: 'update',
+        kind: 'work',
+        entityId: workId,
+        fields: { alternateTitles: rec.fields.alternateTitles },
+      });
+    for (const { qid } of rec.creators) {
+      const id = nameableCreators.get(qid);
+      const alternateNames = refItems.get(qid)?.ref?.alternateNames;
+      if (!id || !alternateNames || namedCreators.has(id) || named.includes(id)) continue;
+      names.push({ op: 'update', kind: 'creator', entityId: id, fields: { alternateNames } });
+      named.push(id);
+    }
+
     let ids = newIds;
     for (let retried = false; ; retried = true) {
-      if (added === 0 && ids.length === 0) {
+      if (added === 0 && ids.length === 0 && names.length === 0) {
         count('upToDate');
         return;
       }
       try {
-        const result = await changes.importSubmission(runId, [...refs.creates, ...relates, ...idChanges(ids)]);
+        // The updates go last, so `refs.created`'s indices still hold.
+        const result = await changes.importSubmission(runId, [
+          ...refs.creates,
+          ...relates,
+          ...idChanges(ids),
+          ...names,
+        ]);
         rememberCreated(refs.created, result);
         break;
       } catch (err) {
@@ -488,6 +528,13 @@ export async function runWikidataImport(
           ids = [];
           continue;
         }
+        if ((err.code === 'duplicate_name' || err.code === 'too_many_names') && names.length > 0) {
+          // A name matches what AMDB holds now (a title a person changed, or Wikidata's old label):
+          // the lists are left for a person, and the rest of the submission goes in.
+          log(`dropped names for ${rec.qid}: ${err.code} (${err.message})`);
+          names = [];
+          continue;
+        }
         stats.skipped.invalid++;
         log(`skipped ${rec.qid}: ${err.code} (${err.message})`);
         return;
@@ -495,9 +542,11 @@ export async function runWikidataImport(
     }
     for (const key of keys) existingKeys.add(key);
     for (const { scheme, value } of ids) heldIds.add(`${scheme}:${value}`);
+    if (names.length > 0) for (const id of named) namedCreators.add(id);
     count('backfilled');
     count('relationsAdded', added);
     count('idsAdded', ids.length);
+    count('namesAdded', names.length);
   }
 
   async function importCandidates() {
@@ -565,6 +614,25 @@ export async function runWikidataImport(
           .filter((r) => imported.has(r.qid))
           .flatMap((r) => r.externalIds.filter((e) => e.scheme !== 'wikidata'));
         for (const key of await imports.findHeldExternalIds(wanted)) heldIds.add(key);
+
+        titlesTouched.clear();
+        for (const id of await imports.findNamesTouched([...imported.values()], 'alternateTitles'))
+          titlesTouched.add(id);
+        const creatorQids = [...new Set(works.flatMap((r) => r.creators.map((c) => c.qid)))].filter((q) => {
+          const held = known.get(q);
+          return held?.live && held.kind === 'creator' && !namedCreators.has(held.id);
+        });
+        const importedCreators = await imports.findImportedCreators(creatorQids);
+        const touched = await imports.findNamesTouched([...importedCreators.values()], 'alternateNames');
+        nameableCreators.clear();
+        for (const [qid, id] of importedCreators) if (!touched.has(id)) nameableCreators.set(qid, id);
+        // AMDB holds these already, so they weren't fetched as references: fetch them for their aliases.
+        const unfetched = [...nameableCreators.keys()].filter((q) => !refItems.has(q));
+        const fetchedCreators = await fetchEntities(unfetched);
+        for (const q of unfetched) {
+          const entity = fetchedCreators[q];
+          refItems.set(q, entity ? { ref: mapRef(entity), label: englishLabel(entity) || null } : null);
+        }
       }
 
       for (const [i, c] of batch.entries()) {

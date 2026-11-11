@@ -64,6 +64,16 @@ export function createImportsService(db: Db) {
       return repo.findImportedWorks(qids);
     },
 
+    /** Of these QIDs, the creators an import run created (live, not merged away), by QID: what a backfill may name. */
+    async findImportedCreators(qids: string[]) {
+      return repo.findImportedCreators(qids);
+    },
+
+    /** The ids among these whose name list a person or run ever set, or a merge went into: a backfill leaves them be. */
+    async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames') {
+      return repo.findNamesTouched(entityIds, key);
+    },
+
     /** The relations touching these entities, live or removed, so a backfill never re-adds one a moderator took out. */
     async findRelationKeys(entityIds: string[]) {
       return repo.findRelationKeys(entityIds);

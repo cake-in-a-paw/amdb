@@ -14,7 +14,7 @@ import {
   tags,
   works,
 } from '../src/platform/db/schema';
-import { publish } from './helpers/catalog';
+import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
 const FILM_CLASS = 'Q11424';
@@ -63,6 +63,11 @@ const person = (id: string, name: string): WikidataEntity =>
   // Same shape note as `film`.
   ({ id, labels: { en: { value: name } }, claims: { P31: [claim('P31', item('Q5'))] } }) as WikidataEntity;
 const thing = (id: string, label: string): WikidataEntity => ({ id, labels: { en: { value: label } } });
+/** `e` with English aliases. */
+const aliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
+  ...e,
+  aliases: { en: values.map((value) => ({ value })) },
+});
 
 /**
  * A real client over a fake `fetch`: SPARQL answers with `candidates`, wbgetentities with
@@ -504,10 +509,6 @@ it('a work, director and genre labeled only in mul (all languages) import under 
 it('a new creator is created with its English aliases; the work carries its own', async () => {
   const t = await setupTest();
   try {
-    const aliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
-      ...e,
-      aliases: { en: values.map((value) => ({ value })) },
-    });
     const { client } = fakeWikidata(ranked('Q1'), {
       Q1: aliased(film('Q1', 'The Film', { director: 'Q200' }), 'Film, The', 'the film'),
       Q200: aliased(person('Q200', 'Robert Zemeckis'), 'Bob Zemeckis', 'robert zemeckis'),
@@ -1583,6 +1584,206 @@ it('backfill: a series a person entered under the same title is adopted, not dup
     expect(await t.db.select().from(relations).where(eq(relations.type, 'series_work'))).toEqual([
       expect.objectContaining({ fromId: entered, position: 2 }),
     ]);
+  } finally {
+    await t.close();
+  }
+});
+
+// --- Backfill: English aliases for imported works and creators no change ever named ---
+
+async function namesOf(db: Awaited<ReturnType<typeof setupTest>>['db']) {
+  const ws = await db.select({ title: works.title, alt: works.alternateTitles }).from(works);
+  const cs = await db.select({ name: creators.name, alt: creators.alternateNames }).from(creators);
+  return Object.fromEntries([...ws.map((w) => [w.title, w.alt]), ...cs.map((c) => [c.name, c.alt])]);
+}
+
+/** Two films sharing a director, imported before aliases were read, and Wikidata's aliases now. */
+const unaliased = {
+  Q1: film('Q1', 'Alpha', { director: 'Q200' }),
+  Q2: film('Q2', 'Beta', { director: 'Q200' }),
+  Q200: person('Q200', 'Dana Director'),
+};
+const withAliases = {
+  Q1: aliased(unaliased.Q1, 'Alpha One'),
+  Q2: aliased(unaliased.Q2, 'Beta Two'),
+  Q200: aliased(unaliased.Q200, 'D. Director'),
+};
+
+/** Imports `unaliased` (no aliases then) and returns a client that serves `withAliases`, plus people to edit with. */
+async function importedWithoutNames(t: Awaited<ReturnType<typeof setupTest>>) {
+  const before = fakeWikidata(ranked('Q1', 'Q2'), unaliased);
+  await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+  const author = t.as({ kind: 'user', userId: await t.createUser() });
+  const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+  const backfill = () =>
+    runWikidataImport(
+      { db: t.db, client: fakeWikidata(ranked('Q1', 'Q2'), withAliases).client, measureBytes: bytes(), today: TODAY },
+      BACKFILL,
+    );
+  return { author, mod, backfill, alpha: (await workIdByTitle(t.db, 'Alpha'))! };
+}
+
+const setNames = (entityId: string, alternateTitles: string[]) => ({
+  op: 'update',
+  kind: 'work',
+  entityId,
+  fields: { alternateTitles },
+});
+
+it('backfill adds names to an imported work and its creator', async () => {
+  const t = await setupTest();
+  try {
+    const { backfill } = await importedWithoutNames(t);
+    const result = await backfill();
+    // The shared director gets one update, not one per film.
+    expect(result.stats).toMatchObject({ backfilled: 2, upToDate: 0, relationsAdded: 0, namesAdded: 3 });
+    expect(await namesOf(t.db)).toEqual({
+      Alpha: ['Alpha One'],
+      Beta: ['Beta Two'],
+      'Dana Director': ['D. Director'],
+    });
+    const updates = await t.db
+      .select({ payload: changesTable.payload })
+      .from(changesTable)
+      .innerJoin(submissions, eq(submissions.id, changesTable.submissionId))
+      .where(and(eq(submissions.importRunId, result.runId), eq(changesTable.op, 'update')));
+    expect(
+      updates.map((u) => u.payload).toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
+    ).toEqual([
+      { alternateNames: ['D. Director'] },
+      { alternateTitles: ['Alpha One'] },
+      { alternateTitles: ['Beta Two'] },
+    ]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a cleared list is never refilled', async () => {
+  const t = await setupTest();
+  try {
+    const { author, mod, backfill, alpha } = await importedWithoutNames(t);
+    await publish(author, mod, [setNames(alpha, [])]);
+    const result = await backfill();
+    expect(result.stats).toMatchObject({ namesAdded: 2 });
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a list reverted to empty is never refilled', async () => {
+  const t = await setupTest();
+  try {
+    const { author, mod, backfill, alpha } = await importedWithoutNames(t);
+    const set = await publish(author, mod, [setNames(alpha, ['Typo'])]);
+    const res = await mod.post(`/api/changes/${set.changes[0]!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+    const result = await backfill();
+    expect(result.stats).toMatchObject({ namesAdded: 2 });
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a pending names edit counts as touched', async () => {
+  const t = await setupTest();
+  try {
+    const { author, backfill, alpha } = await importedWithoutNames(t);
+    await submit(author, [setNames(alpha, ['Mine'])]);
+    const result = await backfill();
+    expect(result.stats).toMatchObject({ namesAdded: 2 });
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a redacted edit counts as touched, whatever it held', async () => {
+  const t = await setupTest();
+  try {
+    const { author, backfill, alpha } = await importedWithoutNames(t);
+    const admin = t.as({ kind: 'user', userId: await t.createUser({ role: 'admin' }) });
+    const pending = await submit(author, [setNames(alpha, ['Private'])]);
+    const res = await admin.post(`/api/admin/changes/${pending.changes[0]!.id}/redact`, { reason: 'Personal data' });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const result = await backfill();
+    expect(result.stats).toMatchObject({ namesAdded: 2 });
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a merged winner is touched', async () => {
+  const t = await setupTest();
+  try {
+    const { author, mod, backfill, alpha } = await importedWithoutNames(t);
+    const beta = (await workIdByTitle(t.db, 'Beta'))!;
+    await publish(author, mod, [{ op: 'merge', kind: 'work', from: beta, into: alpha }]);
+    const result = await backfill();
+    // Beta merged away (skipped as present); Alpha, the winner, keeps what the merge gave it.
+    expect(result.stats).toMatchObject({ namesAdded: 1, skipped: expect.objectContaining({ present: 1 }) });
+    expect((await namesOf(t.db)).Alpha).toEqual(['Beta']);
+    expect((await namesOf(t.db))['Dana Director']).toEqual(['D. Director']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a person-entered creator is left alone', async () => {
+  const t = await setupTest();
+  try {
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    await publish(author, mod, [
+      { op: 'create', kind: 'creator', ref: 'c', fields: { name: 'Dana Director', kind: 'person' } },
+    ]);
+    const before = fakeWikidata(ranked('Q1'), { Q1: unaliased.Q1, Q200: unaliased.Q200 });
+    const imported = await runWikidataImport(
+      { db: t.db, client: before.client, measureBytes: bytes(), today: TODAY },
+      OPTS,
+    );
+    expect(imported.stats).toMatchObject({ refsAdopted: 1 });
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: unaliased.Q1, Q200: withAliases.Q200 });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, namesAdded: 0 });
+    expect((await namesOf(t.db))['Dana Director']).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a second backfill is up to date', async () => {
+  const t = await setupTest();
+  try {
+    const { backfill } = await importedWithoutNames(t);
+    await backfill();
+    const again = await backfill();
+    expect(again.stats).toMatchObject({ backfilled: 0, upToDate: 2, namesAdded: 0 });
+    expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, again.runId))).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: names that clash with a title a person changed are dropped, and the rest still goes in', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1'), { Q1: unaliased.Q1, Q200: unlabeled(unaliased.Q200) });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const alpha = (await workIdByTitle(t.db, 'Alpha'))!;
+    await publish(author, mod, [{ op: 'update', kind: 'work', entityId: alpha, fields: { title: 'Alpha One' } }]);
+
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: withAliases.Q1, Q200: unaliased.Q200 });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 1, relationsAdded: 1, namesAdded: 0 });
+    expect((await namesOf(t.db))['Alpha One']).toEqual([]);
+    expect(await relationsOf(t.db, 'work_creator')).toHaveLength(1);
   } finally {
     await t.close();
   }

@@ -18,6 +18,47 @@ import type { DbOrTx } from '../../platform/db/types';
 export type ImportRunRow = typeof importRuns.$inferSelect;
 
 export function importsRepository(db: DbOrTx) {
+  /**
+   * Of `qids`, the live, unmerged entities of `kind` an import run created holding that QID, by QID:
+   * the entity's `create` and its live wikidata id were written by the same import-run submission. One
+   * a person entered (an adopted creator among them) fails the first test; a merge winner holding a
+   * loser's QID fails the second.
+   */
+  async function importedOfKind(kind: 'work' | 'creator', qids: string[]): Promise<Map<string, string>> {
+    if (qids.length === 0) return new Map();
+    const idChange = alias(changes, 'id_change');
+    const createChange = alias(changes, 'create_change');
+    const rows = await db
+      .select({ qid: relations.value, id: entities.id })
+      .from(relations)
+      .innerJoin(entities, eq(entities.id, relations.fromId))
+      .innerJoin(idChange, eq(idChange.id, relations.createdByChange))
+      .innerJoin(
+        createChange,
+        and(
+          eq(createChange.entityId, entities.id),
+          eq(createChange.op, 'create'),
+          eq(createChange.submissionId, idChange.submissionId),
+        ),
+      )
+      .innerJoin(submissions, eq(submissions.id, createChange.submissionId))
+      .where(
+        and(
+          eq(relations.type, 'external_id'),
+          eq(relations.scheme, 'wikidata'),
+          inArray(relations.value, qids),
+          isNull(relations.removedByChange),
+          eq(entities.kind, kind),
+          isNull(entities.mergedIntoId),
+          isNull(entities.removedAt),
+          isNull(entities.retractedByChange),
+          isNotNull(submissions.importRunId),
+        ),
+      );
+    // `value` is set on every external_id relation; the filter on scheme guarantees it here.
+    return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, r.id] as const] : [])));
+  }
+
   return {
     async insertRun(run: {
       source: ImportSource;
@@ -104,44 +145,55 @@ export function importsRepository(db: DbOrTx) {
       return new Set(rows.flatMap((r) => (r.qid ? [r.qid] : [])));
     },
 
-    /**
-     * Of `qids`, the live, unmerged works an import run created holding that QID, by QID: the work's
-     * `create` and its live wikidata id were written by the same import-run submission. A work a person
-     * entered fails the first test; a merge winner holding a loser's QID fails the second. Read-only.
-     */
+    /** Of `qids`, the works an import run created that still hold that QID, by QID (`importedOfKind`). Read-only. */
     async findImportedWorks(qids: string[]): Promise<Map<string, string>> {
-      if (qids.length === 0) return new Map();
-      const idChange = alias(changes, 'id_change');
-      const createChange = alias(changes, 'create_change');
-      const rows = await db
-        .select({ qid: relations.value, id: entities.id })
-        .from(relations)
-        .innerJoin(entities, eq(entities.id, relations.fromId))
-        .innerJoin(idChange, eq(idChange.id, relations.createdByChange))
-        .innerJoin(
-          createChange,
-          and(
-            eq(createChange.entityId, entities.id),
-            eq(createChange.op, 'create'),
-            eq(createChange.submissionId, idChange.submissionId),
-          ),
-        )
-        .innerJoin(submissions, eq(submissions.id, createChange.submissionId))
+      return importedOfKind('work', qids);
+    },
+
+    /** Of `qids`, the creators an import run created that still hold that QID, by QID (`importedOfKind`). Read-only. */
+    async findImportedCreators(qids: string[]): Promise<Map<string, string>> {
+      return importedOfKind('creator', qids);
+    },
+
+    /**
+     * The ids among `entityIds` whose name list a change ever touched: a create or update of any status
+     * (pending, rejected and reverted ones included) whose payload has `key`, a redacted create or update
+     * (its payload is gone, so it may have), or a merge into the entity. Read-only.
+     */
+    async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames'): Promise<Set<string>> {
+      if (entityIds.length === 0) return new Set();
+      const edits = await db
+        .selectDistinct({ id: changes.entityId })
+        .from(changes)
         .where(
           and(
-            eq(relations.type, 'external_id'),
-            eq(relations.scheme, 'wikidata'),
-            inArray(relations.value, qids),
-            isNull(relations.removedByChange),
-            eq(entities.kind, 'work'),
-            isNull(entities.mergedIntoId),
-            isNull(entities.removedAt),
-            isNull(entities.retractedByChange),
-            isNotNull(submissions.importRunId),
+            inArray(changes.entityId, entityIds),
+            inArray(changes.op, ['create', 'update']),
+            or(sql`${changes.payload} ? ${key}`, isNotNull(changes.redactedAt)),
           ),
         );
-      // `value` is set on every external_id relation; the filter on scheme guarantees it here.
-      return new Map(rows.flatMap((r) => (r.qid ? [[r.qid, r.id] as const] : [])));
+      // `into` may have resolved further when the merge applied; the inverse holds where it went.
+      const merges = await db
+        .selectDistinct({
+          payloadInto: sql<string | null>`${changes.payload}->>'into'`,
+          inverseInto: sql<string | null>`${changes.inverse}->>'into'`,
+        })
+        .from(changes)
+        .where(
+          and(
+            eq(changes.op, 'merge'),
+            or(
+              inArray(sql`${changes.payload}->>'into'`, entityIds),
+              inArray(sql`${changes.inverse}->>'into'`, entityIds),
+            ),
+          ),
+        );
+      const wanted = new Set(entityIds);
+      return new Set(
+        [...edits.map((r) => r.id), ...merges.flatMap((r) => [r.payloadInto, r.inverseInto])].filter(
+          (id): id is string => id !== null && wanted.has(id),
+        ),
+      );
     },
 
     /**

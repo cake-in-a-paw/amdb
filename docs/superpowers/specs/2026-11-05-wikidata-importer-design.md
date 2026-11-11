@@ -94,7 +94,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 
 A run with `--backfill` adds the references imported works are missing (dropped by an earlier
 importer version, or a link whose target arrived in a later run) and the external ids their
-items now carry, and nothing else.
+items now carry, plus English aliases for name lists nothing ever touched, and nothing else.
 
 - It walks the same ranked candidates and acts only on works an import run created: the work's
   `create` and its live wikidata id came from the same import-run submission, and the work is live
@@ -102,8 +102,14 @@ items now carry, and nothing else.
   skipped as `not_present`, never imported.
 - Each such work gets at most one submission of the backfill run (`params.backfill: true`), through
   the same revision-logged path: creates for new references (with their wikidata id) and relations.
-  No work create or update, no unrelate. A work with nothing to add gets no submission and counts
-  as `upToDate`.
+  No work create, no unrelate, and no update but two: the work's `alternateTitles` and each
+  credited imported creator's `alternateNames` (created by an import run, as for works), set to the
+  item's English aliases when no change of any status ever had that key in its payload, no merge
+  ever went into the entity, and no redacted create or update on it hides what it held (counted
+  `namesAdded`; a creator credited by several works gets one update per run). A submission
+  rejected `duplicate_name` or `too_many_names` (a name now matches a title a person changed) is
+  retried without the name updates. A work with nothing to add gets no submission and counts as
+  `upToDate`.
 - External ids follow the artwork spec: a work gains each non-`wikidata` id whose scheme it never
   had, live or removed (so a moderator's removal sticks), and that no other live entity holds or
   an earlier work in the same run just claimed (counted `idsSkippedHeld`). A submission that

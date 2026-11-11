@@ -123,14 +123,17 @@ entered that reference by hand (the only entry of its kind under that name, neve
 id), it uses that entry and gives it the wikidata id; with several such entries it creates its own.
 It never does this for a QID a moderator removed from any entity. It also adds the work's `tmdb_movie`,
 `tmdb_tv`, `anilist`, `imdb`, `openlibrary` and `isbn13` ids of a scheme the work never had, unless
-another live entity already holds that id.
+another live entity already holds that id. And it gives the work, and each creator an import run
+created that the work credits, its English aliases as `alternateTitles` / `alternateNames`, but only
+if no change ever set that list (any status, a cleared or reverted list included), nothing was ever
+merged into the entity, and no create or update on it was redacted.
 
-What it never does: create or edit a work, change a field, remove a relation, or remove an external id.
+What it never does: create a work, change any other field, remove a relation, or remove an external id.
 It never re-adds a relation or an id scheme that AMDB holds or ever held (so a moderator's unrelate
 sticks, even after either end is merged into another entity), never recreates a reference a
 moderator reverted, and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
 is counted `not_present`, not imported.
 
-Read the stats: `backfilled` (works that got a new reference relation or external id), `relationsAdded`, `idsAdded` (external ids added), `idsSkippedHeld` (ids another entity already holds), `refsAdopted` (hand-entered references used instead of creating new ones; each is logged), `upToDate` (imported
+Read the stats: `backfilled` (works that got a new reference relation, external id or name list), `relationsAdded`, `idsAdded` (external ids added), `namesAdded` (works and creators given their English aliases; a name clashing with a title a person changed drops that work's name updates, logged), `idsSkippedHeld` (ids another entity already holds), `refsAdopted` (hand-entered references used instead of creating new ones; each is logged), `upToDate` (imported
 works with nothing to add), and `skipped.present` (works it may not touch). A second backfill should
 show `backfilled: 0`.
