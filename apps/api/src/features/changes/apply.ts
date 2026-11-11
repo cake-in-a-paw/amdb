@@ -937,11 +937,20 @@ export async function scrubMergedNames(tx: Tx, change: ChangeRow): Promise<void>
     const kept = keep(list);
     if (kept.length !== list.length) await writeAlternateNames(tx, kind, id, kept);
   }
-  const others = await tx
+  // The family's own changes, and the merges into it (whose unmerge restores its list). Two queries,
+  // so each uses its index; the second matches the partial index's predicate (`op` a literal, not bound).
+  const own = await tx
     .select()
     .from(changes)
-    .where(and(ne(changes.id, change.id), or(inArray(changes.entityId, family), eq(changes.op, 'merge'))));
-  for (const other of others) {
+    .where(and(ne(changes.id, change.id), inArray(changes.entityId, family)));
+  const mergedIn = await tx
+    .select()
+    .from(changes)
+    .where(and(sql`${changes.op} = 'merge'`, inArray(sql<string>`${changes.inverse}->>'into'`, family)));
+  const seen = new Set<string>();
+  for (const other of [...own, ...mergedIn]) {
+    if (seen.has(other.id)) continue;
+    seen.add(other.id);
     const parsed = InverseSchema.safeParse(other.inverse);
     const inverse = parsed.success ? parsed.data : null;
     let scrubbed: Inverse | null = null;
