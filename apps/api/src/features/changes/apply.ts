@@ -764,13 +764,15 @@ async function eraseText(tx: Tx, entityId: string): Promise<void> {
           originalTitleNorm: null,
           description: null,
           attributes: {},
+          alternateTitles: [],
+          alternateTitlesNorm: '',
         })
         .where(eq(works.entityId, entityId));
       return;
     case 'creator':
       await tx
         .update(creators)
-        .set({ name: PLACEHOLDER, nameNorm: norm, description: null })
+        .set({ name: PLACEHOLDER, nameNorm: norm, description: null, alternateNames: [], alternateNamesNorm: '' })
         .where(eq(creators.entityId, entityId));
       return;
     case 'series':

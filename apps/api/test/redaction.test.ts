@@ -591,3 +591,60 @@ it('reverting a later names update after a redaction doesn’t bring the redacte
     await s.t.close();
   }
 });
+
+it('removing an entity erases its alternate names, including names other changes added', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      { ...film('Arrival'), fields: { ...film('Arrival').fields, alternateTitles: ['Story of Your Life'] } },
+    ]);
+    const id = made.changes[0]!.entityId!;
+    await publish(author, mod, [
+      {
+        op: 'update',
+        kind: 'work',
+        entityId: id,
+        fields: { alternateTitles: ['Story of Your Life', 'Premier Contact'] },
+      },
+    ]);
+    const res = await redact(admin, made.changes[0]!.id, { reason: 'Legal', removeEntity: true });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const [row] = await t.db
+      .select({ list: works.alternateTitles, norm: works.alternateTitlesNorm })
+      .from(works)
+      .where(eq(works.entityId, id));
+    expect(row).toEqual({ list: [], norm: '' });
+  } finally {
+    await t.close();
+  }
+});
+
+it('removing a creator erases its alternate names', async () => {
+  const { t, author, mod, admin, redact } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      {
+        ...creator('Samuel Clemens'),
+        fields: { name: 'Samuel Clemens', kind: 'person', alternateNames: ['Mark Twain'] },
+      },
+    ]);
+    const id = made.changes[0]!.entityId!;
+    await publish(author, mod, [
+      {
+        op: 'update',
+        kind: 'creator',
+        entityId: id,
+        fields: { alternateNames: ['Mark Twain', 'Sieur Louis de Conte'] },
+      },
+    ]);
+    const res = await redact(admin, made.changes[0]!.id, { reason: 'Legal', removeEntity: true });
+    expect(res.status, await res.clone().text()).toBe(200);
+    const [row] = await t.db
+      .select({ list: creators.alternateNames, norm: creators.alternateNamesNorm })
+      .from(creators)
+      .where(eq(creators.entityId, id));
+    expect(row).toEqual({ list: [], norm: '' });
+  } finally {
+    await t.close();
+  }
+});
