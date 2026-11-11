@@ -1,13 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { type EntityKind, FieldsFor } from '@amdb/shared';
+import { type EntityKind, FieldsFor, normalizeTitle } from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
 import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
 import { mergeFamily, resolveWinner } from '../../platform/db/merge';
 import { type ApiError, badRequest, conflict, isUniqueViolation } from '../../platform/http/errors';
-import { normalizeTitle } from '../catalog/normalize';
 import { type ChangeRow, changesRepository } from './repository';
 import { MergePayload, REDACTED_VALUE, RedactedValue, RelatePayload, UnrelatePayload } from './schemas';
 

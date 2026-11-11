@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CreatorFields, FieldsFor, TagFields, WorkFields, WorkFieldsBase } from '../src';
+import { CreatorFields, FieldsFor, TagFields, UpdateFieldsFor, WorkFields, WorkFieldsBase } from '../src';
 
 const movie = { mediaType: 'film_tv', subtype: 'movie', title: ' Heat ' } as const;
 
@@ -45,5 +45,19 @@ describe('other fields', () => {
   });
   it('has a schema per entity kind', () => {
     expect(Object.keys(FieldsFor).sort()).toEqual(['creator', 'property', 'series', 'tag', 'work']);
+  });
+});
+
+describe('alternate names', () => {
+  it('work fields accept alternateTitles', () => {
+    const w = { mediaType: 'book', subtype: null, title: 'X' } as const;
+    expect(WorkFields.safeParse({ ...w, alternateTitles: ['Y'] }).success).toBe(true);
+    expect(WorkFields.safeParse({ ...w, alternateTitles: [''] }).success).toBe(false);
+  });
+  it('creator fields accept alternateNames, and updates accept both', () => {
+    expect(CreatorFields.safeParse({ name: 'A', kind: 'person', alternateNames: ['B'] }).success).toBe(true);
+    expect(CreatorFields.safeParse({ name: 'A', kind: 'person', alternateNames: [' '] }).success).toBe(false);
+    expect(UpdateFieldsFor.work.safeParse({ alternateTitles: ['Y'] }).success).toBe(true);
+    expect(UpdateFieldsFor.creator.safeParse({ alternateNames: [] }).success).toBe(true);
   });
 });

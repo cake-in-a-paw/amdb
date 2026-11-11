@@ -1,8 +1,7 @@
 // Drives a Wikidata seed import: discover → fetch → map → one revision-logged submission per work.
-import type { EntityKind, IdScheme, WorkLinkType } from '@amdb/shared';
+import { normalizeTitle, type EntityKind, type IdScheme, type WorkLinkType } from '@amdb/shared';
 import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
-import { normalizeTitle } from '../../catalog/normalize';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
 import { createChangesService } from '../../changes/service';
 import { createImportsService } from '../service';

@@ -4,6 +4,7 @@ import {
   type EntityKind,
   FieldsFor,
   type MediaType,
+  normalizeTitle,
   type RelationType,
   UpdateFieldsFor,
 } from '@amdb/shared';
@@ -21,7 +22,6 @@ import {
   unauthenticated,
 } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
-import { normalizeTitle } from '../catalog/normalize';
 import { createImportsService } from '../imports/service';
 import { anonHashOf, isAdmin, isModerator } from '../users/identity';
 import {

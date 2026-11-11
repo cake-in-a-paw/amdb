@@ -1,9 +1,8 @@
-import { MediaType, type EntityKind } from '@amdb/shared';
+import { MediaType, normalizeTitle, type EntityKind } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
 import { resolveWinner } from '../../platform/db/merge';
 import { gone, notFound } from '../../platform/http/errors';
 import { decodeKeyCursor, encodeKeyCursor } from '../../platform/http/pagination';
-import { normalizeTitle } from './normalize';
 import { catalogRepository } from './repository';
 import {
   type BrowseQuery,

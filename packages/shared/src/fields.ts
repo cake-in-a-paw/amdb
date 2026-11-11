@@ -25,6 +25,7 @@ export const WorkFieldsBase = z.object({
   subtype: Subtype.nullable(),
   title,
   originalTitle: title.optional(),
+  alternateTitles: z.array(title).optional(),
   description: description.optional(),
   releaseYear: z.number().int().min(1).max(9999).optional(),
   releaseMonth: z.number().int().min(1).max(12).optional(),
@@ -59,6 +60,7 @@ export const WorkFields = WorkFieldsBase.extend({ lifecycle: Lifecycle.default('
 export const CreatorFields = z.object({
   name: title,
   kind: CreatorKind,
+  alternateNames: z.array(title).optional(),
   description: description.optional(),
 });
 
