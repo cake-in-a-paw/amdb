@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { publish, submission } from './helpers/catalog';
+import { publish, submission, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
 const work = (fields: Record<string, unknown> = {}) => ({
@@ -138,6 +138,22 @@ it('creators: create, update, and duplicate checks for alternateNames', async ()
     const err = await rejected([update('creator', id, { alternateNames: ['Blair', 'george ORWELL'] })]);
     expect(err).toMatchObject({ code: 'duplicate_name', details: { field: 'alternateNames', index: 1 } });
     expect((await rejected([creator({ alternateNames: ['George Orwell'] })])).code).toBe('duplicate_name');
+  } finally {
+    await t.close();
+  }
+});
+
+it('edit-and-approve refuses an edited list that repeats the title', async () => {
+  const { t, author, mod } = await setup();
+  try {
+    const created = await submit(author, [work({ alternateTitles: ['1984'] })]);
+    const res = await mod.post(`/api/changes/${created.changes[0]!.id}/approve`, {
+      fields: { alternateTitles: ['nineteen eighty-four'] },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({
+      error: { code: 'duplicate_name', details: { field: 'alternateTitles', index: 0 } },
+    });
   } finally {
     await t.close();
   }

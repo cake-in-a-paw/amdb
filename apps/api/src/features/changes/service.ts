@@ -340,7 +340,8 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
             if (existing && existing !== target.id) throw duplicateSlug(payload.slug, existing);
           }
           // Only the entity's stored names matter, and only when the change sets the list.
-          if (ALTERNATE_FIELD[change.kind] && ALTERNATE_FIELD[change.kind]! in payload) {
+          const alternateField = ALTERNATE_FIELD[change.kind];
+          if (alternateField && alternateField in payload) {
             const stored = target.dependsOn
               ? {}
               : await repo.currentFields(change.kind, target.id, ['title', 'originalTitle', 'name']);
@@ -522,7 +523,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   }
 
   /** Edit-and-approve: the moderator's fields merged in, the contributor's original kept as `submitted`. */
-  function edited(change: ChangeRow, fields: Record<string, unknown>) {
+  async function edited(r: ReturnType<typeof changesRepository>, change: ChangeRow, fields: Record<string, unknown>) {
     if (change.op !== 'create' && change.op !== 'update') throw notEditable(change.op, 'fields');
     const original = fieldsOf(change.payload);
     // A moderator corrects what was submitted; adding fields is a change of its own.
@@ -540,7 +541,17 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         parsed.error.issues.map((i) => ({ path: ['fields', ...i.path].join('.'), message: i.message })),
       );
     }
-    const payload: Record<string, unknown> = { ...parsed.data, submitted: original };
+    const edits: Record<string, unknown> = parsed.data;
+    // The merged list is checked as a submission would be, against what the entity holds now.
+    const alternateField = ALTERNATE_FIELD[change.kind];
+    if (alternateField && alternateField in edits) {
+      const stored =
+        change.op === 'update' && change.entityId
+          ? await r.currentFields(change.kind, change.entityId, ['title', 'originalTitle', 'name'])
+          : {};
+      checkAlternateNames(change.kind, edits, stored);
+    }
+    const payload: Record<string, unknown> = { ...edits, submitted: original };
     return payload;
   }
 
@@ -662,7 +673,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         if (unmet.length) {
           throw conflict('dependency_pending', 'Approve the changes this one depends on first', { changeIds: unmet });
         }
-        await applyNow(tx, id, 'approved', { ...reviewed, ...(edit ? { payload: edited(change, edit) } : {}) });
+        await applyNow(tx, id, 'approved', {
+          ...reviewed,
+          ...(edit ? { payload: await edited(changesRepository(tx), change, edit) } : {}),
+        });
         return { id, status: 'approved' as const };
       });
     },
