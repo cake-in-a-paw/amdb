@@ -45,6 +45,12 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
       return 'A tag with that slug already exists.';
     case 'duplicate_external_id':
       return 'That ID is already recorded on another entry.';
+    case 'invalid_tree':
+      return "That can't be a part of that entry. A season goes under a show, and an episode under a season or a show.";
+    case 'has_parent':
+      return 'That entry is already a part of another entry. Remove it from there first.';
+    case 'entity_unavailable':
+      return 'An entry this needs was removed, so this no longer applies.';
     case 'identity_required':
     case 'anon_token_required':
       return "AMDB couldn't tell who is submitting. Sign in, or allow this site to store data, and try again.";

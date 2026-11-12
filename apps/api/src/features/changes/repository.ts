@@ -1,4 +1,4 @@
-import type { ChangeOp, EntityKind, IdScheme, MediaType } from '@amdb/shared';
+import type { ChangeOp, EntityKind, IdScheme, MediaType, Subtype } from '@amdb/shared';
 import { and, arrayContains, asc, desc, eq, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import {
   changes,
@@ -92,10 +92,28 @@ export function changesRepository(db: DbOrTx) {
       return row?.id ?? null;
     },
 
-    /** A live entity (not removed, retracted or merged away) and, for a work, its media type. */
-    async findEntity(id: string): Promise<{ kind: EntityKind; mediaType: MediaType | null } | null> {
+    /** The relation id of the child's live `work_part` (its parent link), not counting the relations in `except`. */
+    async findParentLink(childId: string, except: string[] = []): Promise<string | null> {
       const [row] = await db
-        .select({ kind: entities.kind, mediaType: works.mediaType })
+        .select({ id: relations.id })
+        .from(relations)
+        .where(
+          and(
+            eq(relations.type, 'work_part'),
+            eq(relations.toId, childId),
+            isNull(relations.removedByChange),
+            except.length ? notInArray(relations.id, except) : undefined,
+          ),
+        );
+      return row?.id ?? null;
+    },
+
+    /** A live entity (not removed, retracted or merged away) and, for a work, its media type and subtype. */
+    async findEntity(
+      id: string,
+    ): Promise<{ kind: EntityKind; mediaType: MediaType | null; subtype: Subtype | null } | null> {
+      const [row] = await db
+        .select({ kind: entities.kind, mediaType: works.mediaType, subtype: works.subtype })
         .from(entities)
         .leftJoin(works, eq(works.entityId, entities.id))
         .where(
@@ -106,7 +124,7 @@ export function changesRepository(db: DbOrTx) {
             isNull(entities.mergedIntoId),
           ),
         );
-      return row ? { kind: row.kind, mediaType: row.mediaType } : null;
+      return row ? { kind: row.kind, mediaType: row.mediaType, subtype: row.subtype } : null;
     },
 
     /** Whether the entity was taken down by a redaction. */

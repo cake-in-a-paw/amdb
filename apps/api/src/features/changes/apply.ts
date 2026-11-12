@@ -1,7 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { dedupeNames, type EntityKind, FieldsFor, joinNorms, normalizeTitle } from '@amdb/shared';
+import {
+  canBePartOf,
+  dedupeNames,
+  type EntityKind,
+  FieldsFor,
+  isPartSubtype,
+  joinNorms,
+  normalizeTitle,
+} from '@amdb/shared';
 import { z } from '@hono/zod-openapi';
+import { alias } from 'drizzle-orm/pg-core';
 import { and, arrayContains, eq, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import type { Tx } from '../../platform/db/types';
@@ -282,6 +291,105 @@ async function requireEntities(tx: Tx, ids: string[]): Promise<(named: string) =
   }
 }
 
+/** `select … for update` on an entity by id, live or not. Parents are always locked with it. */
+async function lockRow(tx: Tx, id: string): Promise<void> {
+  await tx.select({ id: entities.id }).from(entities).where(eq(entities.id, id)).for('update');
+}
+
+/** The `from_id` of the work's live `work_part` (its parent), read without a lock. */
+async function parentIdOf(tx: Tx, workId: string): Promise<string | null> {
+  const [row] = await tx
+    .select({ id: relations.fromId })
+    .from(relations)
+    .where(and(eq(relations.type, 'work_part'), eq(relations.toId, workId), isNull(relations.removedByChange)));
+  return row?.id ?? null;
+}
+
+/**
+ * Locks the live work `workId` resolves to together with its parent, and returns the work's row.
+ *
+ * Every tree check holds the lock of the work's parent. A parent-side write already holds its own
+ * lock, and every child-side write takes the parent's, so a parent subtype change and a child
+ * relate or subtype change serialize. Each pass locks in id order, as `requireEntities` does; a
+ * retry keeps the locks already held, as `requireEntities` does. It replaces an initial
+ * `requireEntity`; it never follows it, or a relate locking parent then child could deadlock with
+ * it. The parent is locked with `lockRow`, live or not, so a part under a removed show can still be
+ * edited.
+ */
+async function lockWithParent(tx: Tx, workId: string): Promise<typeof entities.$inferSelect> {
+  const id = await resolveWinner(tx, workId);
+  for (;;) {
+    const before = await parentIdOf(tx, id);
+    const ids = [id, before].filter((x): x is string => x !== null).toSorted();
+    for (const x of ids) await lockRow(tx, x);
+    if ((await parentIdOf(tx, id)) === before) break;
+  }
+  // Already locked; a removed or retracted work is 409 dependency_pending, as an update gives.
+  return requireEntity(tx, id);
+}
+
+/** Whether an update (or its inverse) of these fields can change where a work fits in the tree. */
+const touchesTree = (keys: string[]) => keys.includes('mediaType') || keys.includes('subtype');
+
+const parentWork = alias(works, 'parent_work');
+
+/**
+ * Refuses a work whose tree no longer fits the tree list: its live parent link and each live child
+ * link must pass `canBePartOf` (409 `invalid_tree`), and a part may not be in a series or a
+ * property (409 `invalid_relation`, as a relate of one gives). Call with the work's parent locked.
+ */
+async function assertTree(tx: Tx, workId: string): Promise<void> {
+  const [work] = await tx
+    .select({ mediaType: works.mediaType, subtype: works.subtype })
+    .from(works)
+    .where(eq(works.entityId, workId));
+  if (!work) throw new Error(`entity ${workId} has no work row`);
+  const links = await tx
+    .select({
+      id: relations.id,
+      fromId: relations.fromId,
+      mediaType: parentWork.mediaType,
+      subtype: parentWork.subtype,
+    })
+    .from(relations)
+    // The other end of each link: the parent for the work's own link, a child for the rest.
+    .innerJoin(
+      parentWork,
+      sql`${parentWork.entityId} = case when ${relations.toId} = ${workId} then ${relations.fromId} else ${relations.toId} end`,
+    )
+    .where(
+      and(
+        eq(relations.type, 'work_part'),
+        or(eq(relations.toId, workId), eq(relations.fromId, workId)),
+        isNull(relations.removedByChange),
+      ),
+    );
+  for (const link of links) {
+    const other = { mediaType: link.mediaType, subtype: link.subtype };
+    const fits = link.fromId === workId ? canBePartOf(other, work) : canBePartOf(work, other);
+    if (!fits) {
+      throw conflict('invalid_tree', 'The change would break the tree of parts', { workId, relationId: link.id });
+    }
+  }
+  if (!isPartSubtype(work.subtype)) return;
+  const [membership] = await tx
+    .select({ id: relations.id })
+    .from(relations)
+    .where(
+      and(
+        inArray(relations.type, ['series_work', 'property_work']),
+        eq(relations.toId, workId),
+        isNull(relations.removedByChange),
+      ),
+    );
+  if (membership) {
+    throw conflict('invalid_relation', 'A part can’t be in a series or a property', {
+      workId,
+      relationId: membership.id,
+    });
+  }
+}
+
 /** The change's target entity, after merges. */
 function targetOf(change: ChangeRow): string {
   if (!change.entityId) throw new Error(`change ${change.id} (${change.op}) has no entity id`);
@@ -295,6 +403,16 @@ export const duplicateSlug = (slug: string, existingId: string) =>
 /** 409 for an external id that another entity already holds. */
 export const duplicateExternalId = (scheme: string, value: string, existingId: string) =>
   conflict('duplicate_external_id', `${scheme} ${value} is already recorded`, { existingId });
+
+/** 409 for a work that already has a live parent. */
+export const hasParent = (relationId: string) =>
+  conflict('has_parent', 'This work is already a part of another work', { relationId });
+
+/** The `has_parent` 409 for a unique violation on `child`'s parent link, or null if it has none. */
+async function parentConflict(tx: Tx, child: string): Promise<ApiError | null> {
+  const holder = await changesRepository(tx).findParentLink(child);
+  return holder ? hasParent(holder) : null;
+}
 
 /**
  * Runs `write` in a savepoint; a unique violation (a slug or external id that appeared since the
@@ -334,7 +452,9 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       return { op: 'retract_entity', entityId: id };
     }
     case 'update': {
-      const entity = await requireEntity(tx, targetOf(change));
+      const keys = Object.keys(fields);
+      const tree = touchesTree(keys);
+      const entity = tree ? await lockWithParent(tx, targetOf(change)) : await requireEntity(tx, targetOf(change));
       const id = entity.id;
       const current = await kindRow(tx, change.kind, id);
       const base = change.base;
@@ -346,7 +466,6 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
           });
         }
       }
-      const keys = Object.keys(fields);
       const inverse: Inverse = {
         op: 'set_fields',
         entityId: id,
@@ -355,6 +474,7 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       };
       // A null field clears it: `asInput` leaves it out, as an absent value.
       await writeRow(tx, change.kind, id, asInput({ ...current, ...fields }), 'update');
+      if (tree) await assertTree(tx, id);
       await tx
         .update(entities)
         .set({
@@ -369,6 +489,15 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       const ends = await requireEntities(tx, p.to ? [p.from, p.to] : [p.from]);
       const from = ends(p.from);
       const to = p.to ? ends(p.to) : null;
+      if ((p.type === 'series_work' || p.type === 'property_work') && to) {
+        // Read under the lock `requireEntities` holds, so a concurrent subtype change has landed or waits.
+        const [target] = await tx.select({ subtype: works.subtype }).from(works).where(eq(works.entityId, to));
+        if (isPartSubtype(target?.subtype ?? null)) {
+          throw conflict('invalid_relation', `A ${target?.subtype} can’t be in a series or a property`, {
+            workId: to,
+          });
+        }
+      }
       const relationId = randomUUID();
       await writeUnique(
         tx,
@@ -386,11 +515,13 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
             createdByChange: change.id,
           }),
         async () => {
+          if (p.type === 'work_part' && to) return parentConflict(tx, to);
           const { scheme, value } = p.data;
           const holder = scheme && value ? await changesRepository(tx).findExternalIdHolder(scheme, value) : null;
           return holder && scheme && value ? duplicateExternalId(scheme, value, holder) : null;
         },
       );
+      if (p.type === 'work_part' && to) await assertTree(tx, to);
       return { op: 'remove_relation', relationId };
     }
     case 'unrelate': {
@@ -523,8 +654,12 @@ export async function assertUndoable(tx: Tx, change: ChangeRow): Promise<void> {
       return;
     }
     case 'update': {
-      const entity = await requireEntity(tx, targetOf(change));
-      const changed = Object.keys(fieldsOf(change.payload)).filter((k) => entity.fieldSources[k] !== change.id);
+      // The same lock order as the inverse's `set_fields` takes next: parent first when the tree can change.
+      const keys = Object.keys(fieldsOf(change.payload));
+      const entity = touchesTree(keys)
+        ? await lockWithParent(tx, targetOf(change))
+        : await requireEntity(tx, targetOf(change));
+      const changed = keys.filter((k) => entity.fieldSources[k] !== change.id);
       if (changed.length) {
         throw conflict('stale_change', `${changed.join(', ')} changed since this change went live`, {
           fields: changed,
@@ -620,9 +755,11 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       return;
     }
     case 'set_fields': {
-      const entity = await requireEntity(tx, inverse.entityId);
+      const tree = touchesTree(Object.keys(inverse.fields));
+      const entity = tree ? await lockWithParent(tx, inverse.entityId) : await requireEntity(tx, inverse.entityId);
       const current = await kindRow(tx, entity.kind, entity.id);
       await writeRow(tx, entity.kind, entity.id, asInput({ ...current, ...inverse.fields }), 'update');
+      if (tree) await assertTree(tx, entity.id);
       const sources = { ...entity.fieldSources };
       for (const [k, source] of Object.entries(inverse.fieldSources)) {
         if (source === null) delete sources[k];
@@ -641,7 +778,26 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       return;
     }
     case 'restore_relation': {
-      await tx.update(relations).set({ removedByChange: null }).where(eq(relations.id, inverse.relationId));
+      const restore = (db: Tx) =>
+        db.update(relations).set({ removedByChange: null }).where(eq(relations.id, inverse.relationId));
+      const [relation] = await tx
+        .select({ type: relations.type, fromId: relations.fromId, toId: relations.toId })
+        .from(relations)
+        .where(eq(relations.id, inverse.relationId));
+      if (relation?.type !== 'work_part' || !relation.toId) {
+        await restore(tx);
+        return;
+      }
+      const { fromId: parentId, toId: childId } = relation;
+      for (const id of [parentId, childId].toSorted()) await lockRow(tx, id);
+      // A revert never re-attaches a part to a work no one can see.
+      const [parent] = await tx
+        .select({ id: entities.id })
+        .from(entities)
+        .where(and(eq(entities.id, parentId), isNull(entities.removedAt), isNull(entities.retractedByChange)));
+      if (!parent) throw conflict('entity_unavailable', `Entity ${parentId} is removed or doesn’t exist`);
+      await writeUnique(tx, restore, () => parentConflict(tx, childId));
+      await assertTree(tx, childId);
       return;
     }
     case 'unmerge': {

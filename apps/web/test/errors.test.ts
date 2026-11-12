@@ -114,6 +114,7 @@ describe('every error code the API can send', () => {
     [400, 'invalid_request'],
     [400, 'invalid_fields'],
     [400, 'invalid_relation'],
+    [400, 'invalid_tree'],
     [400, 'invalid_role'],
     [400, 'invalid_cursor'],
     [400, 'duplicate_ref'],
@@ -141,7 +142,9 @@ describe('every error code the API can send', () => {
     [409, 'duplicate_external_id'],
     [409, 'duplicate_slug'],
     [409, 'handle_taken'],
+    [409, 'entity_unavailable'],
     [409, 'has_dependents'],
+    [409, 'has_parent'],
     [409, 'last_admin'],
     [409, 'not_live'],
     [409, 'not_redactable'],
@@ -156,7 +159,7 @@ describe('every error code the API can send', () => {
   /**
    * Codes no screen can meet, so they keep the fallback: edit-and-approve is offered only for a
    * create or update (`not_editable`), the pickers only offer the right kind (`kind_mismatch`), and
-   * the web never offers a merge (`self_merge`, `already_merged`, `entity_unavailable`), and the
+   * the web never offers a merge (`self_merge`, `already_merged`), and the
    * import-run codes reach only the importer CLI, never HTTP (`run_not_running`, `run_in_progress`).
    */
   const unreachable = [
@@ -164,7 +167,6 @@ describe('every error code the API can send', () => {
     'kind_mismatch',
     'self_merge',
     'already_merged',
-    'entity_unavailable',
     'run_not_running',
     'run_in_progress',
     // Only an import run's submission can get it.

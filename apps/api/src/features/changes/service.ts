@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import {
   ALTERNATE_NAMES_MAX,
+  canBePartOf,
   CreatorRole,
   duplicateNameIndex,
   type EntityKind,
   FieldsFor,
+  isPartSubtype,
   type MediaType,
   normalizeTitle,
   type RelationType,
+  Subtype,
   UpdateFieldsFor,
 } from '@amdb/shared';
 import type { z } from '@hono/zod-openapi';
@@ -39,6 +42,7 @@ import {
   duplicateExternalId,
   duplicateSlug,
   fieldsOf,
+  hasParent,
   type Inverse,
   InverseSchema,
   withoutAbsent,
@@ -73,9 +77,20 @@ interface Resolved {
   id: string;
   kind: EntityKind;
   mediaType: MediaType | null;
+  subtype: Subtype | null;
   /** The pending create that reserved it, if it isn't an entity yet. */
   dependsOn: string | null;
 }
+
+/** A pending create's media type and subtype, as its payload holds them. */
+const shapeOfPayload = (payload: Record<string, unknown> | null | undefined) => {
+  const mediaType = payload?.mediaType;
+  const subtype = Subtype.safeParse(payload?.subtype);
+  return {
+    mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
+    subtype: subtype.success ? subtype.data : null,
+  } satisfies Pick<Resolved, 'mediaType' | 'subtype'>;
+};
 
 /** Which kinds each relation joins (`from` lists every kind it may start at), and which `data` keys it needs and allows. */
 const RELATION_RULES: Record<
@@ -249,16 +264,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   async function lookupEntity(actor: Actor, named: string): Promise<Resolved> {
     const id = await resolveWinner(db, named);
     const entity = await repo.findEntity(id);
-    if (entity) return { id, kind: entity.kind, mediaType: entity.mediaType, dependsOn: null };
+    if (entity) return { id, kind: entity.kind, mediaType: entity.mediaType, subtype: entity.subtype, dependsOn: null };
     const pending = await repo.findPendingCreate(id);
     if (pending && canSee(actor, pending)) {
-      const mediaType = pending.payload?.mediaType;
-      return {
-        id,
-        kind: pending.kind,
-        mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
-        dependsOn: pending.changeId,
-      };
+      return { id, kind: pending.kind, ...shapeOfPayload(pending.payload), dependsOn: pending.changeId };
     }
     throw badRequest('unknown_entity', `No entity ${id}`);
   }
@@ -313,13 +322,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           }
           // A resubmitted create keeps the id its first submission reserved.
           const entityId = reservedId ?? randomUUID();
-          const mediaType = payload.mediaType;
-          refs.set(change.ref, {
-            id: entityId,
-            kind: change.kind,
-            mediaType: mediaType === 'film_tv' || mediaType === 'book' ? mediaType : null,
-            dependsOn: id,
-          });
+          refs.set(change.ref, { id: entityId, kind: change.kind, ...shapeOfPayload(payload), dependsOn: id });
           // `title` for works, series and properties; `name` for creators and tags.
           const label = payload.title ?? payload.name;
           const titleNorm = typeof label === 'string' ? normalizeTitle(label) : null;
@@ -388,13 +391,38 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
               `Change ${index + 1}: ${change.type} data ${missing.length ? `needs ${missing.join(', ')}` : `can't have ${extra.join(', ')}`}`,
             );
           }
+          // An earlier change here that unrelates a relation frees what it held first (moving an id
+          // between works, or a part between parents).
+          const freed = planned.flatMap((p) => (p.row.op === 'unrelate' && p.row.relationId ? [p.row.relationId] : []));
           if (change.type === 'external_id' && change.data.scheme && change.data.value) {
-            // An earlier change here that unrelates the holder's id frees it first (moving an id between works).
-            const freed = planned.flatMap((p) =>
-              p.row.op === 'unrelate' && p.row.relationId ? [p.row.relationId] : [],
-            );
             const holder = await repo.findExternalIdHolder(change.data.scheme, change.data.value, freed);
             if (holder) throw duplicateExternalId(change.data.scheme, change.data.value, holder);
+          }
+          if (change.type === 'work_part' && to) {
+            if (from.id === to.id)
+              throw badRequest('invalid_tree', `Change ${index + 1}: a work can’t be its own part`);
+            const fits =
+              from.mediaType &&
+              to.mediaType &&
+              canBePartOf(
+                { mediaType: to.mediaType, subtype: to.subtype },
+                { mediaType: from.mediaType, subtype: from.subtype },
+              );
+            if (!fits) {
+              throw badRequest(
+                'invalid_tree',
+                `Change ${index + 1}: a ${to.subtype ?? to.mediaType ?? 'work'} can’t be a part of a ${from.subtype ?? from.mediaType ?? 'work'}`,
+                { parentSubtype: from.subtype, childSubtype: to.subtype },
+              );
+            }
+            const link = await repo.findParentLink(to.id, freed);
+            if (link) throw hasParent(link);
+          }
+          if ((change.type === 'series_work' || change.type === 'property_work') && to && isPartSubtype(to.subtype)) {
+            throw badRequest(
+              'invalid_relation',
+              `Change ${index + 1}: a ${to.subtype} belongs to its parent, not to a ${change.type === 'series_work' ? 'series' : 'property'}`,
+            );
           }
           if (change.type === 'work_creator') {
             if (!from.mediaType)
