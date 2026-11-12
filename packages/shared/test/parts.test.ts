@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { canBePartOf, isPartSubtype, PART_SUBTYPES, ZERO_LAST_SUBTYPES } from '../src/parts';
+import type { Subtype } from '../src/values';
 
-const ftv = (subtype: 'season' | 'episode' | 'series' | 'anime_series' | 'movie') => ({
+const ftv = (subtype: Subtype) => ({
   mediaType: 'film_tv' as const,
   subtype,
 });
@@ -12,6 +13,10 @@ describe('canBePartOf', () => {
     expect(canBePartOf(ftv('episode'), ftv('season'))).toBe(true);
     expect(canBePartOf(ftv('episode'), ftv('anime_series'))).toBe(true);
   });
+  it('lets an episode sit directly under a series', () =>
+    expect(canBePartOf(ftv('episode'), ftv('series'))).toBe(true));
+  it('lets a season sit under an anime series', () =>
+    expect(canBePartOf(ftv('season'), ftv('anime_series'))).toBe(true));
   it('refuses a season under a season', () => expect(canBePartOf(ftv('season'), ftv('season'))).toBe(false));
   it('refuses a root subtype as a part', () => expect(canBePartOf(ftv('movie'), ftv('series'))).toBe(false));
   it('refuses a parent of another media type', () =>

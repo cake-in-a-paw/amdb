@@ -15,6 +15,7 @@ export const PART_OF = {
 
 /** Subtypes that are parts: a work with one is a part whether or not it is attached yet. */
 export const PART_SUBTYPES: readonly Subtype[] = [
+  // Object.keys is string[]; PART_OF's row keys are Subtypes by its `satisfies` clause.
   ...new Set(Object.values(PART_OF).flatMap((rows) => Object.keys(rows) as Subtype[])),
 ];
 
