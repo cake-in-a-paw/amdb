@@ -514,18 +514,18 @@ it('a work, director and genre labeled only in mul (all languages) import under 
   }
 });
 
-it('a new creator is created with its English aliases; the work carries its own', async () => {
+it('a new creator is created with its en and mul aliases; the work carries its own', async () => {
   const t = await setupTest();
   try {
     const { client } = fakeWikidata(ranked('Q1'), {
       Q1: aliased(film('Q1', 'The Film', { director: 'Q200' }), 'Film, The', 'the film'),
-      Q200: aliased(person('Q200', 'Robert Zemeckis'), 'Bob Zemeckis', 'robert zemeckis'),
+      Q200: mulAliased(aliased(person('Q200', 'Robert Zemeckis'), 'Bob Zemeckis', 'robert zemeckis'), 'Doc Zemeckis'),
     });
     await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
     const [work] = await t.db.select({ alt: works.alternateTitles }).from(works).where(eq(works.title, 'The Film'));
     expect(work?.alt).toEqual(['Film, The']);
     const [creator] = await t.db.select({ alt: creators.alternateNames }).from(creators);
-    expect(creator?.alt).toEqual(['Bob Zemeckis']);
+    expect(creator?.alt).toEqual(['Bob Zemeckis', 'Doc Zemeckis']);
   } finally {
     await t.close();
   }
@@ -1696,7 +1696,7 @@ it('backfill: a list reverted to empty is never refilled', async () => {
   }
 });
 
-it('backfill: a pending names edit counts as touched', async () => {
+it('backfill: a pending names edit blocks the list', async () => {
   const t = await setupTest();
   try {
     const { author, backfill, alpha } = await importedWithoutNames(t);
@@ -1709,7 +1709,7 @@ it('backfill: a pending names edit counts as touched', async () => {
   }
 });
 
-it('backfill: a redacted edit counts as touched, whatever it held', async () => {
+it('backfill: a redacted edit blocks the list, whatever it held', async () => {
   const t = await setupTest();
   try {
     const { author, backfill, alpha } = await importedWithoutNames(t);
@@ -1725,7 +1725,7 @@ it('backfill: a redacted edit counts as touched, whatever it held', async () => 
   }
 });
 
-it('backfill: a merged winner is touched', async () => {
+it("backfill: a merge blocks the winner's list", async () => {
   const t = await setupTest();
   try {
     const { author, mod, backfill, alpha } = await importedWithoutNames(t);
@@ -2084,7 +2084,7 @@ it('backfill: a list holding 50 names gets no update', async () => {
 it("backfill: a person's names edit between the backfill's read and write survives, and the rest goes in", async () => {
   const t = await setupTest();
   try {
-    const before = fakeWikidata(ranked('Q1'), { Q1: unaliased.Q1, Q200: unaliased.Q200 });
+    const before = fakeWikidata(ranked('Q1', 'Q2'), unaliased);
     await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
     const author = t.as({ kind: 'user', userId: await t.createUser() });
     const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
@@ -2095,12 +2095,13 @@ it("backfill: a person's names edit between the backfill's read and write surviv
       .where(eq(creators.name, 'Dana Director'));
 
     // The run fetches the imported director after it has read the name lists: a person edits its
-    // list then, before the backfill writes.
+    // list then, before the backfill writes. Both films credit it, in the same batch.
     let raced = false;
     const { client } = fakeWikidata(
-      ranked('Q1'),
+      ranked('Q1', 'Q2'),
       {
         Q1: mulAliased(film('Q1', 'Alpha', { director: 'Q200', tmdbMovie: '603' }), 'Alpha Prime'),
+        Q2: mulAliased(unaliased.Q2, 'Beta Two'),
         Q200: mulAliased(unaliased.Q200, 'D. Director'),
       },
       undefined,
@@ -2121,15 +2122,38 @@ it("backfill: a person's names edit between the backfill's read and write surviv
     );
     expect(raced).toBe(true);
     expect(result.status).toBe('finished');
+    // Each film keeps its own names update; only the director's is dropped, once.
     expect(result.stats).toMatchObject({
-      backfilled: 1,
+      backfilled: 2,
       idsAdded: 1,
-      namesAdded: 0,
+      namesAdded: 2,
       skipped: expect.objectContaining({ invalid: 0 }),
     });
-    expect(lines.some((l) => l.includes('dropped names for Q1') && l.includes('names_changed'))).toBe(true);
-    expect(await namesOf(t.db)).toEqual({ Alpha: [], 'Dana Director': ['Mine'] });
+    const conflicts = lines.filter((l) => l.includes('names_changed'));
+    expect(conflicts).toHaveLength(1);
+    expect(conflicts[0]).toContain('dropped names for Q1');
+    expect(await namesOf(t.db)).toEqual({ Alpha: ['Alpha Prime'], Beta: ['Beta Two'], 'Dana Director': ['Mine'] });
     expect(await externalIdsOf(t.db, alpha)).toContain('tmdb_movie:603');
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: appends from the uncapped alias list, so an alias a person made the title frees a place', async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1'), { Q1: film('Q1', 'Alpha') });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const alpha = (await workIdByTitle(t.db, 'Alpha'))!;
+    // A title edit doesn't block the list.
+    await publish(author, mod, [{ op: 'update', kind: 'work', entityId: alpha, fields: { title: 'Alpha 1' } }]);
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: aliased(film('Q1', 'Alpha'), ...numbered(51)) });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ namesAdded: 1 });
+    // The first 50 aliases less the title would leave 49.
+    expect((await namesOf(t.db))['Alpha 1']).toEqual(numbered(51).slice(1));
   } finally {
     await t.close();
   }

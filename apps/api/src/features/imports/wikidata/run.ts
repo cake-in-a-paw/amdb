@@ -115,6 +115,13 @@ const errorMessage = (err: unknown) => (err instanceof Error ? err.message : Str
 const isItemError = (err: unknown): err is ApiError =>
   err instanceof ApiError && err.status < 500 && err.code !== 'run_not_running';
 
+/** The entities a `names_changed` conflict names (its `details.entityIds`). */
+const namesChangedIds = (err: ApiError): Set<string> => {
+  const d = err.details;
+  const ids = typeof d === 'object' && d !== null && 'entityIds' in d && Array.isArray(d.entityIds) ? d.entityIds : [];
+  return new Set(ids.filter((id): id is string => typeof id === 'string'));
+};
+
 const INTERRUPTED = 'interrupted';
 /** Thrown at a checkpoint once the run's signal has aborted. */
 class Interrupted extends Error {
@@ -519,7 +526,7 @@ export async function runWikidataImport(
     // read (`namesOpen`).
     let names: ChangeInput[] = [];
     let namesOpen: NamesExpectation[] = [];
-    const named: string[] = [];
+    let named: string[] = [];
     const alternateTitles = titlesBlocked.has(workId) ? null : extended(workId, rec.aliases);
     if (alternateTitles) {
       names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
@@ -536,7 +543,8 @@ export async function runWikidataImport(
     }
 
     let ids = newIds;
-    // Each retry empties the list it drops, so each happens at most once, in either order.
+    // Each retry empties the list it drops, so each happens at most once, in either order; a
+    // `names_changed` retry drops at least one names update, so it too runs out.
     for (;;) {
       if (added === 0 && ids.length === 0 && names.length === 0) {
         count('upToDate');
@@ -559,13 +567,23 @@ export async function runWikidataImport(
           ids = [];
           continue;
         }
-        if (
-          (err.code === 'duplicate_name' || err.code === 'too_many_names' || err.code === 'names_changed') &&
-          names.length > 0
-        ) {
+        if (err.code === 'names_changed' && names.length > 0) {
+          // A person touched these lists since they were read: they are left for the person (a
+          // creator's for the rest of the batch too, as later works may credit it), and the
+          // submission's other names and changes go in.
+          log(`dropped names for ${rec.qid}: ${err.code} (${err.message})`);
+          const changed = namesChangedIds(err);
+          for (const [qid, id] of nameableCreators) if (changed.has(id)) nameableCreators.delete(qid);
+          const kept = names.filter((c) => !(c.op === 'update' && changed.has(c.entityId)));
+          // Each retry must drop something; a conflict naming none of these drops them all.
+          names = kept.length < names.length ? kept : [];
+          namesOpen = namesOpen.filter((e) => names.length > 0 && !changed.has(e.entityId));
+          named = named.filter((id) => names.length > 0 && !changed.has(id));
+          continue;
+        }
+        if ((err.code === 'duplicate_name' || err.code === 'too_many_names') && names.length > 0) {
           // A name matches what AMDB holds now, though checked against it (a title changed since it
-          // was read), or a person touched a list since it was read: the lists are left for a
-          // person, and the rest of the submission goes in.
+          // was read): the lists are left for a person, and the rest of the submission goes in.
           log(`dropped names for ${rec.qid}: ${err.code} (${err.message})`);
           names = [];
           namesOpen = [];
