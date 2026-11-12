@@ -87,6 +87,7 @@ const RELATION_RULES: Record<
   property_work: { from: ['property'], to: 'work', required: [], allowed: [] },
   work_link: { from: ['work'], to: 'work', required: ['linkType'], allowed: ['linkType'] },
   work_tag: { from: ['work'], to: 'tag', required: [], allowed: [] },
+  work_part: { from: ['work'], to: 'work', required: [], allowed: ['position'] },
   external_id: {
     from: ['work', 'creator', 'series', 'property'],
     to: null,

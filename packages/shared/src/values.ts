@@ -11,7 +11,7 @@ export const MediaType = z.enum(['film_tv', 'book']);
 export type MediaType = z.infer<typeof MediaType>;
 
 /** film_tv only; null for a book. */
-export const Subtype = z.enum(['movie', 'series', 'anime_series', 'anime_film']);
+export const Subtype = z.enum(['movie', 'series', 'anime_series', 'anime_film', 'season', 'episode']);
 export type Subtype = z.infer<typeof Subtype>;
 
 export const Lifecycle = z.enum(['released', 'upcoming', 'airing', 'unknown']);
@@ -32,6 +32,7 @@ export const RelationType = z.enum([
   'work_link',
   'work_tag',
   'external_id',
+  'work_part',
 ]);
 export type RelationType = z.infer<typeof RelationType>;
 
@@ -41,7 +42,17 @@ export type WorkLinkType = z.infer<typeof WorkLinkType>;
 export const TagKind = z.enum(['genre', 'theme', 'content_warning']);
 export type TagKind = z.infer<typeof TagKind>;
 
-export const IdScheme = z.enum(['wikidata', 'openlibrary', 'isbn13', 'imdb', 'tmdb_movie', 'tmdb_tv', 'anilist']);
+export const IdScheme = z.enum([
+  'wikidata',
+  'openlibrary',
+  'isbn13',
+  'imdb',
+  'tmdb_movie',
+  'tmdb_tv',
+  'tmdb_season',
+  'tmdb_episode',
+  'anilist',
+]);
 export type IdScheme = z.infer<typeof IdScheme>;
 
 export const ChangeOp = z.enum(['create', 'update', 'relate', 'unrelate', 'merge']);

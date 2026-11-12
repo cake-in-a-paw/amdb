@@ -355,5 +355,12 @@ export const relations = pgTable(
     uniqueIndex('relations_external_id_key')
       .on(t.scheme, t.value)
       .where(sql`${t.type} = 'external_id' AND ${t.removedByChange} IS NULL`),
+    // A work is a part of at most one parent; the parent is `from_id`, the part `to_id`.
+    uniqueIndex('relations_one_parent')
+      .on(t.toId)
+      .where(sql`${t.type} = 'work_part' AND ${t.removedByChange} IS NULL`),
+    index('relations_parts_idx')
+      .on(t.fromId, t.position)
+      .where(sql`${t.type} = 'work_part' AND ${t.removedByChange} IS NULL`),
   ],
 );

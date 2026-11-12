@@ -323,7 +323,7 @@ export interface paths {
                             /** @enum {string} */
                             op: "relate";
                             /** @enum {string} */
-                            type: "work_creator" | "series_work" | "property_work" | "work_link" | "work_tag" | "external_id";
+                            type: "work_creator" | "series_work" | "property_work" | "work_link" | "work_tag" | "external_id" | "work_part";
                             from: {
                                 /** Format: uuid */
                                 id: string;
@@ -342,7 +342,7 @@ export interface paths {
                                 /** @enum {string} */
                                 linkType?: "adapted_from" | "sequel_of" | "remake_of" | "spin_off_of";
                                 /** @enum {string} */
-                                scheme?: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "anilist";
+                                scheme?: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "tmdb_season" | "tmdb_episode" | "anilist";
                                 value?: string;
                             };
                         } | {
@@ -1620,7 +1620,7 @@ export interface paths {
                                     /** Format: uuid */
                                     relationId: string;
                                     /** @enum {string} */
-                                    scheme: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "anilist";
+                                    scheme: "wikidata" | "openlibrary" | "isbn13" | "imdb" | "tmdb_movie" | "tmdb_tv" | "tmdb_season" | "tmdb_episode" | "anilist";
                                     value: string;
                                 }[];
                                 related?: {

@@ -33,6 +33,8 @@ function describe(change: Change, names: Map<string, string>): string {
           return `In the series ${name(change.from)}, no. ${change.data.position}`;
         case 'property_work':
           return `Part of ${name(change.from)}`;
+        case 'work_part':
+          return `Under ${name(change.from)}${change.data.position === undefined ? '' : `, no. ${change.data.position}`}`;
         case 'work_tag':
           return `Tag: ${name(change.to)}`;
         case 'work_link':

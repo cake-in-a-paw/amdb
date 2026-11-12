@@ -42,6 +42,8 @@ function describeRelate(payload: Record<string, unknown>): string {
       return `Added to a series${typeof data.position === 'number' ? ` at no. ${data.position}` : ''}`;
     case 'property_work':
       return 'Added to a property';
+    case 'work_part':
+      return `Added as a part${typeof data.position === 'number' ? ` at no. ${data.position}` : ''}`;
     case 'work_tag':
       return 'Added a tag';
     case 'work_link': {

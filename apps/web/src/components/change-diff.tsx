@@ -79,6 +79,7 @@ const relationWords: Record<string, string> = {
   work_tag: 'Tag',
   work_link: 'Link between works',
   external_id: 'Identifier',
+  work_part: 'Part of a work',
 };
 
 /** An edit as before and after, with "before" read from the entry as it is now. */

@@ -592,7 +592,8 @@
                                 "property_work",
                                 "work_link",
                                 "work_tag",
-                                "external_id"
+                                "external_id",
+                                "work_part"
                               ]
                             },
                             "from": {
@@ -682,6 +683,8 @@
                                     "imdb",
                                     "tmdb_movie",
                                     "tmdb_tv",
+                                    "tmdb_season",
+                                    "tmdb_episode",
                                     "anilist"
                                   ]
                                 },
@@ -3460,6 +3463,8 @@
                                   "imdb",
                                   "tmdb_movie",
                                   "tmdb_tv",
+                                  "tmdb_season",
+                                  "tmdb_episode",
                                   "anilist"
                                 ]
                               },

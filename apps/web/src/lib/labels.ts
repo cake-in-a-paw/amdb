@@ -21,6 +21,8 @@ export const subtypeLabels: Record<Subtype, string> = {
   series: 'Series',
   anime_series: 'Anime series',
   anime_film: 'Anime film',
+  season: 'Season',
+  episode: 'Episode',
 };
 
 export const lifecycleLabels: Record<Lifecycle, string> = {
@@ -45,6 +47,8 @@ export const idSchemeLabels: Record<IdScheme, string> = {
   imdb: 'IMDb',
   tmdb_movie: 'TMDB (movie)',
   tmdb_tv: 'TMDB (TV)',
+  tmdb_season: 'TMDB (season)',
+  tmdb_episode: 'TMDB (episode)',
   anilist: 'AniList',
 };
 

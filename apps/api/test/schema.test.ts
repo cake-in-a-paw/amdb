@@ -127,6 +127,36 @@ describe('schema constraints', () => {
   });
 });
 
+describe('work_part relations', () => {
+  async function part(from: string, to: string | null, position?: number) {
+    const c = await change(from);
+    return {
+      row: { type: 'work_part' as const, fromId: from, toId: to, position, createdByChange: c.id },
+      change: c,
+    };
+  }
+
+  it('allows one live parent per child, until it is retired', async () => {
+    const [show, other, child] = [await entity(), await entity(), await entity()];
+    const first = await part(show.id, child.id);
+    const [kept] = await opened.db.insert(relations).values(first.row).returning();
+    await rejects(opened.db.insert(relations).values((await part(other.id, child.id)).row), 'relations_one_parent');
+    await opened.db.update(relations).set({ removedByChange: first.change.id }).where(eq(relations.id, kept!.id));
+    await opened.db.insert(relations).values((await part(other.id, child.id)).row);
+  });
+
+  it('requires a to_id', async () => {
+    const show = await entity();
+    await rejects(opened.db.insert(relations).values((await part(show.id, null)).row), 'relations_type_columns');
+  });
+
+  it('leaves position optional and accepts 0', async () => {
+    const show = await entity();
+    await opened.db.insert(relations).values((await part(show.id, (await entity()).id)).row);
+    await opened.db.insert(relations).values((await part(show.id, (await entity()).id, 0)).row);
+  });
+});
+
 describe('works search column', () => {
   it('is generated from the normalized and original titles', async () => {
     await work({ titleNorm: 'heat', originalTitle: 'Le Samouraï', originalTitleNorm: 'le samourai' });
