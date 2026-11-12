@@ -338,6 +338,7 @@ export interface paths {
                             };
                             data: {
                                 role?: string;
+                                /** @description From 0 for `work_part` (season 0, episode 0); from 1 for every other type. */
                                 position?: number;
                                 /** @enum {string} */
                                 linkType?: "adapted_from" | "sequel_of" | "remake_of" | "spin_off_of";

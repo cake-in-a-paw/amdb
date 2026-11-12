@@ -663,7 +663,8 @@
                                 "position": {
                                   "type": "integer",
                                   "minimum": 0,
-                                  "maximum": 2147483647
+                                  "maximum": 2147483647,
+                                  "description": "From 0 for `work_part` (season 0, episode 0); from 1 for every other type."
                                 },
                                 "linkType": {
                                   "type": "string",

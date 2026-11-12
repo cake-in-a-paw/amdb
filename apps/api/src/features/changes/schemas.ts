@@ -19,22 +19,41 @@ export const ChangeInput = z.discriminatedUnion('op', [
     entityId: z.uuid(),
     fields: z.record(z.string(), z.unknown()),
   }),
-  z.object({
-    op: z.literal('relate'),
-    type: RelationType,
-    from: EntityRef,
-    to: EntityRef.optional(),
-    data: z
-      .object({
-        role: z.string(),
-        // `relations.position` is a Postgres integer.
-        position: z.number().int().min(0).max(2147483647),
-        linkType: WorkLinkType,
-        scheme: IdScheme,
-        value: z.string(),
-      })
-      .partial(),
-  }),
+  z
+    .object({
+      op: z.literal('relate'),
+      type: RelationType,
+      from: EntityRef,
+      to: EntityRef.optional(),
+      data: z
+        .object({
+          role: z.string(),
+          // `relations.position` is a Postgres integer.
+          position: z
+            .number()
+            .int()
+            .min(0)
+            .max(2147483647)
+            .openapi({ description: 'From 0 for `work_part` (season 0, episode 0); from 1 for every other type.' }),
+          linkType: WorkLinkType,
+          scheme: IdScheme,
+          value: z.string(),
+        })
+        .partial(),
+    })
+    .superRefine((change, ctx) => {
+      if (change.type !== 'work_part' && change.data.position === 0) {
+        ctx.addIssue({
+          code: 'too_small',
+          origin: 'number',
+          minimum: 1,
+          inclusive: true,
+          input: 0,
+          path: ['data', 'position'],
+          message: 'Too small: expected number to be >=1',
+        });
+      }
+    }),
   z.object({ op: z.literal('unrelate'), relationId: z.uuid() }),
   z.object({ op: z.literal('merge'), kind: EntityKind, from: z.uuid(), into: z.uuid() }),
 ]);

@@ -391,3 +391,135 @@ it('rejecting a pending show rejects only the link that depends on it', async ()
     await s.t.close();
   }
 });
+
+/** A published series and a published property, and the relates that put `work` in them. */
+async function groupings(s: Awaited<ReturnType<typeof setup>>) {
+  const made = await publish(s.author, s.mod, [
+    { op: 'create', kind: 'series', ref: 'saga', fields: { title: 'Saga' } },
+    { op: 'create', kind: 'property', ref: 'franchise', fields: { title: 'Franchise' } },
+  ]);
+  const [saga, franchise] = [0, 1].map((i) => s.idOf(made, i));
+  return {
+    inSaga: (w: string, position = 1) => ({
+      op: 'relate',
+      type: 'series_work',
+      from: { id: saga },
+      to: { id: w },
+      data: { position },
+    }),
+    inFranchise: (w: string) => ({
+      op: 'relate',
+      type: 'property_work',
+      from: { id: franchise },
+      to: { id: w },
+      data: {},
+    }),
+  };
+}
+
+it('revert of an unrelate never puts a part back in a series or a property', async () => {
+  const s = await setup();
+  try {
+    const { inSaga, inFranchise } = await groupings(s);
+    const film = s.idOf(await publish(s.author, s.mod, [work('film', 'movie')]), 0);
+    await publish(s.author, s.mod, [inSaga(film), inFranchise(film)]);
+    const live = async () =>
+      (
+        await s.t.db
+          .select({ id: relations.id, type: relations.type })
+          .from(relations)
+          .where(and(eq(relations.toId, film), isNull(relations.removedByChange)))
+      ).map((r) => r.type);
+    const rows = await s.t.db.select({ id: relations.id }).from(relations).where(eq(relations.toId, film));
+    expect(rows).toHaveLength(2);
+    const detach = await publish(
+      s.author,
+      s.mod,
+      rows.map((r) => unrelate(r.id)),
+    );
+    await publish(s.author, s.mod, [update(film, { subtype: 'episode' })]);
+    for (const i of [0, 1]) {
+      const error = await s.expectError(await s.revert(s.changeOf(detach, i)), 409, 'invalid_relation');
+      expect(error.details).toEqual({ workId: film });
+    }
+    expect(await live()).toEqual([]);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('a retype earlier in a submission counts for the tree checks after it', async () => {
+  const s = await setup();
+  try {
+    const { inSaga } = await groupings(s);
+    const made = await publish(s.author, s.mod, [
+      work('show', 'series'),
+      work('season', 'season'),
+      work('film', 'movie'),
+      work('stray', 'episode'),
+    ]);
+    const [season, film, stray] = [1, 2, 3].map((i) => s.idOf(made, i));
+    // A movie becomes an episode and goes under a season in one submission.
+    await publish(s.author, s.mod, [update(film!, { subtype: 'episode' }), partOf({ id: season! }, { id: film! }, 1)]);
+    expect((await s.parentLink(film!))?.from).toBe(season);
+    // An unattached episode becomes a movie and joins a series.
+    await publish(s.author, s.mod, [update(stray!, { subtype: 'movie' }), inSaga(stray!)]);
+    // A movie that becomes an episode can't join a series in the same submission.
+    const movie = s.idOf(await publish(s.author, s.mod, [work('m', 'movie')]), 0);
+    await s.expectError(
+      await s.submitRes([update(movie, { subtype: 'episode' }), inSaga(movie)]),
+      400,
+      'invalid_relation',
+    );
+    // Nor can a season that stops being one go under a show.
+    const loose = s.idOf(await publish(s.author, s.mod, [work('loose', 'season')]), 0);
+    await s.expectError(
+      await s.submitRes([update(loose, { subtype: 'movie' }), partOf({ id: s.idOf(made, 0) }, { id: loose })]),
+      400,
+      'invalid_tree',
+    );
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('two relates making one work a part in one submission are refused at plan time', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [work('show', 'series'), work('a', 'season'), work('ep', 'episode')]);
+    const [show, a, ep] = [0, 1, 2].map((i) => s.idOf(made, i));
+    await s.expectError(
+      await s.submitRes([partOf({ id: show! }, { id: ep! }), partOf({ id: a! }, { id: ep! })]),
+      409,
+      'has_parent',
+    );
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('position 0 is for parts only; series and credits start at 1', async () => {
+  const s = await setup();
+  try {
+    const { inSaga } = await groupings(s);
+    const made = await publish(s.author, s.mod, [
+      work('film', 'movie'),
+      { op: 'create', kind: 'creator', ref: 'dir', fields: { kind: 'person', name: 'Director' } },
+    ]);
+    const [film, dir] = [0, 1].map((i) => s.idOf(made, i));
+    const credit = (position: number) => ({
+      op: 'relate',
+      type: 'work_creator',
+      from: { id: film },
+      to: { id: dir },
+      data: { role: 'director', position },
+    });
+    for (const change of [inSaga(film!, 0), credit(0)]) {
+      const error = await s.expectError(await s.submitRes([change]), 400, 'invalid_request');
+      expect(error.details).toEqual([expect.objectContaining({ path: 'changes.0.data.position' })]);
+    }
+    expect((await s.submitRes([inSaga(film!, 1), credit(1)])).status).toBe(201);
+  } finally {
+    await s.t.close();
+  }
+});

@@ -330,3 +330,44 @@ it('a merge with the other end’s own parent is exempt from conflicting_parents
     await s.t.close();
   }
 });
+
+it('merging a season into its only episode puts the episode under the show; unmerge restores both', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [
+      work('show', 'series'),
+      work('season', 'season'),
+      work('ep', 'episode'),
+      partOf('show', 'season', 1),
+      partOf('season', 'ep', 3),
+    ]);
+    const [show, season, ep] = [0, 1, 2].map((i) => s.idOf(made, i));
+    const before = await s.treeOf([show!, season!, ep!]);
+    const mergeId = await s.mergeLive(season!, ep!);
+    expect(await s.parentLink(ep!)).toMatchObject({ from: show, position: 1 });
+    await s.revert(mergeId);
+    expect(await s.treeOf([show!, season!, ep!])).toEqual(before);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('merging a season into one of its two episodes is 409 invalid_tree', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [
+      work('show', 'series'),
+      work('season', 'season'),
+      work('ep1', 'episode'),
+      work('ep2', 'episode'),
+      partOf('show', 'season', 1),
+      partOf('season', 'ep1', 1),
+      partOf('season', 'ep2', 2),
+    ]);
+    const [season, ep1] = [1, 2].map((i) => s.idOf(made, i));
+    const pending = await submit(s.author, [merge(season!, ep1!)]);
+    await s.expectError(await s.approve(s.changeOf(pending, 0)), 409, 'invalid_tree');
+  } finally {
+    await s.t.close();
+  }
+});

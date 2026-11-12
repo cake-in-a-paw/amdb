@@ -19,7 +19,7 @@ const EPISODES_PER_SUBMISSION = 25;
 
 type PartSubtype = 'season' | 'episode';
 
-export type PartSkipReason = 'no_title' | 'held_as_other' | 'reverted' | 'invalid' | 'missing';
+type PartSkipReason = 'no_title' | 'held_as_other' | 'reverted' | 'invalid' | 'missing';
 
 /** What a `--parts` run counts, besides `candidates` (shows considered), `stoppedAt` and the bytes. */
 export interface PartsStats {
@@ -60,7 +60,7 @@ export const newPartsStats = (): PartsStats => ({
 
 // --- Discovery ---
 
-export interface DiscoveredPart {
+interface DiscoveredPart {
   qid: string;
   showQid: string;
   subtype: PartSubtype;

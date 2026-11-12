@@ -276,6 +276,12 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
   async function plan(actor: Actor, items: { change: ChangeInput; reservedId?: string }[]): Promise<Planned[]> {
     const refs = new Map<string, Resolved>();
     const planned: Planned[] = [];
+    // A work's media type and subtype once the updates before this change apply, so a retype and a
+    // tree change can share a submission (`apply.ts` checks the tree again at apply time).
+    const reshaped = new Map<string, Pick<Resolved, 'mediaType' | 'subtype'>>();
+    const shapeOf = (e: Resolved) => ({ ...e, ...reshaped.get(e.id) });
+    // The works an earlier `work_part` relate here makes a part, by its seq.
+    const madeParts = new Map<string, number>();
 
     const resolve = async (index: number, ref: EntityRef): Promise<Resolved> => {
       if ('id' in ref) return lookupEntity(actor, ref.id);
@@ -352,6 +358,11 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
               : await repo.currentFields(change.kind, target.id, ['title', 'originalTitle', 'name']);
             checkAlternateNames(change.kind, payload, stored);
           }
+          if (change.kind === 'work' && ('mediaType' in payload || 'subtype' in payload)) {
+            const before = shapeOf(target);
+            const after = shapeOfPayload({ mediaType: before.mediaType, subtype: before.subtype, ...payload });
+            reshaped.set(target.id, after);
+          }
           // A reserved entity has no row yet, so there is nothing to record as its base.
           const base = target.dependsOn ? null : await repo.currentFields(change.kind, target.id, keys);
           return {
@@ -401,27 +412,44 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
           if (change.type === 'work_part' && to) {
             if (from.id === to.id)
               throw badRequest('invalid_tree', `Change ${index + 1}: a work can’t be its own part`);
+            const [parent, child] = [shapeOf(from), shapeOf(to)];
             const fits =
-              from.mediaType &&
-              to.mediaType &&
+              parent.mediaType &&
+              child.mediaType &&
               canBePartOf(
-                { mediaType: to.mediaType, subtype: to.subtype },
-                { mediaType: from.mediaType, subtype: from.subtype },
+                { mediaType: child.mediaType, subtype: child.subtype },
+                { mediaType: parent.mediaType, subtype: parent.subtype },
               );
             if (!fits) {
               throw badRequest(
                 'invalid_tree',
-                `Change ${index + 1}: a ${to.subtype ?? to.mediaType ?? 'work'} can’t be a part of a ${from.subtype ?? from.mediaType ?? 'work'}`,
-                { parentSubtype: from.subtype, childSubtype: to.subtype },
+                `Change ${index + 1}: a ${child.subtype ?? child.mediaType ?? 'work'} can’t be a part of a ${parent.subtype ?? parent.mediaType ?? 'work'}`,
+                { parentSubtype: parent.subtype, childSubtype: child.subtype },
+              );
+            }
+            const earlier = madeParts.get(to.id);
+            if (earlier !== undefined) {
+              throw conflict(
+                'has_parent',
+                `Change ${index + 1}: change ${earlier} here already makes this work a part`,
+                {
+                  seq: earlier,
+                },
               );
             }
             const link = await repo.findParentLink(to.id, freed);
             if (link) throw hasParent(link);
+            madeParts.set(to.id, seq);
           }
-          if ((change.type === 'series_work' || change.type === 'property_work') && to && isPartSubtype(to.subtype)) {
+          const member = to && shapeOf(to);
+          if (
+            (change.type === 'series_work' || change.type === 'property_work') &&
+            member &&
+            isPartSubtype(member.subtype)
+          ) {
             throw badRequest(
               'invalid_relation',
-              `Change ${index + 1}: a ${to.subtype} belongs to its parent, not to a ${change.type === 'series_work' ? 'series' : 'property'}`,
+              `Change ${index + 1}: a ${member.subtype} belongs to its parent, not to a ${change.type === 'series_work' ? 'series' : 'property'}`,
             );
           }
           if (change.type === 'work_creator') {

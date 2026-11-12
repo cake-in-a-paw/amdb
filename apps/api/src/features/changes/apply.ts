@@ -401,6 +401,17 @@ async function assertTree(tx: Tx, workId: string): Promise<void> {
   }
 }
 
+/**
+ * Refuses a series or property membership of `workId` when it is a part (409 `invalid_relation`).
+ * Call with the work locked, so a concurrent subtype change has landed or waits.
+ */
+async function assertNotPart(tx: Tx, workId: string): Promise<void> {
+  const [target] = await tx.select({ subtype: works.subtype }).from(works).where(eq(works.entityId, workId));
+  if (isPartSubtype(target?.subtype ?? null)) {
+    throw conflict('invalid_relation', `A ${target?.subtype} can’t be in a series or a property`, { workId });
+  }
+}
+
 /** The change's target entity, after merges. */
 function targetOf(change: ChangeRow): string {
   if (!change.entityId) throw new Error(`change ${change.id} (${change.op}) has no entity id`);
@@ -500,15 +511,8 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       const ends = await requireEntities(tx, p.to ? [p.from, p.to] : [p.from]);
       const from = ends(p.from);
       const to = p.to ? ends(p.to) : null;
-      if ((p.type === 'series_work' || p.type === 'property_work') && to) {
-        // Read under the lock `requireEntities` holds, so a concurrent subtype change has landed or waits.
-        const [target] = await tx.select({ subtype: works.subtype }).from(works).where(eq(works.entityId, to));
-        if (isPartSubtype(target?.subtype ?? null)) {
-          throw conflict('invalid_relation', `A ${target?.subtype} can’t be in a series or a property`, {
-            workId: to,
-          });
-        }
-      }
+      // Under the lock `requireEntities` holds.
+      if ((p.type === 'series_work' || p.type === 'property_work') && to) await assertNotPart(tx, to);
       const relationId = randomUUID();
       await writeUnique(
         tx,
@@ -580,7 +584,7 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       const winnerRels = await tx.select().from(relations).where(touching(intoId)).for('update');
       // Deliberately ignores `position`: the same credit at another position is still a duplicate.
       const seen = new Set(winnerRels.map(relationKey));
-      const moved: string[] = [];
+      const repoints: { id: string; fromId: string; toId: string | null }[] = [];
       const movedAsTo: string[] = [];
       const removed: string[] = [];
       for (const r of loserRels) {
@@ -595,13 +599,18 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
           continue;
         }
         seen.add(relationKey(after));
-        moved.push(r.id);
+        repoints.push({ id: r.id, fromId: after.fromId, toId: after.toId });
         if (r.toId === fromId) movedAsTo.push(r.id);
-        await tx.update(relations).set({ fromId: after.fromId, toId: after.toId }).where(eq(relations.id, r.id));
       }
+      // Drops first: a season merged into its own episode gives the episode the season's parent
+      // link only once the season-to-episode link is gone.
       if (removed.length) {
         await tx.update(relations).set({ removedByChange: change.id }).where(inArray(relations.id, removed));
       }
+      for (const r of repoints) {
+        await tx.update(relations).set({ fromId: r.fromId, toId: r.toId }).where(eq(relations.id, r.id));
+      }
+      const moved = repoints.map((r) => r.id);
       // The winner now holds the loser's parent link and parts; they must still fit the tree list.
       if (change.kind === 'work') await assertTree(tx, intoId);
       const intoNames = isNamed(change.kind)
@@ -825,6 +834,11 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
         .select({ type: relations.type, fromId: relations.fromId, toId: relations.toId })
         .from(relations)
         .where(eq(relations.id, inverse.relationId));
+      if ((relation?.type === 'series_work' || relation?.type === 'property_work') && relation.toId) {
+        // The work may have become a part since the membership was removed.
+        await lockRow(tx, relation.toId);
+        await assertNotPart(tx, relation.toId);
+      }
       if (relation?.type !== 'work_part' || !relation.toId) {
         await restore(tx);
         return;
