@@ -5,8 +5,10 @@ import { gone, notFound } from '../../platform/http/errors';
 import { decodeKeyCursor, encodeKeyCursor } from '../../platform/http/pagination';
 import { catalogRepository } from './repository';
 import {
+  type Ancestor,
   type BrowseQuery,
   type EntityView,
+  PartsCursor,
   RELATED_LIMIT,
   SearchCursor,
   type SearchQuery,
@@ -24,8 +26,20 @@ const DERIVED = new Set([
   'altSearch',
 ]);
 
+const position = (p: number | null) => (p === null ? {} : { position: p });
+
 const byPosition = <T extends { position?: number }>(items: T[]) =>
   items.toSorted((a, b) => (a.position ?? Infinity) - (b.position ?? Infinity));
+
+/** The deepest ancestor walk; a guard against corrupt data, far above any real tree. */
+const MAX_DEPTH = 8;
+
+/** A work's live link to its parent. */
+interface ParentLink {
+  relationId: string;
+  parentId: string;
+  position: number | null;
+}
 
 /** The most existing matches, and the most pending ones, a duplicate check lists. */
 const DUPLICATE_LIMIT = 20;
@@ -92,16 +106,67 @@ export function createCatalogService(db: Db) {
     };
   }
 
+  /** The live entity `id`, or `{ redirectTo }` its winner if merged; 410 `removed` once taken down, 404 if unknown or retracted. */
+  async function resolveLive(
+    id: string,
+  ): Promise<{ entity: NonNullable<Awaited<ReturnType<typeof repo.findEntity>>> } | { redirectTo: string }> {
+    const entity = await repo.findEntity(id);
+    // A removed entity (legal or abuse removal) says so, even if it was merged away first.
+    if (entity?.removedAt) throw gone('removed', 'This entity was removed');
+    const winnerId = await resolveWinner(db, id);
+    if (winnerId !== id) return { redirectTo: winnerId };
+    // A retracted entity is unknown.
+    if (!entity || entity.retractedByChange) throw notFound();
+    return { entity };
+  }
+
+  /**
+   * For each of `workIds`, its own parent link and its ancestors, root first and parent last.
+   * Walks up a level at a time, one `parentLinks` and one `workRows` query per level for the whole
+   * batch, at most `MAX_DEPTH` levels. Removed ancestors are kept and marked.
+   */
+  async function ancestry(workIds: string[]) {
+    const linkOf = new Map<string, ParentLink>();
+    const rowOf = new Map<string, Awaited<ReturnType<typeof repo.workRows>>[number]>();
+    const asked = new Set<string>();
+    let frontier = [...new Set(workIds)];
+    for (let level = 0; level < MAX_DEPTH && frontier.length; level++) {
+      for (const x of frontier) asked.add(x);
+      const links = await repo.parentLinks(frontier);
+      for (const l of links)
+        linkOf.set(l.childId, { relationId: l.relationId, parentId: l.parentId, position: l.position });
+      const parentIds = [...new Set(links.map((l) => l.parentId))];
+      for (const r of await repo.workRows(parentIds.filter((x) => !rowOf.has(x)))) rowOf.set(r.id, r);
+      frontier = parentIds.filter((x) => !asked.has(x));
+    }
+    return new Map(
+      workIds.map((id) => {
+        const ancestors: Ancestor[] = [];
+        const seen = new Set([id]);
+        for (let up = linkOf.get(id); up && !seen.has(up.parentId); up = linkOf.get(up.parentId)) {
+          seen.add(up.parentId);
+          const row = rowOf.get(up.parentId);
+          if (!row) break;
+          const own = linkOf.get(row.id);
+          ancestors.push({
+            id: row.id,
+            title: row.title,
+            subtype: row.subtype,
+            ...(own && own.position !== null ? { position: own.position } : {}),
+            removed: row.removed,
+          });
+        }
+        return [id, { link: linkOf.get(id) ?? null, ancestors: ancestors.reverse() }];
+      }),
+    );
+  }
+
   return {
     /** Current state of a live entity (410 `removed` once taken down); a merged id answers `{ redirectTo }` with its winner. A reserved id whose create isn't live yet is unknown: 404. */
     async getEntity(id: string): Promise<EntityView | { redirectTo: string }> {
-      const entity = await repo.findEntity(id);
-      // A removed entity (legal or abuse removal) says so, even if it was merged away first.
-      if (entity?.removedAt) throw gone('removed', 'This entity was removed');
-      const winnerId = await resolveWinner(db, id);
-      if (winnerId !== id) return { redirectTo: winnerId };
-      // A retracted entity is unknown.
-      if (!entity || entity.retractedByChange) throw notFound();
+      const live = await resolveLive(id);
+      if ('redirectTo' in live) return live;
+      const { entity } = live;
       const row = await repo.kindRow(entity.kind, id);
       if (!row) throw new Error(`entity ${id} has no ${entity.kind} row`);
       const fields = Object.fromEntries(Object.entries(row).filter(([k]) => !DERIVED.has(k)));
@@ -119,7 +184,6 @@ export function createCatalogService(db: Db) {
         if (!s) throw new Error(`relation endpoint ${otherId} has no summary`);
         return s;
       };
-      const position = (p: number | null) => (p === null ? {} : { position: p });
       const outgoing = (type: string) => rels.filter((r) => r.type === type && r.fromId === id);
       const incoming = (type: string) => rels.filter((r) => r.type === type && r.toId === id);
 
@@ -163,6 +227,22 @@ export function createCatalogService(db: Db) {
             });
           relations.tags = outgoing('work_tag').map((r) => ({ relationId: r.id, tag: summary(r.toId) }));
           relations.externalIds = externalIds();
+          {
+            const { link, ancestors } = (await ancestry([id])).get(id) ?? { link: null, ancestors: [] };
+            const [parent] = link ? await repo.workRows([link.parentId]) : [];
+            if (link && !parent) throw new Error(`parent ${link.parentId} of ${id} has no work row`);
+            relations.parent =
+              link && parent
+                ? {
+                    relationId: link.relationId,
+                    work: toSummary({ ...parent, kind: 'work' }),
+                    ...position(link.position),
+                    removed: parent.removed,
+                  }
+                : null;
+            relations.ancestors = ancestors;
+          }
+          relations.partCount = await repo.partCount(id);
           relations.related = await related(
             id,
             relations.creators.map((c) => c.creator),
@@ -198,6 +278,31 @@ export function createCatalogService(db: Db) {
           break;
       }
       return { id, kind: entity.kind, fields, fieldSources: entity.fieldSources, relations };
+    },
+
+    /**
+     * One page of a work's listed parts, in parts order; `{ redirectTo }` for a merged id, and the
+     * same 404 and 410 as `getEntity`. Anything but a work has none.
+     */
+    async parts(id: string, query: { cursor?: string; limit: number }) {
+      const live = await resolveLive(id);
+      if ('redirectTo' in live) return live;
+      if (live.entity.kind !== 'work') return { items: [], nextCursor: null };
+      const rows = await repo.parts(id, decodeKeyCursor(query.cursor, PartsCursor), query.limit);
+      const page = rows.slice(0, query.limit);
+      const last = page.at(-1);
+      return {
+        items: page.map((r) => ({
+          relationId: r.relationId,
+          work: toSummary({ ...r, kind: 'work' }),
+          subtype: r.subtype,
+          ...position(r.position),
+        })),
+        nextCursor:
+          rows.length > query.limit && last
+            ? encodeKeyCursor({ b: last.b, p: last.p, y: last.y, m: last.m, d: last.d, t: last.title, id: last.id })
+            : null,
+      };
     },
 
     /** Listed entities matching the query, alphabetical by title. Excludes removed, retracted and merged ones. */

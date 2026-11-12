@@ -1616,6 +1616,32 @@ export interface paths {
                                         releaseYear?: number;
                                     };
                                 }[];
+                                parent?: {
+                                    /** Format: uuid */
+                                    relationId: string;
+                                    work: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @enum {string} */
+                                        kind: "work" | "creator" | "series" | "property" | "tag";
+                                        title: string;
+                                        /** @enum {string} */
+                                        mediaType?: "film_tv" | "book";
+                                        releaseYear?: number;
+                                    };
+                                    position?: number;
+                                    removed: boolean;
+                                } | null;
+                                ancestors?: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    title: string;
+                                    /** @enum {string|null} */
+                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                    position?: number;
+                                    removed: boolean;
+                                }[];
+                                partCount?: number;
                                 externalIds?: {
                                     /** Format: uuid */
                                     relationId: string;
@@ -1705,6 +1731,123 @@ export interface paths {
                         "application/json": {
                             /** Format: uuid */
                             redirectTo: string;
+                        };
+                    };
+                };
+                /** @description Not found */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Removed */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/entities/{id}/parts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A work's listed parts, in parts order; anything but a work has none */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            items: {
+                                /** Format: uuid */
+                                relationId: string;
+                                work: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "work" | "creator" | "series" | "property" | "tag";
+                                    title: string;
+                                    /** @enum {string} */
+                                    mediaType?: "film_tv" | "book";
+                                    releaseYear?: number;
+                                };
+                                /** @enum {string|null} */
+                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                position?: number;
+                            }[];
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                /** @description The id was merged into another entity; follow `Location` */
+                308: {
+                    headers: {
+                        Location: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            redirectTo: string;
+                        };
+                    };
+                };
+                /** @description Invalid query */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
                         };
                     };
                 };

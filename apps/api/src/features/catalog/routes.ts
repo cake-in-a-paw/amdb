@@ -6,6 +6,8 @@ import {
   DuplicatesSchema,
   EntityIdParam,
   EntitySchema,
+  PartsQuery,
+  PartsSchema,
   SearchQuery,
   SearchSchema,
 } from './schemas';
@@ -21,6 +23,22 @@ const getEntityRoute = createRoute({
       ...json(RedirectSchema, 'The id was merged into another entity; follow `Location`'),
       headers: z.object({ Location: z.string() }),
     },
+    404: json(ErrorSchema, 'Not found'),
+    410: json(ErrorSchema, 'Removed'),
+  },
+});
+
+const partsRoute = createRoute({
+  method: 'get',
+  path: '/api/entities/{id}/parts',
+  request: { params: EntityIdParam, query: PartsQuery },
+  responses: {
+    200: json(PartsSchema, "A work's listed parts, in parts order; anything but a work has none"),
+    308: {
+      ...json(RedirectSchema, 'The id was merged into another entity; follow `Location`'),
+      headers: z.object({ Location: z.string() }),
+    },
+    400: json(ErrorSchema, 'Invalid query'),
     404: json(ErrorSchema, 'Not found'),
     410: json(ErrorSchema, 'Removed'),
   },
@@ -55,6 +73,13 @@ export function catalogRoutes(catalog: CatalogService) {
       return c.json(entity, 308, { Location: `/api/entities/${entity.redirectTo}` });
     }
     return c.json(entity, 200);
+  });
+  app.openapi(partsRoute, async (c) => {
+    const parts = await catalog.parts(c.req.valid('param').id, c.req.valid('query'));
+    if ('redirectTo' in parts) {
+      return c.json(parts, 308, { Location: `/api/entities/${parts.redirectTo}/parts` });
+    }
+    return c.json(parts, 200);
   });
   app.openapi(searchRoute, async (c) => c.json(await catalog.search(c.req.valid('query')), 200));
   app.openapi(browseRoute, async (c) => c.json(await catalog.browse(c.req.valid('query')), 200));

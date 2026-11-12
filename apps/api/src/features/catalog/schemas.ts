@@ -1,5 +1,5 @@
 import { z } from '@hono/zod-openapi';
-import { EntityKind, IdScheme, MediaType, WorkLinkType } from '@amdb/shared';
+import { EntityKind, IdScheme, MediaType, Subtype, WorkLinkType } from '@amdb/shared';
 import { PageQuery } from '../../platform/http/pagination';
 
 export const EntityIdParam = z.object({ id: z.uuid() });
@@ -20,6 +20,16 @@ export const RELATED_LIMIT = 12;
 const relatedWorks = z.array(SummarySchema);
 
 const relationId = z.uuid();
+
+/** One work above another in its tree. `position` is the ancestor's own number under its parent; a removed one keeps its id and stored title. */
+export const AncestorSchema = z.object({
+  id: z.uuid(),
+  title: z.string(),
+  subtype: Subtype.nullable(),
+  position: z.number().int().optional(),
+  removed: z.boolean(),
+});
+export type Ancestor = z.infer<typeof AncestorSchema>;
 
 /** Only the groups relevant to the entity's kind are present. */
 export const EntitySchema = z.object({
@@ -57,6 +67,15 @@ export const EntitySchema = z.object({
       )
       .optional(),
     tags: z.array(z.object({ relationId, tag: SummarySchema })).optional(),
+    /** A work's live parent, removed or not; null for a root. */
+    parent: z
+      .object({ relationId, work: SummarySchema, position: z.number().int().optional(), removed: z.boolean() })
+      .nullable()
+      .optional(),
+    /** A work's ancestors, root first, its parent last; empty for a root. */
+    ancestors: z.array(AncestorSchema).optional(),
+    /** How many live, listed parts a work has; they're paged from `/api/entities/{id}/parts`. */
+    partCount: z.number().int().optional(),
     externalIds: z.array(z.object({ relationId, scheme: IdScheme, value: z.string() })).optional(),
     /** A work's other works by shared creator, series or property: each group at most 12, by release year then title. */
     related: z
@@ -124,4 +143,32 @@ export const PendingDuplicateSchema = z.object({
 export const DuplicatesSchema = z.object({
   existing: z.array(SummarySchema),
   pending: z.array(PendingDuplicateSchema),
+});
+
+export const PartsQuery = z.object({
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(100).default(50),
+});
+
+/**
+ * The decoded parts cursor: the last part's sort key. `b` is 0 for a numbered part, 1 for one
+ * with no number, 2 for a zero-last subtype numbered 0; `p` the number (0 if none); `y`, `m`, `d`
+ * the release date with gaps past every real value; `t` the title; `id` the part's id.
+ */
+export const PartsCursor = z.object({
+  b: z.number().int(),
+  p: z.number().int(),
+  y: z.number().int(),
+  m: z.number().int(),
+  d: z.number().int(),
+  t: z.string(),
+  id: z.uuid(),
+});
+export type PartsCursor = z.infer<typeof PartsCursor>;
+
+export const PartsSchema = z.object({
+  items: z.array(
+    z.object({ relationId, work: SummarySchema, subtype: Subtype.nullable(), position: z.number().int().optional() }),
+  ),
+  nextCursor: z.string().nullable(),
 });

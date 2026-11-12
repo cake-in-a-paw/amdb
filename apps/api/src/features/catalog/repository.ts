@@ -1,9 +1,9 @@
-import type { EntityKind, MediaType } from '@amdb/shared';
-import { and, asc, desc, eq, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm';
+import { PART_SUBTYPES, ZERO_LAST_SUBTYPES, type EntityKind, type MediaType } from '@amdb/shared';
+import { and, asc, count, desc, eq, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import { listed } from '../../platform/db/listed';
 import type { DbOrTx } from '../../platform/db/types';
-import type { SearchCursor } from './schemas';
+import type { PartsCursor, SearchCursor } from './schemas';
 
 const KIND_TABLES = { work: works, creator: creators, series, property: properties, tag: tags } as const;
 
@@ -35,13 +35,119 @@ export function catalogRepository(db: DbOrTx) {
       return row ?? null;
     },
 
-    /** Active relations starting or ending at `id`, oldest first. */
+    /**
+     * Active relations starting or ending at `id`, oldest first, except `work_part`: a work's parts
+     * are paged by `parts`, and its own parent link comes from `parentLinks`.
+     */
     async activeRelations(id: string) {
       return db
         .select()
         .from(relations)
-        .where(and(or(eq(relations.fromId, id), eq(relations.toId, id)), isNull(relations.removedByChange)))
+        .where(
+          and(
+            or(eq(relations.fromId, id), eq(relations.toId, id)),
+            ne(relations.type, 'work_part'),
+            isNull(relations.removedByChange),
+          ),
+        )
         .orderBy(relations.createdAt, relations.id);
+    },
+
+    /** The live parent link of each of `childIds` that has one, whatever state the parent is in. */
+    async parentLinks(childIds: string[]) {
+      if (!childIds.length) return [];
+      const rows = await db
+        .select({
+          childId: relations.toId,
+          relationId: relations.id,
+          parentId: relations.fromId,
+          position: relations.position,
+        })
+        .from(relations)
+        .where(
+          and(eq(relations.type, 'work_part'), inArray(relations.toId, childIds), isNull(relations.removedByChange)),
+        );
+      // Matched on `to_id`, so every row has a child; flatMap only narrows the type.
+      return rows.flatMap((r) => (r.childId ? [{ ...r, childId: r.childId }] : []));
+    },
+
+    /** Display fields for the works among `ids`, listed or not; `removed` once taken down. */
+    async workRows(ids: string[]) {
+      if (!ids.length) return [];
+      return db
+        .select({
+          id: works.entityId,
+          title: works.title,
+          subtype: works.subtype,
+          mediaType: works.mediaType,
+          releaseYear: works.releaseYear,
+          removed: sql<boolean>`${entities.removedAt} IS NOT NULL`,
+        })
+        .from(works)
+        .innerJoin(entities, eq(entities.id, works.entityId))
+        .where(inArray(works.entityId, ids));
+    },
+
+    /**
+     * The listed parts of `parentId` through live `work_part` rows, after `after`: numbered ones by
+     * number, then unnumbered ones, then a zero-last subtype numbered 0; ties by release date, title
+     * and id. Fetches `limit` + 1, each with its cursor key.
+     */
+    async parts(parentId: string, after: PartsCursor | null, limit: number) {
+      const b = sql<number>`(CASE WHEN ${relations.position} IS NULL THEN 1
+        WHEN ${relations.position} = 0 AND ${inArray(works.subtype, [...ZERO_LAST_SUBTYPES])} THEN 2 ELSE 0 END)`;
+      const p = sql<number>`coalesce(${relations.position}, 0)`;
+      const y = sql<number>`coalesce(${works.releaseYear}, 10000)`;
+      const m = sql<number>`coalesce(${works.releaseMonth}, 13)`;
+      const d = sql<number>`coalesce(${works.releaseDay}, 32)`;
+      return db
+        .select({
+          relationId: relations.id,
+          position: relations.position,
+          id: works.entityId,
+          title: works.title,
+          subtype: works.subtype,
+          mediaType: works.mediaType,
+          releaseYear: works.releaseYear,
+          b,
+          p,
+          y,
+          m,
+          d,
+        })
+        .from(relations)
+        .innerJoin(works, eq(works.entityId, relations.toId))
+        .innerJoin(entities, eq(entities.id, relations.toId))
+        .where(
+          and(
+            eq(relations.type, 'work_part'),
+            eq(relations.fromId, parentId),
+            isNull(relations.removedByChange),
+            listed(),
+            after
+              ? sql`(${b}, ${p}, ${y}, ${m}, ${d}, ${works.title}, ${works.entityId}) > (${after.b}, ${after.p}, ${after.y}, ${after.m}, ${after.d}, ${after.t}, ${after.id}::uuid)`
+              : undefined,
+          ),
+        )
+        .orderBy(asc(b), asc(p), asc(y), asc(m), asc(d), asc(works.title), asc(works.entityId))
+        .limit(limit + 1);
+    },
+
+    /** How many listed parts `parentId` has through live `work_part` rows. */
+    async partCount(parentId: string): Promise<number> {
+      const [row] = await db
+        .select({ n: count() })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.toId))
+        .where(
+          and(
+            eq(relations.type, 'work_part'),
+            eq(relations.fromId, parentId),
+            isNull(relations.removedByChange),
+            listed(),
+          ),
+        );
+      return row?.n ?? 0;
     },
 
     /** Display fields for the listed ones among `ids`: a title (a creator's or tag's name), and for works the media type and year. */
@@ -168,6 +274,8 @@ export function catalogRepository(db: DbOrTx) {
             inArray(hubCol, hubIds),
             ne(workCol, exceptWorkId),
             listed(),
+            // No part fills a related group, attached or not.
+            or(isNull(works.subtype), notInArray(works.subtype, [...PART_SUBTYPES])),
           ),
         )
         .as('ranked');

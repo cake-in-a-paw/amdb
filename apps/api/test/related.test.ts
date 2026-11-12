@@ -195,3 +195,43 @@ it('a series position beyond a Postgres integer is a 400, not a 500', async () =
     await t.close();
   }
 });
+
+it('More by leaves out parts', async () => {
+  const { t, author, mod, related } = await setup();
+  try {
+    const part = (ref: string, subtype: string, title: string) => ({
+      op: 'create',
+      kind: 'work',
+      ref,
+      fields: { mediaType: 'film_tv', subtype, title },
+    });
+    const partOf = (parent: string, child: string, position: number) => ({
+      op: 'relate',
+      type: 'work_part',
+      from: { ref: parent },
+      to: { ref: child },
+      data: { position },
+    });
+    const made = await publish(author, mod, [
+      work('Film', 'film'),
+      creator,
+      part('show', 'series', 'Show'),
+      part('season', 'season', 'Season 1'),
+      part('e1', 'episode', 'Episode 1'),
+      part('e2', 'episode', 'Episode 2'),
+      part('e3', 'episode', 'Episode 3'),
+      partOf('show', 'season', 1),
+      partOf('season', 'e1', 1),
+      partOf('season', 'e2', 2),
+      partOf('season', 'e3', 3),
+      directed('film'),
+      directed('e1'),
+      directed('e2'),
+      directed('e3'),
+    ]);
+    const rel = (await related(made.changes[0]!.entityId!))!;
+    expect(rel.byCreator).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
