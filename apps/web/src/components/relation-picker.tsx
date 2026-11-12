@@ -9,6 +9,7 @@ import { unwrap } from '@/lib/api';
 import { useDebounced } from '@/lib/debounce';
 import { errorCause } from '@/lib/errors';
 import { creatorKindLabels, kindLabels, tagKindLabels } from '@/lib/labels';
+import { partTitle } from '@/lib/parts';
 import { fieldErrors, toFields, type FormErrors, type Picked } from '@/lib/submission';
 
 const rootRoute = getRouteApi('__root__');
@@ -50,11 +51,14 @@ export function RelationPicker({
   label,
   onPick,
   allowNew = true,
+  includeParts = false,
 }: {
   kind: EntityKind;
   label: string;
   onPick: (picked: Picked) => void;
   allowNew?: boolean;
+  /** Also find seasons and episodes, which search leaves out by default. */
+  includeParts?: boolean;
 }) {
   const { api } = rootRoute.useRouteContext();
   const id = useId();
@@ -63,10 +67,15 @@ export function RelationPicker({
   const q = useDebounced(query.trim(), 300);
   const words = kindLabels[kind];
   const results = useQuery({
-    queryKey: ['picker', kind, q],
+    queryKey: ['picker', kind, q, includeParts],
     enabled: q !== '',
     queryFn: async ({ signal }) =>
-      unwrap(await api.GET('/api/search', { params: { query: { q, kind, limit: 10 } }, signal })),
+      unwrap(
+        await api.GET('/api/search', {
+          params: { query: { q, kind, limit: 10, ...(includeParts ? { includeParts: 'true' as const } : {}) } },
+          signal,
+        }),
+      ),
   });
 
   function choose(picked: Picked) {
@@ -115,7 +124,7 @@ export function RelationPicker({
                     onClick={() => choose({ id: item.id, title: item.title })}
                     className="flex min-h-11 w-full min-w-11 items-baseline gap-3 rounded-md px-2 text-left hover:bg-secondary"
                   >
-                    <span className="font-serif">{item.title}</span>
+                    <span className="font-serif">{partTitle(item)}</span>
                     <span className="text-sm text-muted-foreground">{summaryDetail(item)}</span>
                   </button>
                 </li>

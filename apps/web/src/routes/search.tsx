@@ -10,22 +10,33 @@ import { kindLabels, kindOrder } from '@/lib/labels';
 import { linkClass } from '@/lib/styles';
 
 export const Route = createFileRoute('/search')({
-  validateSearch: (raw: Record<string, unknown>): { q?: string } =>
-    typeof raw.q === 'string' && raw.q.trim() ? { q: raw.q.trim() } : {},
+  validateSearch: (raw: Record<string, unknown>): { q?: string; parts?: true } => ({
+    ...(typeof raw.q === 'string' && raw.q.trim() ? { q: raw.q.trim() } : {}),
+    // The router parses `?parts=true` as the boolean; a hand-typed string is taken too.
+    ...(raw.parts === true || raw.parts === 'true' ? { parts: true as const } : {}),
+  }),
   component: Search,
 });
 
 function Search() {
-  const { q } = Route.useSearch();
+  const { q, parts } = Route.useSearch();
   const { api } = Route.useRouteContext();
+  const navigate = Route.useNavigate();
   const results = useInfiniteQuery({
-    queryKey: ['search', q],
+    queryKey: ['search', q, parts === true],
     enabled: q !== undefined,
     initialPageParam: undefined as string | undefined,
     queryFn: async ({ pageParam, signal }) =>
       unwrap(
         await api.GET('/api/search', {
-          params: { query: { q: q ?? '', cursor: pageParam, limit: PAGE_SIZE } },
+          params: {
+            query: {
+              q: q ?? '',
+              cursor: pageParam,
+              limit: PAGE_SIZE,
+              ...(parts ? { includeParts: 'true' as const } : {}),
+            },
+          },
           signal,
         }),
       ),
@@ -35,6 +46,20 @@ function Search() {
   return (
     <div className="max-w-3xl py-8">
       <h1 className="font-serif text-3xl font-semibold">Search</h1>
+      <label className="mt-3 flex min-h-11 items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={parts === true}
+          onChange={(e) => {
+            const include = e.target.checked;
+            void navigate({
+              search: (prev) => (include ? { ...prev, parts: true } : prev.q ? { q: prev.q } : {}),
+            });
+          }}
+          className="size-4"
+        />
+        Include seasons and episodes
+      </label>
       {q === undefined ? (
         <p className="py-4 text-muted-foreground">Type a title or a name to search.</p>
       ) : results.isPending ? (

@@ -2,6 +2,8 @@ import { getRouteApi, Link } from '@tanstack/react-router';
 import type { Lifecycle, MediaType, Subtype } from '@amdb/shared';
 import type { ReactNode } from 'react';
 import { Poster } from '@/components/artwork';
+import { PartBreadcrumbs } from '@/components/part-breadcrumbs';
+import { PartsList } from '@/components/parts-list';
 import { RelatedWorks } from '@/components/related-works';
 import { summaryDetail } from '@/components/entry-row';
 import { useArt } from '@/lib/art';
@@ -72,6 +74,12 @@ export function WorkPage({ entity }: { entity: EntityView }) {
     <div className="grid gap-8 py-6 md:grid-cols-[10rem_minmax(0,1fr)]">
       <Poster title={title} item={art} />
       <div>
+        <PartBreadcrumbs
+          title={title}
+          subtype={subtype ?? null}
+          hasParent={Boolean(relations.parent)}
+          ancestors={relations.ancestors ?? []}
+        />
         {text(fields.description) && <p className="max-w-prose leading-relaxed">{text(fields.description)}</p>}
 
         <dl className="mt-4 max-w-xl">
@@ -119,6 +127,21 @@ export function WorkPage({ entity }: { entity: EntityView }) {
             </Fact>
           )}
         </dl>
+
+        <PartsList
+          workId={entity.id}
+          partCount={relations.partCount ?? 0}
+          ancestors={[
+            ...(relations.ancestors ?? []),
+            {
+              id: entity.id,
+              title,
+              subtype: subtype ?? null,
+              ...(relations.parent?.position !== undefined ? { position: relations.parent.position } : {}),
+              removed: false,
+            },
+          ]}
+        />
 
         {related?.byCreator.map(({ creator, works }) => (
           <RelatedWorks

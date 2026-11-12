@@ -111,3 +111,50 @@ test('a failed Load more keeps the results shown, says so, and loads on a second
   await t.user.click(screen.getByRole('button', { name: 'Load more' }));
   await waitFor(async () => expect(await shown()).toHaveLength(21));
 });
+
+test('search hides episodes until asked', async () => {
+  const t = await renderApp('/search?q=pilot', {
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const tv = (ref: string, subtype: string, title: string) => ({
+        op: 'create',
+        kind: 'work',
+        ref,
+        fields: { mediaType: 'film_tv', subtype, title },
+      });
+      const partOf = (parent: string, child: string, position: number) => ({
+        op: 'relate',
+        type: 'work_part',
+        from: { ref: parent },
+        to: { ref: child },
+        data: { position },
+      });
+      await publish(contributor, moderator, [
+        tv('film', 'movie', 'Pilot'),
+        tv('show', 'series', 'Breaking Bad'),
+        tv('season', 'season', 'Breaking Bad Season 1'),
+        tv('episode', 'episode', 'Pilot'),
+        partOf('show', 'season', 1),
+        partOf('season', 'episode', 1),
+      ]);
+    },
+  });
+
+  const works = await screen.findByRole('region', { name: 'Works' });
+  expect(within(works).getAllByRole('listitem')).toHaveLength(1);
+  expect(within(works).getByRole('link', { name: /^Pilot/ })).toBeInTheDocument();
+
+  await t.user.click(screen.getByRole('checkbox', { name: 'Include seasons and episodes' }));
+
+  expect(t.router.state.location.search).toEqual({ q: 'pilot', parts: true });
+  const episode = await screen.findByRole('link', { name: /^Breaking Bad · S1E1 · Pilot/ });
+  const withParts = screen.getByRole('region', { name: 'Works' });
+  expect(withParts).toContainElement(episode);
+  expect(within(withParts).getAllByRole('listitem')).toHaveLength(2);
+});
+
+test('the parts toggle is kept in the address', async () => {
+  await renderApp('/search?q=pilot&parts=true');
+
+  expect(screen.getByRole('checkbox', { name: 'Include seasons and episodes' })).toBeChecked();
+});
