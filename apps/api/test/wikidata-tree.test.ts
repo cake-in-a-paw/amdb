@@ -141,6 +141,21 @@ describe('placeEpisodes', () => {
     expect(placeEpisodes({ ...base, episodes: [ep] })).toEqual({ placed: [], unplaced: [EPISODE] });
   });
 
+  it("episode whose P4908 season is the show's but not placed falls through to the later steps", () => {
+    const other = 'Q1582891';
+    const skipped = entity(SEASON, { P527: [rel(EPISODE, '2')] });
+    const ep = entity(EPISODE, { P4908: [rel(SEASON, '2')] });
+    const seasonsOfShow = new Map([[SEASON, skipped]]);
+    // No other placed season lists it, and the show has seasons: unplaced.
+    expect(placeEpisodes({ ...base, seasonsOfShow, episodes: [ep] })).toEqual({ placed: [], unplaced: [EPISODE] });
+    // The one placed season that lists it takes it, with that season's position.
+    seasonsOfShow.set(other, entity(other, { P527: [rel(EPISODE, '7')] }));
+    expect(placeEpisodes({ ...base, seasonsOfShow, placedSeasons: new Set([other]), episodes: [ep] })).toEqual({
+      placed: [{ qid: EPISODE, parentQid: other, position: 7 }],
+      unplaced: [],
+    });
+  });
+
   it('episode in a show with seasons but none listing it is unplaced', () => {
     const ep = entity(EPISODE, { P179: [rel(SHOW, '3')] });
     expect(

@@ -67,7 +67,6 @@ export interface Placement {
  */
 export function placeEpisodes(input: {
   showQid: string;
-  show?: WikidataEntity;
   /** The show's seasons only, as `discoverParts`' season query returned them. */
   seasonsOfShow: Map<string, WikidataEntity>;
   /** Season QIDs imported now or already in AMDB under this show. */
