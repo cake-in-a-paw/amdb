@@ -124,16 +124,25 @@ id), it uses that entry and gives it the wikidata id; with several such entries 
 It never does this for a QID a moderator removed from any entity. It also adds the work's `tmdb_movie`,
 `tmdb_tv`, `anilist`, `imdb`, `openlibrary` and `isbn13` ids of a scheme the work never had, unless
 another live entity already holds that id. And it gives the work, and each creator an import run
-created that the work credits, its English aliases as `alternateTitles` / `alternateNames`, but only
-if no change ever set that list (any status, a cleared or reverted list included), nothing was ever
-merged into or out of the entity, and no create or update on it was redacted. Aliases that repeat
-the title, original title or name AMDB holds now (a person may have renamed the entry) are left out.
+created that the work credits, its aliases as `alternateTitles` / `alternateNames`: the English
+(`en`) ones, then the language-neutral (`mul`) ones written only in Latin script. It does so only
+if every change that ever set that list came from an import run (in any status), nothing was ever
+merged into or out of the entity, and no create or update on it was redacted. A person's edit, a
+pending change, or a moderator's revert of a change that set the list (a revert back to what an
+import wrote included) blocks the list for good; a revert of an unrelated change, such as a title
+edit, doesn't. It only appends: the aliases the list doesn't hold yet go after its current names,
+until it holds 50; it never removes or reorders a name, and a list it wouldn't change gets no
+update. Aliases that repeat the title, original title or name AMDB holds now (a person may have
+renamed the entry) are left out. Each list is checked again, locked, as the update is written: one
+a person touched since the run read it is left alone, and the skip is logged (`names_changed`).
 
 Names make a backfill longer. AMDB already holds the creators the works credit, so a normal run
 never fetches them again; a names backfill fetches each creator it may name from Wikidata, once per
 run. With about 100,000 such creators that is about 2,000 extra entity requests (50 ids each). The
 client starts requests at least 0.5 s apart, so this adds at least 17 minutes, and about an hour
-at one to two seconds per request.
+at one to two seconds per request. A second names backfill (to bring `mul` aliases to lists the
+first one set from `en` alone) fetches the same items: the first took 2.5 hours for films, TV and
+books and grew the database by 44 MB, so expect similar time and less growth.
 
 What it never does: create a work, change any other field, remove a relation, or remove an external id.
 It never re-adds a relation or an id scheme that AMDB holds or ever held (so a moderator's unrelate
@@ -141,6 +150,6 @@ sticks, even after either end is merged into another entity), never recreates a 
 moderator reverted, and leaves alone works a person entered, even with a wikidata id. A candidate not in AMDB
 is counted `not_present`, not imported.
 
-Read the stats: `backfilled` (works that got a new reference relation, external id or name list), `relationsAdded`, `idsAdded` (external ids added), `namesAdded` (works and creators given their English aliases; a name clashing with a title a person changed during the run drops that work's name updates, logged), `idsSkippedHeld` (ids another entity already holds), `refsAdopted` (hand-entered references used instead of creating new ones; each is logged), `upToDate` (imported
+Read the stats: `backfilled` (works that got a new reference relation, external id or name list), `relationsAdded`, `idsAdded` (external ids added), `namesAdded` (works and creators given a names update, appends included; a name clashing with a title a person changed during the run, or a list a person touched since the run read it, drops that work's name updates, logged), `idsSkippedHeld` (ids another entity already holds), `refsAdopted` (hand-entered references used instead of creating new ones; each is logged), `upToDate` (imported
 works with nothing to add), and `skipped.present` (works it may not touch). A second backfill should
 show `backfilled: 0`.

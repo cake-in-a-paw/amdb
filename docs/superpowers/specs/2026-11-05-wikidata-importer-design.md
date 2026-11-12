@@ -44,7 +44,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 |---|---|
 | English label (`en`, else `mul`) | `title` |
 | P1476 title, when not English | `originalTitle` |
-| English aliases (`aliases.en`; not `mul`), trimmed, empty ones and those over 500 characters dropped, minus any equal to the title or original title, deduped, first 50 | works: `alternateTitles`; creators: `alternateNames` (series, properties and tags take none) |
+| Aliases: English (`aliases.en`) in Wikidata's order, then language-neutral (`aliases.mul`) whose letters are all Latin script; trimmed, empty ones and those over 500 characters dropped, minus any equal to the title or original title, deduped; a create keeps the first 50 | works: `alternateTitles`; creators: `alternateNames` (series, properties and tags take none) |
 | English description | `description` |
 | P577 publication date, earliest (else P580 start time); precision day, month or year only | `releaseYear/Month/Day` |
 | date in the past / future / none | `lifecycle` `released` / `upcoming` / `unknown` |
@@ -94,7 +94,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 
 A run with `--backfill` adds the references imported works are missing (dropped by an earlier
 importer version, or a link whose target arrived in a later run) and the external ids their
-items now carry, plus English aliases for name lists nothing ever touched, and nothing else.
+items now carry, plus aliases appended to name lists only import runs ever set, and nothing else.
 
 - It walks the same ranked candidates and acts only on works an import run created: the work's
   `create` and its live wikidata id came from the same import-run submission, and the work is live
@@ -103,15 +103,22 @@ items now carry, plus English aliases for name lists nothing ever touched, and n
 - Each such work gets at most one submission of the backfill run (`params.backfill: true`), through
   the same revision-logged path: creates for new references (with their wikidata id) and relations.
   No work create, no unrelate, and no update but two: the work's `alternateTitles` and each
-  credited imported creator's `alternateNames` (created by an import run, as for works), set to the
-  item's English aliases when no change of any status ever had that key in its payload, no merge
-  ever went into or out of the entity, and no redacted create or update on it hides what it held
-  (counted `namesAdded`; a creator credited by several works gets one update per run). The aliases
-  are first checked against the main names the entity holds in AMDB (read per batch: a work's title
-  and original title, a creator's name), and a list left empty is no update. A submission rejected
-  `duplicate_name` or `too_many_names` (a name matches a title a person changed during the run) is
-  retried without the name updates. A work with nothing to add gets no submission and counts as
-  `upToDate`.
+  credited imported creator's `alternateNames` (created by an import run, as for works). It may
+  change a list when every change that ever set that key came from an import run (its submission
+  has an `import_run_id`), in any status; no merge ever went into or out of the entity; and no
+  redacted create or update on it hides what it held. A person's change of any status blocks the
+  list for good, and so does a revert, of any status, of a change that set it (an import's
+  included); a revert of an unrelated change doesn't. For a list it may change, it appends the
+  item's aliases (`en` then Latin-script `mul`, uncapped) that the list doesn't hold, after its
+  current names, until it holds 50; it never removes or reorders a name (counted `namesAdded`; a
+  creator credited by several works gets one update per run). The aliases are first checked
+  against the main names the entity holds in AMDB (read per batch: a work's title and original
+  title, a creator's name), and a list that wouldn't change is no update. Each update sends the
+  list it read, and the write's transaction checks, with the entities locked, that every such
+  list is still that list and still open. A submission rejected `duplicate_name` or
+  `too_many_names` (a name matches a title a person changed during the run) or `names_changed` (a
+  person touched a list since it was read) is retried without the name updates, and logged. A
+  work with nothing to add gets no submission and counts as `upToDate`.
 - External ids follow the artwork spec: a work gains each non-`wikidata` id whose scheme it never
   had, live or removed (so a moderator's removal sticks), and that no other live entity holds or
   an earlier work in the same run just claimed (counted `idsSkippedHeld`). A submission that
