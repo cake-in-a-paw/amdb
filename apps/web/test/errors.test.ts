@@ -138,6 +138,7 @@ describe('every error code the API can send', () => {
     [409, 'already_reverted'],
     [409, 'already_reviewed'],
     [409, 'content_is_current'],
+    [409, 'conflicting_parents'],
     [409, 'dependency_pending'],
     [409, 'duplicate_external_id'],
     [409, 'duplicate_slug'],

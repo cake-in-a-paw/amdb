@@ -315,16 +315,27 @@ async function parentIdOf(tx: Tx, workId: string): Promise<string | null> {
  * `requireEntity`; it never follows it, or a relate locking parent then child could deadlock with
  * it. The parent is locked with `lockRow`, live or not, so a part under a removed show can still be
  * edited.
+ *
+ * A merge of the work away can land between `resolveWinner` and the lock pass (a merge holds the
+ * loser's, the winner's and both parents' locks, see `lockPair`, so it can't land after). The pass
+ * then holds the loser, not the winner. So after locking, the winner and its parent are resolved
+ * again, and a change in either runs another pass. Not literally "retry once": each further pass
+ * needs another merge to commit in that window, so the loop ends, and stopping after one retry
+ * would leave the winner's parent unlocked. Like `requireEntities`, a later pass's locks can come
+ * after locks held from an earlier one, out of id order.
  */
 async function lockWithParent(tx: Tx, workId: string): Promise<typeof entities.$inferSelect> {
-  const id = await resolveWinner(tx, workId);
+  let id = await resolveWinner(tx, workId);
   for (;;) {
     const before = await parentIdOf(tx, id);
     const ids = [id, before].filter((x): x is string => x !== null).toSorted();
     for (const x of ids) await lockRow(tx, x);
-    if ((await parentIdOf(tx, id)) === before) break;
+    const winner = await resolveWinner(tx, workId);
+    const stable = winner === id && (await parentIdOf(tx, id)) === before;
+    id = winner;
+    if (stable) break;
   }
-  // Already locked; a removed or retracted work is 409 dependency_pending, as an update gives.
+  // Locked and not merged away; a removed or retracted work is 409 dependency_pending, as an update gives.
   return requireEntity(tx, id);
 }
 
@@ -544,6 +555,20 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       if (loser.kind !== change.kind || target.kind !== loser.kind) {
         throw badRequest('kind_mismatch', 'Only entities of the same kind can be merged');
       }
+      // Read under the parent locks `lockPair` holds. One link is the other end's own (a season
+      // merged into its show): the repoint drops it as a self-link, so it doesn't conflict.
+      const fromParent = await parentIdOf(tx, fromId);
+      const intoParent = await parentIdOf(tx, intoId);
+      if (fromParent && intoParent && fromParent !== intoParent && fromParent !== intoId && intoParent !== fromId) {
+        throw conflict(
+          'conflicting_parents',
+          'The two works are parts of different works; merge or detach those first',
+          {
+            fromParent,
+            intoParent,
+          },
+        );
+      }
       const touching = (id: string) =>
         and(or(eq(relations.fromId, id), eq(relations.toId, id)), isNull(relations.removedByChange));
       const loserRels = await tx
@@ -577,6 +602,8 @@ export async function applyChange(tx: Tx, change: ChangeRow): Promise<Inverse> {
       if (removed.length) {
         await tx.update(relations).set({ removedByChange: change.id }).where(inArray(relations.id, removed));
       }
+      // The winner now holds the loser's parent link and parts; they must still fit the tree list.
+      if (change.kind === 'work') await assertTree(tx, intoId);
       const intoNames = isNamed(change.kind)
         ? await unionNames(tx, change.kind, fromId, intoId, target.fieldSources)
         : null;
@@ -604,15 +631,28 @@ const relationKey = (r: typeof relations.$inferSelect) =>
   JSON.stringify([r.type, r.fromId, r.toId, r.role, r.linkType, r.scheme, r.value]);
 
 /**
- * Locks `fromId` and `intoId` (in id order, so concurrent merges can't deadlock) and returns
- * them. Throws 409 if either isn't live. Merged ones are still returned: callers check.
+ * Locks `fromId` and `intoId` with their parents (in one id-ordered pass, so concurrent merges
+ * can't deadlock) and returns the two ends. Throws 409 if either end isn't live. Merged ones are
+ * still returned: callers check. A parent is locked with `lockRow`, live or not, so a removed show
+ * doesn't block a merge of its parts. The parent links are read again under the locks, and a
+ * change runs another pass, keeping the locks held, as `requireEntities` does.
  */
 async function lockPair(tx: Tx, fromId: string, intoId: string) {
+  const parents = () => Promise.all([parentIdOf(tx, fromId), parentIdOf(tx, intoId)]);
   const rows = new Map<string, typeof entities.$inferSelect>();
-  for (const id of [fromId, intoId].toSorted()) {
-    const row = await lockEntity(tx, id);
-    if (!row) throw conflict('entity_unavailable', `Entity ${id} is removed or doesn’t exist`);
-    rows.set(id, row);
+  for (;;) {
+    const before = await parents();
+    const ids = [fromId, intoId, ...before].filter((x): x is string => x !== null);
+    for (const id of [...new Set(ids)].toSorted()) {
+      if (id !== fromId && id !== intoId) {
+        await lockRow(tx, id);
+        continue;
+      }
+      const row = await lockEntity(tx, id);
+      if (!row) throw conflict('entity_unavailable', `Entity ${id} is removed or doesn’t exist`);
+      rows.set(id, row);
+    }
+    if (isDeepStrictEqual(await parents(), before)) break;
   }
   const loser = rows.get(fromId);
   const target = rows.get(intoId);
@@ -790,11 +830,19 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       }
       const { fromId: parentId, toId: childId } = relation;
       for (const id of [parentId, childId].toSorted()) await lockRow(tx, id);
-      // A revert never re-attaches a part to a work no one can see.
+      // A revert never re-attaches a part to a work no one can see, nor to one merged away (it
+      // isn't repointed to the winner either: that would be a new decision, not an undo).
       const [parent] = await tx
         .select({ id: entities.id })
         .from(entities)
-        .where(and(eq(entities.id, parentId), isNull(entities.removedAt), isNull(entities.retractedByChange)));
+        .where(
+          and(
+            eq(entities.id, parentId),
+            isNull(entities.removedAt),
+            isNull(entities.retractedByChange),
+            isNull(entities.mergedIntoId),
+          ),
+        );
       if (!parent) throw conflict('entity_unavailable', `Entity ${parentId} is removed or doesn’t exist`);
       await writeUnique(tx, restore, () => parentConflict(tx, childId));
       await assertTree(tx, childId);
@@ -807,13 +855,27 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       }
       const asTo = inverse.movedRelationIds.filter((id) => inverse.movedAsTo.includes(id));
       const asFrom = inverse.movedRelationIds.filter((id) => !inverse.movedAsTo.includes(id));
-      if (asTo.length) await tx.update(relations).set({ toId: inverse.from }).where(inArray(relations.id, asTo));
-      if (asFrom.length) await tx.update(relations).set({ fromId: inverse.from }).where(inArray(relations.id, asFrom));
-      if (inverse.removedRelationIds.length) {
-        await tx
-          .update(relations)
-          .set({ removedByChange: null })
-          .where(inArray(relations.id, inverse.removedRelationIds));
+      // Under the parent locks `lockPair` holds. Only a link whose `to` end comes back to `from`
+      // can collide with `relations_one_parent`: that is `from` gaining a second parent.
+      await writeUnique(
+        tx,
+        async (sp) => {
+          if (asTo.length) await sp.update(relations).set({ toId: inverse.from }).where(inArray(relations.id, asTo));
+          if (asFrom.length) {
+            await sp.update(relations).set({ fromId: inverse.from }).where(inArray(relations.id, asFrom));
+          }
+          if (inverse.removedRelationIds.length) {
+            await sp
+              .update(relations)
+              .set({ removedByChange: null })
+              .where(inArray(relations.id, inverse.removedRelationIds));
+          }
+        },
+        () => parentConflict(tx, inverse.from),
+      );
+      if (target.kind === 'work') {
+        await assertTree(tx, inverse.from);
+        await assertTree(tx, inverse.into);
       }
       await tx.update(entities).set({ mergedIntoId: null, updatedAt: new Date() }).where(eq(entities.id, inverse.from));
       const sources = { ...target.fieldSources };

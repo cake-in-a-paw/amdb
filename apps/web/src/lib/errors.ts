@@ -49,8 +49,10 @@ export function describeError(error: unknown, fallback = 'Something went wrong. 
       return "That can't be a part of that entry. A season goes under a show, and an episode under a season or a show.";
     case 'has_parent':
       return 'That entry is already a part of another entry. Remove it from there first.';
+    case 'conflicting_parents':
+      return 'Those entries are parts of different entries. Merge those first, or remove one from its entry.';
     case 'entity_unavailable':
-      return 'An entry this needs was removed, so this no longer applies.';
+      return 'An entry this needs was removed or merged into another, so this no longer applies.';
     case 'identity_required':
     case 'anon_token_required':
       return "AMDB couldn't tell who is submitting. Sign in, or allow this site to store data, and try again.";
