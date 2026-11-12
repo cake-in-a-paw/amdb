@@ -229,6 +229,10 @@ describe('English aliases', () => {
     expect('alternateTitles' in f).toBe(false);
   });
 
+  it('keeps an en alias in a non-Latin script', () => {
+    expect(ok(mapWork(alias('Альфа'), BOOK, TODAY)).fields.alternateTitles).toEqual(['Альфа']);
+  });
+
   it('drops an alias over 500 characters and keeps one of 500', () => {
     const r = ok(mapWork(alias('a'.repeat(500), 'b'.repeat(501)), BOOK, TODAY));
     expect(r.fields.alternateTitles).toEqual(['a'.repeat(500)]);
