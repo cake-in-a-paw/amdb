@@ -128,9 +128,9 @@ created that the work credits, its aliases as `alternateTitles` / `alternateName
 (`en`) ones, then the language-neutral (`mul`) ones written only in Latin script. It does so only
 if every change that ever set that list came from an import run (in any status), nothing was ever
 merged into or out of the entity, and no create or update on it was redacted. A person's edit, a
-pending change, or a moderator's revert of a change that set the list (a revert back to what an
-import wrote included) blocks the list for good; a revert of an unrelated change, such as a title
-edit, doesn't. It only appends: the aliases the list doesn't hold yet go after its current names,
+person's pending change, one a moderator rejected, or a revert (in any status) of a change that set
+the list (an import's included, so a list reverted even back to what an import wrote stays put)
+blocks the list for good; a revert of an unrelated change, such as a title edit, doesn't. It only appends: the aliases the list doesn't hold yet go after its current names,
 until it holds 50; it never removes or reorders a name, and a list it wouldn't change gets no
 update. Aliases that repeat the title, original title or name AMDB holds now (a person may have
 renamed the entry) are left out. Each list is checked again, locked, as the update is written: one

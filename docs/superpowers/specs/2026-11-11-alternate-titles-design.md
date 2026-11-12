@@ -2,6 +2,8 @@
 
 Status: approved, 2026-11-11.
 
+Amended by `2026-11-11-mul-aliases-design.md` (mul aliases; imports may extend lists only imports set).
+
 ## Why
 
 People search for a work or creator by the name they know it by, and that is often not the
@@ -22,7 +24,8 @@ contributors can correct those names like any other field.
   names as well as the main and original title.
 - Contributors can add, change and remove alternate names through the normal submission and
   review flow. Every edit is a recorded revision and can be reverted (constitution III).
-- The Wikidata importer brings in each item's **English aliases**.
+- The Wikidata importer brings in each item's **English aliases**. (Amended: `en` then Latin-script
+  `mul` aliases; see `2026-11-11-mul-aliases-design.md`.)
 - A backfill gives the works and creators already in AMDB their aliases.
 - Work and creator pages show the names ("Also known as").
 
@@ -89,7 +92,8 @@ By me (the owner saw these in the summary and raised no objection):
   change in the entity's history has ever touched it: not a person's edit, not a merge, not an
   earlier import. This is checked against the revision history, not the current value or
   `field_sources` (which a revert resets), so a person clearing the list, or a revert back to
-  empty, is never refilled.
+  empty, is never refilled. (Amended: imports may extend a list only import runs ever set; see
+  `2026-11-11-mul-aliases-design.md`.)
 - **Duplicate check:** matches alternate names of listed (live) works and creators, so typing
   "1984" when entering a work warns about *Nineteen Eighty-Four*. Pending creates are matched by
   title as today; their alternate names are not matched or exposed, so what pending submissions
