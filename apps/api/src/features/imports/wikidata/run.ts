@@ -15,6 +15,7 @@ import { createImportsService, type NamesExpectation } from '../service';
 import { type WikidataClient, type WikidataEntity, WikidataUnavailable } from './client';
 import { discover } from './discover';
 import { englishLabel, genreTag, mapRef, mapWork, type WorkRecord } from './map';
+import { importParts, newPartsStats, type PartsStats } from './parts';
 
 const LICENSE_URL = 'https://www.wikidata.org/wiki/Wikidata:Licensing';
 /** When LICENSE_URL was last read and still said CC0 for the main namespace; re-check and bump it. */
@@ -62,7 +63,7 @@ export type WikidataImportStats = {
   idsSkippedHeld?: number;
   /** Backfill runs only: imported works and creators given a names update (aliases appended to a list only import runs set). */
   namesAdded?: number;
-};
+} & Partial<PartsStats>;
 
 export type RunStatus = 'finished' | 'capped' | 'failed';
 
@@ -90,6 +91,11 @@ export interface RunOptions {
    * scheme that ever existed, live or removed, is never added again.
    */
   backfill?: boolean;
+  /**
+   * Import the seasons and episodes Wikidata has for the shows AMDB holds instead (at most `limit`
+   * shows, by QID number), one submission per season; `classes` and `minSitelinks` aren't read.
+   */
+  parts?: boolean;
 }
 
 type Known = { id: string; kind: EntityKind; live: boolean };
@@ -771,7 +777,23 @@ export async function runWikidataImport(
   let status: RunStatus;
   let error: string | undefined;
   try {
-    status = await importCandidates();
+    status = opts.parts
+      ? await importParts({
+          client: deps.client,
+          imports,
+          changes,
+          runId,
+          // The parts counts join the shared ones on the same object, so a failure records them too.
+          stats: Object.assign(stats, newPartsStats()),
+          limit: opts.limit,
+          maxDbBytes: opts.maxDbBytes,
+          today,
+          log,
+          measure,
+          checkpoint,
+          isItemError,
+        })
+      : await importCandidates();
   } catch (err) {
     // Committed works stay; the run records why it stopped.
     if (err instanceof Interrupted) {
@@ -791,6 +813,8 @@ export async function runWikidataImport(
     await addDeferredLinks();
     stats.bytesEnd = await measure();
     stats.bytesPerWork = stats.imported ? Math.round((stats.bytesEnd - stats.bytesStart) / stats.imported) : 0;
+    if (opts.parts)
+      stats.bytesPerPart = stats.partsAdded ? Math.round((stats.bytesEnd - stats.bytesStart) / stats.partsAdded) : 0;
   } catch (err) {
     await fail(err);
     throw err;

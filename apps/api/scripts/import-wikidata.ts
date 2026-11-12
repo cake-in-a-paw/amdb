@@ -1,9 +1,11 @@
-// Seeds AMDB from Wikidata, or with --backfill adds the references imported works are missing. See docs/import.md.
+// Seeds AMDB from Wikidata, with --backfill adds the references imported works are missing, or with --parts
+// imports the seasons and episodes of the shows it holds. See docs/import.md.
 // Progress goes to stderr, the stats to stdout.
 import { openDb } from '../src/platform/db/open';
 import { createWikidataClient } from '../src/features/imports/wikidata/client';
 import { discover } from '../src/features/imports/wikidata/discover';
 import { mapWork, type WorkRecord } from '../src/features/imports/wikidata/map';
+import { previewParts } from '../src/features/imports/wikidata/parts';
 import { runWikidataImport } from '../src/features/imports/wikidata/run';
 import { type ImportArgs, parseArgs } from './import-wikidata-args';
 
@@ -37,12 +39,28 @@ async function dryRun(args: ImportArgs) {
   for (const s of samples) log(JSON.stringify(s, null, 2));
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  if (args.dryRun) return dryRun(args);
+/** Opens `DATABASE_URL` (its pending migrations run first). */
+async function open() {
   const url = process.env.DATABASE_URL;
   if (!url) throw new Error('DATABASE_URL is not set');
-  const { db, close } = await openDb(url);
+  return openDb(url);
+}
+
+// Reads the database (the shows and what it holds of their parts) and Wikidata; writes nothing, starts no run.
+async function partsDryRun(args: ImportArgs) {
+  const { db, close } = await open();
+  try {
+    const preview = await previewParts({ db, client: createWikidataClient({ fetch }), log }, args);
+    process.stdout.write(`${JSON.stringify({ dryRun: true, parts: true, ...preview })}\n`);
+  } finally {
+    await close();
+  }
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.dryRun) return args.parts ? partsDryRun(args) : dryRun(args);
+  const { db, close } = await open();
   // Ctrl-C or a SIGTERM finishes the run as failed ("interrupted") after the current work; a second one
   // quits at once and leaves the run `running`. pnpm and tsx relay a terminal's Ctrl-C, so one press can
   // arrive twice within milliseconds: only a repeat at least 2 s later counts as a second press.

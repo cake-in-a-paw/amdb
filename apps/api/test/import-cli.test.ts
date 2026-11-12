@@ -36,6 +36,14 @@ describe('import:wikidata parseArgs', () => {
     expect(() => parseArgs(['--backfill', '--dry-run'])).toThrow(/--dry-run.*--backfill|--backfill.*--dry-run/);
   });
 
+  it('reads --parts, and refuses it with --backfill, --classes or --min-sitelinks (even at its default)', () => {
+    expect(parseArgs(['--parts', '--limit', '10'])).toMatchObject({ parts: true, limit: 10 });
+    expect(parseArgs(['--parts', '--dry-run'])).toMatchObject({ parts: true, dryRun: true });
+    expect(() => parseArgs(['--parts', '--backfill'])).toThrow(/--parts.*--backfill/);
+    expect(() => parseArgs(['--classes', 'Q11424', '--parts'])).toThrow(/--parts.*--classes/);
+    expect(() => parseArgs(['--parts', '--min-sitelinks', '5'])).toThrow(/--parts.*--min-sitelinks/);
+  });
+
   it('rejects unknown flags', () => {
     expect(() => parseArgs(['--bogus'])).toThrow(/--bogus/);
   });

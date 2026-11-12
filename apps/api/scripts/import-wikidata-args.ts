@@ -9,7 +9,12 @@ export interface ImportArgs {
   dryRun: boolean;
   /** Set only by `--backfill`: add missing references to works already imported (see docs/import.md). */
   backfill?: true;
+  /** Set only by `--parts`: import the seasons and episodes of shows AMDB holds (see docs/import.md). */
+  parts?: true;
 }
+
+/** Flags that choose or update discovered works, which a parts run doesn't do. */
+const NOT_WITH_PARTS = ['--backfill', '--classes', '--min-sitelinks'];
 
 const integer = (flag: string, raw: string | undefined, min: number): number => {
   if (raw === undefined || !/^\d+$/.test(raw) || Number(raw) < min || !Number.isSafeInteger(Number(raw)))
@@ -25,14 +30,20 @@ export function parseArgs(argv: string[]): ImportArgs {
     maxDbBytes: 3_500_000_000,
     dryRun: false,
   };
+  // The flags given, in order: the defaults fill `classes` and `minSitelinks` either way.
+  const given = new Set<string>();
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
+    if (flag !== undefined) given.add(flag);
     switch (flag) {
       case '--dry-run':
         args.dryRun = true;
         break;
       case '--backfill':
         args.backfill = true;
+        break;
+      case '--parts':
+        args.parts = true;
         break;
       case '--limit':
         args.limit = integer(flag, argv[++i], 1);
@@ -58,6 +69,8 @@ export function parseArgs(argv: string[]): ImportArgs {
         throw new Error(`Unknown flag ${flag}`);
     }
   }
+  const clash = args.parts ? [...given].find((f) => NOT_WITH_PARTS.includes(f)) : undefined;
+  if (clash) throw new Error(`--parts can’t be combined with ${clash}: a parts run walks the shows AMDB holds`);
   if (args.dryRun && args.backfill)
     throw new Error('--dry-run and --backfill can’t be combined: a dry run only previews the mapping');
   return args;

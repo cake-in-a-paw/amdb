@@ -1,4 +1,12 @@
-import type { CreatorKind, EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
+import type {
+  CreatorKind,
+  EntityKind,
+  IdScheme,
+  ImportRunStatus,
+  ImportSource,
+  RelationType,
+  Subtype,
+} from '@amdb/shared';
 import { and, eq, exists, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { listed } from '../../platform/db/listed';
@@ -402,6 +410,120 @@ export function importsRepository(db: DbOrTx) {
           ),
         );
       return rows.flatMap((r) => (r.scheme && r.value ? [{ scheme: r.scheme, value: r.value }] : []));
+    },
+
+    /**
+     * The shows a parts run walks: listed works of subtype `series` or `anime_series` holding a live
+     * `wikidata` id, at most `limit` of them, by QID number ascending. Read-only.
+     */
+    async findShows(limit: number): Promise<{ id: string; qid: string }[]> {
+      const rows = await db
+        .select({ id: entities.id, qid: relations.value })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .innerJoin(works, eq(works.entityId, entities.id))
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            isNull(relations.removedByChange),
+            sql`${relations.value} ~ '^Q[0-9]+$'`,
+            inArray(works.subtype, ['series', 'anime_series']),
+            listed(),
+          ),
+        )
+        // The CASE keeps the cast from ever seeing a value the filter above would drop.
+        .orderBy(sql`CASE WHEN ${relations.value} ~ '^Q[0-9]+$' THEN substring(${relations.value} from 2)::numeric END`)
+        .limit(limit);
+      // `value` is set on every external_id relation; the filter on scheme guarantees it here.
+      return rows.flatMap((r) => (r.qid ? [{ id: r.id, qid: r.qid }] : []));
+    },
+
+    /**
+     * Who holds each QID as an active `wikidata` external id, by QID, as `findByWikidataIds` answers,
+     * plus a work's subtype and the parent its live `work_part` hangs it under. Read-only.
+     */
+    async findHeldParts(
+      qids: string[],
+    ): Promise<
+      Map<string, { id: string; kind: EntityKind; live: boolean; subtype: Subtype | null; parentId: string | null }>
+    > {
+      if (qids.length === 0) return new Map();
+      const part = alias(relations, 'part');
+      const rows = await db
+        .select({
+          qid: relations.value,
+          id: entities.id,
+          kind: entities.kind,
+          live: sql<boolean>`${entities.removedAt} IS NULL AND ${entities.retractedByChange} IS NULL`,
+          subtype: works.subtype,
+          parentId: part.fromId,
+        })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .leftJoin(works, eq(works.entityId, entities.id))
+        .leftJoin(part, and(eq(part.type, 'work_part'), eq(part.toId, entities.id), isNull(part.removedByChange)))
+        .where(
+          and(
+            eq(relations.type, 'external_id'),
+            eq(relations.scheme, 'wikidata'),
+            inArray(relations.value, qids),
+            isNull(relations.removedByChange),
+          ),
+        );
+      // `value` is set on every external_id relation; the filter on scheme guarantees it here.
+      return new Map(
+        rows.flatMap(({ qid, ...held }) =>
+          qid ? [[qid, { ...held, subtype: held.subtype ?? null, parentId: held.parentId ?? null }] as const] : [],
+        ),
+      );
+    },
+
+    /**
+     * The listed parts hanging under each of `parentIds` through a live `work_part`, with what a parts
+     * run matches a hand-entered one on, and whether it ever held a wikidata id (live or removed). Read-only.
+     */
+    async findPartsOf(parentIds: string[]): Promise<
+      {
+        parentId: string;
+        id: string;
+        subtype: Subtype | null;
+        position: number | null;
+        titleNorm: string;
+        everHadWikidataId: boolean;
+      }[]
+    > {
+      if (parentIds.length === 0) return [];
+      const wikidataId = alias(relations, 'wikidata_id');
+      return db
+        .select({
+          parentId: relations.fromId,
+          id: entities.id,
+          subtype: works.subtype,
+          position: relations.position,
+          titleNorm: works.titleNorm,
+          everHadWikidataId: sql<boolean>`EXISTS (${db
+            .select({ one: sql`1` })
+            .from(wikidataId)
+            .where(
+              and(
+                eq(wikidataId.fromId, entities.id),
+                eq(wikidataId.type, 'external_id'),
+                eq(wikidataId.scheme, 'wikidata'),
+              ),
+            )})`,
+        })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.toId))
+        .innerJoin(works, eq(works.entityId, entities.id))
+        .where(
+          and(
+            eq(relations.type, 'work_part'),
+            inArray(relations.fromId, parentIds),
+            isNull(relations.removedByChange),
+            listed(),
+          ),
+        );
     },
 
     /** The database's size on disk, as the size cap measures it. */

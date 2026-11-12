@@ -1,6 +1,6 @@
 import { and, count, eq, inArray, isNull } from 'drizzle-orm';
 import { expect, it } from 'vitest';
-import { createWikidataClient, type WikidataEntity } from '../src/features/imports/wikidata/client.js';
+import type { WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import { createImportsService } from '../src/features/imports/service';
 import { runWikidataImport } from '../src/features/imports/wikidata/run.js';
 import {
@@ -16,21 +16,10 @@ import {
 } from '../src/platform/db/schema';
 import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
+import { claim, fakeWikidata, FILM_CLASS, item, person } from './helpers/wikidata';
 
-const FILM_CLASS = 'Q11424';
 const TODAY = new Date('2026-11-05T12:00:00Z');
 const OPTS = { classes: [FILM_CLASS], minSitelinks: 10, limit: 100, maxDbBytes: Number.MAX_SAFE_INTEGER };
-
-// --- Wikidata fixtures, in the wbgetentities shape ---
-
-const item = (id: string) => ({ 'entity-type': 'item', id });
-const claim = (property: string, value: unknown, ordinal?: string) => ({
-  rank: 'normal',
-  mainsnak: { snaktype: 'value', property, datavalue: { value } },
-  ...(ordinal
-    ? { qualifiers: { P1545: [{ snaktype: 'value', property: 'P1545', datavalue: { value: ordinal } }] } }
-    : {}),
-});
 
 interface FilmSpec {
   director?: string;
@@ -59,9 +48,6 @@ function film(id: string, title: string, spec: FilmSpec = {}): WikidataEntity {
   // Built to the WikidataEntity shape; claims are loosely typed here to keep the fixtures short.
   return { id, labels: { en: { value: title } }, claims } as WikidataEntity;
 }
-const person = (id: string, name: string): WikidataEntity =>
-  // Same shape note as `film`.
-  ({ id, labels: { en: { value: name } }, claims: { P31: [claim('P31', item('Q5'))] } }) as WikidataEntity;
 const thing = (id: string, label: string): WikidataEntity => ({ id, labels: { en: { value: label } } });
 /** `e` with English aliases. */
 const aliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
@@ -73,42 +59,6 @@ const mulAliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => (
   ...e,
   aliases: { ...e.aliases, mul: values.map((value) => ({ value })) },
 });
-
-/**
- * A real client over a fake `fetch`: SPARQL answers with `candidates`, wbgetentities with
- * `entities` (absent ids come back `missing`). `down(ids)` makes an entity call answer 503;
- * `onEntities(ids)` is awaited before an entity call answers.
- */
-function fakeWikidata(
-  candidates: { qid: string; sitelinks: number }[],
-  entities: Record<string, WikidataEntity>,
-  down: (ids: string[]) => boolean = () => false,
-  { onEntities }: { onEntities?: (ids: string[]) => Promise<void> } = {},
-) {
-  const entityCalls: string[][] = [];
-  const fetch = async (input: string | URL | Request) => {
-    const url = new URL(String(input));
-    if (url.hostname === 'query.wikidata.org') {
-      const query = url.searchParams.get('query') ?? '';
-      const bindings = query.includes(`wd:${FILM_CLASS}`)
-        ? candidates.map((c) => ({
-            item: { value: `http://www.wikidata.org/entity/${c.qid}` },
-            sl: { value: String(c.sitelinks) },
-          }))
-        : [];
-      return Response.json({ results: { bindings } });
-    }
-    const ids = (url.searchParams.get('ids') ?? '').split('|');
-    entityCalls.push(ids);
-    await onEntities?.(ids);
-    if (down(ids)) return new Response('', { status: 503 });
-    return Response.json({ entities: Object.fromEntries(ids.map((id) => [id, entities[id] ?? { id, missing: '' }])) });
-  };
-  // The fake implements only the call shape the client uses.
-  const client = createWikidataClient({ fetch: fetch as typeof globalThis.fetch, sleep: async () => {} });
-  return { client, entityCalls };
-}
-
 const ranked = (...qids: string[]) => qids.map((qid, i) => ({ qid, sitelinks: 100 - i }));
 const bytes = () => async () => 1000;
 

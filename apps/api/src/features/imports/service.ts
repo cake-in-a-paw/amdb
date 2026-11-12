@@ -134,6 +134,21 @@ export function createImportsService(db: DbOrTx) {
       return new Set((await repo.findHeldExternalIds(ids)).map((i) => `${i.scheme}:${i.value}`));
     },
 
+    /** The shows a parts run walks, at most `limit`, by QID number ascending. */
+    async findShows(limit: number) {
+      return repo.findShows(limit);
+    },
+
+    /** Who holds each of these QIDs, as `findByWikidataIds`, plus a work's subtype and parent. */
+    async findHeldParts(qids: string[]) {
+      return repo.findHeldParts(qids);
+    },
+
+    /** The listed parts under each of these works, for a parts run's adoption of hand-entered ones. */
+    async findPartsOf(parentIds: string[]) {
+      return repo.findPartsOf(parentIds);
+    },
+
     async databaseBytes() {
       return repo.databaseBytes();
     },
