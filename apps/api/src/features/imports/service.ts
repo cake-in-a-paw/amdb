@@ -1,7 +1,7 @@
 import type { IdScheme, ImportSource } from '@amdb/shared';
-import type { Db } from '../../platform/db/types';
+import type { DbOrTx } from '../../platform/db/types';
 import { conflict, isUniqueViolation, notFound } from '../../platform/http/errors';
-import { importsRepository } from './repository';
+import { importsRepository, type NamesKey } from './repository';
 import type { ImportStats } from './schemas';
 
 const alreadyRunning = (id?: string) =>
@@ -10,7 +10,12 @@ const alreadyRunning = (id?: string) =>
     `another import run is already running${id ? ` (${id})` : ''}; wait for it, or see docs/import.md if it died`,
   );
 
-export function createImportsService(db: Db) {
+export type { NamesKey };
+/** A name list as an import read it, before writing an update that replaces it. */
+export type NamesExpectation = { entityId: string; key: NamesKey; names: string[] };
+
+// A transaction too: `importSubmission` runs `assertNamesOpen` inside its own.
+export function createImportsService(db: DbOrTx) {
   const repo = importsRepository(db);
   return {
     /** Records a run as started; its submissions are written through the changes service's `importSubmission`. */
@@ -74,9 +79,42 @@ export function createImportsService(db: Db) {
       return repo.findMainNames(kind, entityIds);
     },
 
-    /** The ids among these whose name list a person or run ever set, or that a merge went into or out of: a backfill leaves them be. */
-    async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames') {
-      return repo.findNamesTouched(entityIds, key);
+    /**
+     * The ids among these whose `key` list an import may no longer change: a person or moderator set
+     * it, reverted a change that set it, or has a change setting it pending; a create or update on it
+     * was redacted; or a merge went into or out of it. A list only import runs set stays open.
+     */
+    async findNamesBlocked(entityIds: string[], key: NamesKey) {
+      return repo.findNamesBlocked(entityIds, key);
+    },
+
+    /** The stored name list of each of these works (alternate titles) or creators (alternate names), by id. */
+    async findNameLists(kind: 'work' | 'creator', entityIds: string[]) {
+      return repo.findNameLists(kind, entityIds);
+    },
+
+    /**
+     * Inside the transaction that writes an import's names updates: locks the entities, then throws
+     * `names_changed` (409) if any is now blocked or its list isn't exactly the one the import read.
+     * The lock holds a person's edit off until the import's write commits.
+     */
+    async assertNamesOpen(expected: NamesExpectation[]): Promise<void> {
+      if (expected.length === 0) return;
+      const held = await repo.lockAndReadNames([...new Set(expected.map((e) => e.entityId))]);
+      const changed = expected.filter(({ entityId, key, names }) => {
+        const list = held.get(entityId)?.[key];
+        return !list || list.length !== names.length || list.some((n, i) => n !== names[i]);
+      });
+      for (const key of ['alternateTitles', 'alternateNames'] as const) {
+        const ids = expected.filter((e) => e.key === key && !changed.includes(e)).map((e) => e.entityId);
+        const blocked = await repo.findNamesBlocked(ids, key);
+        changed.push(...expected.filter((e) => e.key === key && blocked.has(e.entityId)));
+      }
+      if (changed.length > 0) {
+        throw conflict('names_changed', 'a name list changed since the import read it', {
+          entityIds: [...new Set(changed.map((e) => e.entityId))],
+        });
+      }
     },
 
     /** The relations touching these entities, live or removed, so a backfill never re-adds one a moderator took out. */

@@ -1872,6 +1872,29 @@ it('backfill: after a creator merge is undone, neither creator gets names', asyn
   }
 });
 
+it('backfill: appends new aliases after a list an import set, and a following backfill adds nothing', async () => {
+  const t = await setupTest();
+  try {
+    const { client } = fakeWikidata(ranked('Q1', 'Q2'), withAliases);
+    await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect((await namesOf(t.db))['Alpha']).toEqual(['Alpha One']);
+    // Wikidata now lists another alias, ahead of the one already held.
+    const later = fakeWikidata(ranked('Q1', 'Q2'), {
+      ...withAliases,
+      Q1: aliased(unaliased.Q1, 'Alpha Prime', 'Alpha One'),
+    });
+    const deps = { db: t.db, client: later.client, measureBytes: bytes(), today: TODAY };
+    const appended = await runWikidataImport(deps, BACKFILL);
+    expect(appended.stats).toMatchObject({ namesAdded: 1 });
+    expect((await namesOf(t.db))['Alpha']).toEqual(['Alpha One', 'Alpha Prime']);
+    const again = await runWikidataImport(deps, BACKFILL);
+    expect(again.stats).toMatchObject({ namesAdded: 0 });
+    expect((await namesOf(t.db))['Alpha']).toEqual(['Alpha One', 'Alpha Prime']);
+  } finally {
+    await t.close();
+  }
+});
+
 it('backfill: a work and creator whose import create already carried names get no update', async () => {
   const t = await setupTest();
   try {

@@ -1,5 +1,12 @@
 // Drives a Wikidata seed import: discover → fetch → map → one revision-logged submission per work.
-import { dedupeNames, normalizeTitle, type EntityKind, type IdScheme, type WorkLinkType } from '@amdb/shared';
+import {
+  ALTERNATE_NAMES_MAX,
+  dedupeNames,
+  normalizeTitle,
+  type EntityKind,
+  type IdScheme,
+  type WorkLinkType,
+} from '@amdb/shared';
 import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
@@ -405,11 +412,11 @@ export async function runWikidataImport(
   const schemesByWork = new Map<string, Set<IdScheme>>();
   /** `scheme:value` keys held by a live external id: read per batch, then added to as the run submits. */
   const heldIds = new Set<string>();
-  /** Imported works whose `alternateTitles` a change ever touched (per batch): a backfill never sets those. */
-  const titlesTouched = new Set<string>();
+  /** Imported works whose `alternateTitles` an import may no longer change (per batch, `findNamesBlocked`). */
+  const titlesBlocked = new Set<string>();
   /**
-   * Imported creators by QID whose `alternateNames` no change ever touched (per batch), less those this
-   * run already named: a creator several works credit gets one update per run.
+   * Imported creators by QID whose `alternateNames` an import may still change (per batch), less those
+   * this run already named: a creator several works credit gets one update per run.
    */
   const nameableCreators = new Map<string, string>();
   const namedCreators = new Set<string>();
@@ -418,8 +425,21 @@ export async function runWikidataImport(
    * person may have renamed one to what Wikidata lists as an alias, which the list then leaves out.
    */
   const mainNames = new Map<string, string[]>();
-  /** `list` without the names that repeat what entity `id` holds as its main names. */
-  const unlisted = (id: string, list: string[]) => dedupeNames(mainNames.get(id) ?? [], list);
+  /** The name list each of those holds now (per batch): a backfill only appends to it. */
+  const storedNames = new Map<string, string[]>();
+  /**
+   * Entity `id`'s stored list with the names of `source` it lacks (neither a main name nor already
+   * listed) appended, up to `ALTERNATE_NAMES_MAX`; null when nothing would be added. Never removes
+   * or reorders a name.
+   */
+  const extended = (id: string, source: string[]): string[] | null => {
+    const stored = storedNames.get(id) ?? [];
+    const added = dedupeNames([...(mainNames.get(id) ?? []), ...stored], source).slice(
+      0,
+      Math.max(0, ALTERNATE_NAMES_MAX - stored.length),
+    );
+    return added.length > 0 ? [...stored, ...added] : null;
+  };
   const count = (
     key: 'backfilled' | 'upToDate' | 'relationsAdded' | 'idsAdded' | 'idsSkippedHeld' | 'namesAdded',
     n = 1,
@@ -493,18 +513,17 @@ export async function runWikidataImport(
     const idChanges = (ids: typeof newIds): ChangeInput[] =>
       ids.map(({ scheme, value }) => ({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } }));
 
-    // Name lists no change ever touched: the work's, and each imported creator's it credits.
-    // A list left empty once checked against what AMDB holds is no update.
+    // Name lists only import runs set: the work's, and each imported creator's it credits. A list
+    // that appending what AMDB lacks wouldn't change is no update.
     let names: ChangeInput[] = [];
     const named: string[] = [];
-    const alternateTitles = titlesTouched.has(workId) ? [] : unlisted(workId, rec.fields.alternateTitles ?? []);
-    if (alternateTitles.length > 0)
-      names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
+    const alternateTitles = titlesBlocked.has(workId) ? null : extended(workId, rec.fields.alternateTitles ?? []);
+    if (alternateTitles) names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
     for (const { qid } of rec.creators) {
       const id = nameableCreators.get(qid);
       if (!id || namedCreators.has(id) || named.includes(id)) continue;
-      const alternateNames = unlisted(id, refItems.get(qid)?.ref?.alternateNames ?? []);
-      if (alternateNames.length === 0) continue;
+      const alternateNames = extended(id, refItems.get(qid)?.ref?.alternateNames ?? []);
+      if (!alternateNames) continue;
       names.push({ op: 'update', kind: 'creator', entityId: id, fields: { alternateNames } });
       named.push(id);
     }
@@ -621,22 +640,25 @@ export async function runWikidataImport(
           .flatMap((r) => r.externalIds.filter((e) => e.scheme !== 'wikidata'));
         for (const key of await imports.findHeldExternalIds(wanted)) heldIds.add(key);
 
-        titlesTouched.clear();
-        for (const id of await imports.findNamesTouched([...imported.values()], 'alternateTitles'))
-          titlesTouched.add(id);
+        titlesBlocked.clear();
+        for (const id of await imports.findNamesBlocked([...imported.values()], 'alternateTitles'))
+          titlesBlocked.add(id);
         const creatorQids = [...new Set(works.flatMap((r) => r.creators.map((c) => c.qid)))].filter((q) => {
           const held = known.get(q);
           return held?.live && held.kind === 'creator' && !namedCreators.has(held.id);
         });
         const importedCreators = await imports.findImportedCreators(creatorQids);
-        const touched = await imports.findNamesTouched([...importedCreators.values()], 'alternateNames');
+        const blocked = await imports.findNamesBlocked([...importedCreators.values()], 'alternateNames');
         nameableCreators.clear();
-        for (const [qid, id] of importedCreators) if (!touched.has(id)) nameableCreators.set(qid, id);
+        for (const [qid, id] of importedCreators) if (!blocked.has(id)) nameableCreators.set(qid, id);
         mainNames.clear();
-        const nameableWorks = [...imported.values()].filter((id) => !titlesTouched.has(id));
+        storedNames.clear();
+        const nameableWorks = [...imported.values()].filter((id) => !titlesBlocked.has(id));
+        const nameableCreatorIds = [...nameableCreators.values()];
         for (const [id, held] of await imports.findMainNames('work', nameableWorks)) mainNames.set(id, held);
-        for (const [id, held] of await imports.findMainNames('creator', [...nameableCreators.values()]))
-          mainNames.set(id, held);
+        for (const [id, held] of await imports.findMainNames('creator', nameableCreatorIds)) mainNames.set(id, held);
+        for (const [id, list] of await imports.findNameLists('work', nameableWorks)) storedNames.set(id, list);
+        for (const [id, list] of await imports.findNameLists('creator', nameableCreatorIds)) storedNames.set(id, list);
         // AMDB holds these already, so they weren't fetched as references: fetch them for their aliases.
         const unfetched = [...nameableCreators.keys()].filter((q) => !refItems.has(q));
         const fetchedCreators = await fetchEntities(unfetched);

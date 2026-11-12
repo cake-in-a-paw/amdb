@@ -1,5 +1,5 @@
 import type { CreatorKind, EntityKind, IdScheme, ImportRunStatus, ImportSource, RelationType } from '@amdb/shared';
-import { and, eq, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
+import { and, eq, exists, inArray, isNotNull, isNull, ne, notExists, or, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { listed } from '../../platform/db/listed';
 import {
@@ -17,6 +17,9 @@ import { resolveWinner } from '../../platform/db/merge';
 import type { DbOrTx } from '../../platform/db/types';
 
 export type ImportRunRow = typeof importRuns.$inferSelect;
+
+/** The payload key of a work's (`alternateTitles`) or a creator's (`alternateNames`) name list. */
+export type NamesKey = 'alternateTitles' | 'alternateNames';
 
 export function importsRepository(db: DbOrTx) {
   /**
@@ -177,22 +180,46 @@ export function importsRepository(db: DbOrTx) {
     },
 
     /**
-     * The ids among `entityIds` whose name list a change ever touched: a create or update of any status
-     * (pending, rejected and reverted ones included) whose payload has `key`, a redacted create or update
-     * (its payload is gone, so it may have), or a merge into or out of the entity. Read-only.
+     * The ids among `entityIds` whose `key` list an import may no longer change: a create or update of
+     * any status (pending, rejected and reverted ones included) whose payload has `key` and whose
+     * submission isn't an import run's; a redacted create or update, whatever its source (its payload
+     * is gone, so it may have); a revert, in any status, of a change on the entity whose payload has
+     * `key`; or a merge into or out of the entity. Read-only.
      */
-    async findNamesTouched(entityIds: string[], key: 'alternateTitles' | 'alternateNames'): Promise<Set<string>> {
+    async findNamesBlocked(entityIds: string[], key: NamesKey): Promise<Set<string>> {
       if (entityIds.length === 0) return new Set();
+      // A revert's payload is `{ revertOf }` and its `entity_id` that of the change it reverts, so both
+      // sides are found through `changes_entity_id_idx`.
+      const reverted = alias(changes, 'reverted');
       const edits = await db
         .selectDistinct({ entityId: changes.entityId })
         .from(changes)
+        .innerJoin(submissions, eq(submissions.id, changes.submissionId))
         .where(
           and(
             inArray(changes.entityId, entityIds),
             or(
               and(
                 inArray(changes.op, ['create', 'update']),
-                or(sql`${changes.payload} ? ${key}`, isNotNull(changes.redactedAt)),
+                or(
+                  and(sql`${changes.payload} ? ${key}`, isNull(submissions.importRunId)),
+                  isNotNull(changes.redactedAt),
+                ),
+              ),
+              and(
+                sql`${changes.payload} ? 'revertOf'`,
+                exists(
+                  db
+                    .select({ one: sql`1` })
+                    .from(reverted)
+                    .where(
+                      and(
+                        eq(reverted.entityId, changes.entityId),
+                        sql`${reverted.id}::text = ${changes.payload}->>'revertOf'`,
+                        sql`${reverted.payload} ? ${key}`,
+                      ),
+                    ),
+                ),
               ),
               // A merge's `entity_id` is its loser: once merged away, even if unmerged since.
               eq(changes.op, 'merge'),
@@ -210,6 +237,43 @@ export function importsRepository(db: DbOrTx) {
         merged.push(...rows.map((r) => r.id));
       }
       return new Set([...edits.flatMap((r) => (r.entityId ? [r.entityId] : [])), ...merged]);
+    },
+
+    /** The stored name list of each of these works (alternate titles) or creators (alternate names), by id. Read-only. */
+    async findNameLists(kind: 'work' | 'creator', entityIds: string[]): Promise<Map<string, string[]>> {
+      if (entityIds.length === 0) return new Map();
+      if (kind === 'work') {
+        const rows = await db
+          .select({ id: works.entityId, names: works.alternateTitles })
+          .from(works)
+          .where(inArray(works.entityId, entityIds));
+        return new Map(rows.map((r) => [r.id, r.names]));
+      }
+      const rows = await db
+        .select({ id: creators.entityId, names: creators.alternateNames })
+        .from(creators)
+        .where(inArray(creators.entityId, entityIds));
+      return new Map(rows.map((r) => [r.id, r.names]));
+    },
+
+    /**
+     * Locks these entities' rows (`FOR UPDATE`, in id order so two callers can't deadlock) until the
+     * transaction ends, and returns each one's stored name lists. Applying a person's edit updates the
+     * entity row, so it waits on this lock. Locks only: writes nothing.
+     */
+    async lockAndReadNames(
+      entityIds: string[],
+    ): Promise<Map<string, { alternateTitles: string[] | null; alternateNames: string[] | null }>> {
+      if (entityIds.length === 0) return new Map();
+      const rows = await db
+        .select({ id: entities.id, alternateTitles: works.alternateTitles, alternateNames: creators.alternateNames })
+        .from(entities)
+        .leftJoin(works, eq(works.entityId, entities.id))
+        .leftJoin(creators, eq(creators.entityId, entities.id))
+        .where(inArray(entities.id, entityIds))
+        .orderBy(entities.id)
+        .for('update', { of: entities });
+      return new Map(rows.map(({ id, ...names }) => [id, names]));
     },
 
     /**

@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { count, eq } from 'drizzle-orm';
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { createChangesService } from '../src/features/changes/service';
 import { ChangeInput } from '../src/features/changes/schemas';
 import { createImportsService } from '../src/features/imports/service';
 import { importRuns, submissions, works } from '../src/platform/db/schema';
+import { publish, submit } from './helpers/catalog';
 import { setupTest } from './helpers/setup';
 
 const LICENSE = 'https://www.wikidata.org/wiki/Wikidata:Licensing';
@@ -20,6 +21,13 @@ const qid = (ref: string, value: string) => ({
   type: 'external_id',
   from: { ref },
   data: { scheme: 'wikidata', value },
+});
+
+const names = (entityId: string, alternateTitles: string[]) => ({
+  op: 'update',
+  kind: 'work',
+  entityId,
+  fields: { alternateTitles },
 });
 
 async function setup() {
@@ -235,4 +243,143 @@ it('a moderator reading an imported submission sees its run, and no account', as
   } finally {
     await t.close();
   }
+});
+
+describe('which name lists an import may still extend', () => {
+  /** A work an import created, then named by a second import run's update (as a backfill does). */
+  async function importedNamedWork(t: Awaited<ReturnType<typeof setupTest>>) {
+    const { changes } = await t.importSubmission([film('w', 'Arrival'), qid('w', 'Q1')]);
+    const id = changes[0]!.entityId!;
+    const named = await t.importSubmission([
+      { op: 'update', kind: 'work', entityId: id, fields: { alternateTitles: ['Story of Your Life'] } },
+    ]);
+    return { id, namesChangeId: named.changes[0]!.id };
+  }
+  const blocked = async (t: Awaited<ReturnType<typeof setupTest>>, id: string) =>
+    (await createImportsService(t.db).findNamesBlocked([id], 'alternateTitles')).has(id);
+
+  it('a list only import runs set is open', async () => {
+    const { t } = await setup();
+    try {
+      const { id } = await importedNamedWork(t);
+      expect(await blocked(t, id)).toBe(false);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('a person’s names edit blocks the list, approved or still pending', async () => {
+    const { t, mod } = await setup();
+    try {
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const approved = await importedNamedWork(t);
+      await publish(author, mod, [names(approved.id, ['Arrival (2016)'])]);
+      expect(await blocked(t, approved.id)).toBe(true);
+
+      const { changes } = await t.importSubmission([film('p', 'Sicario'), qid('p', 'Q2')]);
+      const pending = changes[0]!.entityId!;
+      await submit(author, [names(pending, ['Soldado'])]);
+      expect(await blocked(t, pending)).toBe(true);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('a moderator’s revert of the import’s names change blocks the list', async () => {
+    const { t, mod } = await setup();
+    try {
+      const { id, namesChangeId } = await importedNamedWork(t);
+      const res = await mod.post(`/api/changes/${namesChangeId}/revert`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(await blocked(t, id)).toBe(true);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('a revert of a person’s title edit on the same work leaves the list open', async () => {
+    const { t, mod } = await setup();
+    try {
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const { id } = await importedNamedWork(t);
+      const edit = await publish(author, mod, [
+        { op: 'update', kind: 'work', entityId: id, fields: { title: 'Arrival!' } },
+      ]);
+      const res = await mod.post(`/api/changes/${edit.changes[0]!.id}/revert`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      expect(await blocked(t, id)).toBe(false);
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('findNameLists returns the stored list', async () => {
+    const { t } = await setup();
+    try {
+      const { id } = await importedNamedWork(t);
+      expect(await createImportsService(t.db).findNameLists('work', [id])).toEqual(
+        new Map([[id, ['Story of Your Life']]]),
+      );
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('assertNamesOpen passes on an unchanged list and is a 409 names_changed once a person changed it', async () => {
+    const { t, mod } = await setup();
+    try {
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const { id } = await importedNamedWork(t);
+      const imports = createImportsService(t.db);
+      const expected = [{ entityId: id, key: 'alternateTitles' as const, names: ['Story of Your Life'] }];
+      await expect(imports.assertNamesOpen(expected)).resolves.toBeUndefined();
+      await expect(imports.assertNamesOpen([])).resolves.toBeUndefined();
+
+      await publish(author, mod, [names(id, ['Arrival (2016)'])]);
+      await expect(imports.assertNamesOpen(expected)).rejects.toMatchObject({ status: 409, code: 'names_changed' });
+      // Blocked, even when the expected list is what the person left.
+      await expect(
+        imports.assertNamesOpen([{ entityId: id, key: 'alternateTitles', names: ['Arrival (2016)'] }]),
+      ).rejects.toMatchObject({ status: 409, code: 'names_changed' });
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('assertNamesOpen is a 409 names_changed when an open list no longer holds the expected names', async () => {
+    const { t } = await setup();
+    try {
+      const { id } = await importedNamedWork(t);
+      await expect(
+        createImportsService(t.db).assertNamesOpen([{ entityId: id, key: 'alternateTitles', names: ['Other'] }]),
+      ).rejects.toMatchObject({ status: 409, code: 'names_changed' });
+    } finally {
+      await t.close();
+    }
+  });
+
+  it('an import submission checks namesOpen in its transaction and writes nothing when it fails', async () => {
+    const { t, mod } = await setup();
+    try {
+      const author = t.as({ kind: 'user', userId: await t.createUser() });
+      const { id } = await importedNamedWork(t);
+      await publish(author, mod, [names(id, ['Arrival (2016)'])]);
+      const imports = createImportsService(t.db);
+      const { id: runId } = await startRun(t);
+      const err = await createChangesService(t.db)
+        .importSubmission(runId, [ChangeInput.parse(names(id, ['Arrival (2016)', 'Story of Your Life']))], {
+          namesOpen: [{ entityId: id, key: 'alternateTitles', names: ['Story of Your Life'] }],
+        })
+        .then(
+          () => undefined,
+          (e: unknown) => e,
+        );
+      await imports.finishRun(runId, { status: 'finished', stats: {} });
+      expect(err).toMatchObject({ status: 409, code: 'names_changed' });
+      expect(await imports.findNameLists('work', [id])).toEqual(new Map([[id, ['Arrival (2016)']]]));
+      expect(await t.db.select().from(submissions).where(eq(submissions.importRunId, runId))).toEqual([]);
+    } finally {
+      await t.close();
+    }
+  });
 });

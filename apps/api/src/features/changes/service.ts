@@ -24,7 +24,7 @@ import {
   unauthenticated,
 } from '../../platform/http/errors';
 import { decodeCursor, decodeKeyCursor, encodeKeyCursor, toPage } from '../../platform/http/pagination';
-import { createImportsService } from '../imports/service';
+import { createImportsService, type NamesExpectation } from '../imports/service';
 import { anonHashOf, isAdmin, isModerator } from '../users/identity';
 import {
   applyChange,
@@ -583,8 +583,10 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
      * Writes an import run's submission: planned like a submit (same errors, such as
      * `duplicate_external_id` 409), then every change applied in order as `approved`, with no
      * reviewer. One transaction, so a change that fails to apply leaves nothing of it behind.
+     * `namesOpen` lists the name lists its updates replace, as the import read them: checked first,
+     * under lock, so a list a person changed meanwhile is a `names_changed` 409 and nothing is written.
      */
-    async importSubmission(runId: string, changes: ChangeInput[]) {
+    async importSubmission(runId: string, changes: ChangeInput[], opts: { namesOpen?: NamesExpectation[] } = {}) {
       // An unknown run is a 404; a finished one takes no more work (say, after an interrupt).
       const run = await createImportsService(db).getRun(runId);
       if (run.status !== 'running') throw conflict('run_not_running', `import run ${runId} is ${run.status}`);
@@ -593,6 +595,7 @@ export function createChangesService(db: Db, policy: ReviewPolicy = holdAll) {
         changes.map((change) => ({ change })),
       );
       return db.transaction(async (tx) => {
+        if (opts.namesOpen?.length) await createImportsService(tx).assertNamesOpen(opts.namesOpen);
         const created = await changesRepository(tx).insertSubmission(
           { importRunId: runId },
           undefined,
