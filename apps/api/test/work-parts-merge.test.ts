@@ -284,3 +284,49 @@ it('revert of a detach to a merged-away parent is 409 entity_unavailable', async
     await s.t.close();
   }
 });
+
+it('revert of a detach whose part was merged away is 409 entity_unavailable', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [
+      work('season', 'season'),
+      work('ep', 'episode'),
+      work('other', 'episode'),
+      partOf('season', 'ep', 1),
+    ]);
+    const [ep, other] = [1, 2].map((i) => s.idOf(made, i));
+    const link = await s.parentLink(ep!);
+    const detach = s.changeOf(await publish(s.author, s.mod, [unrelate(link!.id)]), 0);
+    await s.mergeLive(ep!, other!);
+    const status = await s.statusOf(detach);
+    await s.expectError(await s.mod.post(`/api/changes/${detach}/revert`), 409, 'entity_unavailable');
+    expect(await s.parentLink(ep!)).toBeNull();
+    expect(await s.parentLink(other!)).toBeNull();
+    expect(await s.statusOf(detach)).toBe(status);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('a merge with the other end’s own parent is exempt from conflicting_parents', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [
+      work('show', 'series'),
+      work('s1', 'season'),
+      work('s2', 'season'),
+      partOf('show', 's1', 1),
+      partOf('show', 's2', 2),
+    ]);
+    const [show, s1, s2] = [0, 1, 2].map((i) => s.idOf(made, i));
+    // A season into its own show: the show→season link would become a self-link, and is dropped.
+    const seasonIntoShow = await s.mergeLive(s1!, show!);
+    expect(await s.partsOf(show!)).toEqual([[s2, 2]]);
+    await s.revert(seasonIntoShow);
+    // A show into its own season: the self-link is dropped, but the other season can't go under a season.
+    const pending = await submit(s.author, [merge(show!, s2!)]);
+    await s.expectError(await s.approve(s.changeOf(pending, 0)), 409, 'invalid_tree');
+  } finally {
+    await s.t.close();
+  }
+});

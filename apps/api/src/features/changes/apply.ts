@@ -635,7 +635,8 @@ const relationKey = (r: typeof relations.$inferSelect) =>
  * can't deadlock) and returns the two ends. Throws 409 if either end isn't live. Merged ones are
  * still returned: callers check. A parent is locked with `lockRow`, live or not, so a removed show
  * doesn't block a merge of its parts. The parent links are read again under the locks, and a
- * change runs another pass, keeping the locks held, as `requireEntities` does.
+ * change runs another pass, keeping the locks held, as `requireEntities` does. The loop ends: each
+ * repeat needs another change to a parent link to commit in that window.
  */
 async function lockPair(tx: Tx, fromId: string, intoId: string) {
   const parents = () => Promise.all([parentIdOf(tx, fromId), parentIdOf(tx, intoId)]);
@@ -830,20 +831,21 @@ export async function applyInverse(tx: Tx, inverse: Inverse, byChangeId: string)
       }
       const { fromId: parentId, toId: childId } = relation;
       for (const id of [parentId, childId].toSorted()) await lockRow(tx, id);
-      // A revert never re-attaches a part to a work no one can see, nor to one merged away (it
-      // isn't repointed to the winner either: that would be a new decision, not an undo).
-      const [parent] = await tx
+      // A revert never re-attaches a part to or under a work no one can see, nor one merged away
+      // (it isn't repointed to the winner either: that would be a new decision, not an undo).
+      const available = await tx
         .select({ id: entities.id })
         .from(entities)
         .where(
           and(
-            eq(entities.id, parentId),
+            inArray(entities.id, [parentId, childId]),
             isNull(entities.removedAt),
             isNull(entities.retractedByChange),
             isNull(entities.mergedIntoId),
           ),
         );
-      if (!parent) throw conflict('entity_unavailable', `Entity ${parentId} is removed or doesn’t exist`);
+      const gone = [parentId, childId].find((id) => !available.some((e) => e.id === id));
+      if (gone) throw conflict('entity_unavailable', `Entity ${gone} is removed, merged or doesn’t exist`);
       await writeUnique(tx, restore, () => parentConflict(tx, childId));
       await assertTree(tx, childId);
       return;
