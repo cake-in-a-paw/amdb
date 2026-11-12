@@ -57,7 +57,7 @@ evidence, what it maps and how it writes. It amends §6.2 as the owner decided o
 | P8345 media franchise | property |
 | P136 genre | tag, kind `genre` |
 | P144 based on / P155 follows, when the target is in AMDB | work link `adapted_from` / `sequel_of` |
-| the item's QID, P345 IMDb ID, P648 Open Library ID, P212 ISBN-13, P4947 TMDB movie ID, P4983 TMDB TV ID, P8729 AniList anime ID | external ids `wikidata`, `imdb`, `openlibrary`, `isbn13`, `tmdb_movie`, `tmdb_tv`, `anilist` (the TMDB and AniList ids must be positive integers) |
+| the item's QID, P345 IMDb ID, P648 Open Library ID, P212 ISBN-13, P4947 TMDB movie ID, P4983 TMDB TV ID, P8729 AniList anime ID, P12558 TMDB TV season ID, P12559 TMDB TV episode ID | external ids `wikidata`, `imdb`, `openlibrary`, `isbn13`, `tmdb_movie`, `tmdb_tv`, `anilist`, `tmdb_season`, `tmdb_episode` (the TMDB and AniList ids must be positive integers) |
 
 - A creator is a `person` if it is an instance of Q5 human, otherwise an `organization`.
   Creators, series and properties carry their own `wikidata` external id, so they are matched,
@@ -128,6 +128,44 @@ items now carry, plus aliases appended to name lists only import runs ever set, 
 - References resolve by the normal run's rules (works win, a QID held as another kind or removed is
   dropped, a retracted tag's slug is dropped, one QID in two roles keeps the first). A link whose
   target isn't in AMDB stays missing: a backfill imports no works, so none is deferred.
+
+## Parts
+
+A run with `--parts` imports the seasons and episodes Wikidata has for the shows AMDB holds
+(work-hierarchy spec, 2026-11-11). It creates works, unlike a backfill, and ordinary runs never
+fetch parts.
+
+- **Shows:** listed works of subtype `series` or `anime_series` with a live wikidata id, by QID
+  number ascending; `--limit` is the most shows. `--classes`, `--min-sitelinks` and `--backfill`
+  are refused with it.
+- **Discovery:** per 50 shows, items with `P179` → the show and `P31/P279*` of Q3464665 (season) or
+  Q21191270 (episode), so subclasses come too. An item in both is a season. Each item's class is the
+  base class when listed, else its lowest-numbered matching class (`partsByClass`). A batch query
+  that fails is asked again one show at a time; a single-show failure fails the run.
+- **Mapping:** as a work (fields, creators, external ids including `tmdb_season`/`tmdb_episode`),
+  with subtype `season` or `episode`. No series membership (`P179` gives the parent), no work links
+  (`P155`/`P156` aren't mapped to `sequel_of`), no franchises and no genre tags. Credits go only to
+  creators AMDB holds live; any other credit is counted `creditsSkipped`, never created.
+- **Placement:** a season under its show, numbered by its `P1545` on `P179`, else by the show's
+  `P527` list. An episode under its `P4908` season when that season is under the show, else under
+  the one season whose `P527` lists it, else directly under the show by its overall number when the
+  show has no seasons; otherwise it is counted `partsUnplaced` and not created.
+- **Submissions:** one per season (its create and `work_part` from the show, its ids and credits,
+  then each new episode's create, `work_part` from the season, ids and credits); episodes directly
+  under a show go 25 to a submission. A submission with nothing new isn't sent. The size cap is
+  checked before each one, so no episode lands without its season and show. `duplicate_external_id`
+  retries once with only wikidata ids; any other item error skips the submission, counting its
+  parts `partsSkipped.invalid`.
+- **Re-runs:** a part AMDB holds is never moved (`partsPresent`); a reverted one stays reverted
+  (`partsSkipped.reverted`); a QID held as a work that isn't a part is counted `partsHeldAsRoot`
+  and its subtype is never changed; one held as another kind is `partsSkipped.held_as_other`. A
+  hand-entered part under the same parent that never had a wikidata id is adopted (it gets the
+  wikidata id, and no field changes) when it is the only one there with the same subtype and
+  number, or, for an unnumbered part, the same normalized title; never for a QID a moderator
+  removed from any entity (`partsAdopted`).
+- **Dry run:** `--parts --dry-run` reads the database and Wikidata, starts no run and writes
+  nothing, and prints counts only (per class, placement, skipped credits). The bytes per part come
+  from a real `--parts` run into a local database.
 
 ## Being a good client
 
