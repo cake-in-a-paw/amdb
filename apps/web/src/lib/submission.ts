@@ -42,6 +42,8 @@ export interface EntryForm {
   tags: (Row & { entity: Picked })[];
   links: (Row & { entity: Picked; linkType: WorkLinkType })[];
   externalIds: (Row & { scheme: IdScheme | ''; value: string })[];
+  /** What this work is a part of (a season's show, an episode's season or show): 0 or 1 rows. */
+  parent: (Row & { entity: Picked; position: string })[];
   note: string;
 }
 
@@ -74,8 +76,17 @@ export function isEntryForm(v: unknown): v is EntryForm {
     rowsOf(v.properties, (r) => isPicked(r.entity)) &&
     rowsOf(v.tags, (r) => isPicked(r.entity)) &&
     rowsOf(v.links, (r) => isPicked(r.entity) && WorkLinkType.safeParse(r.linkType).success) &&
-    rowsOf(v.externalIds, (r) => (r.scheme === '' || IdScheme.safeParse(r.scheme).success) && isText(r.value))
+    rowsOf(v.externalIds, (r) => (r.scheme === '' || IdScheme.safeParse(r.scheme).success) && isText(r.value)) &&
+    rowsOf(v.parent, (r) => isPicked(r.entity) && isText(r.position))
   );
+}
+
+/**
+ * A saved form brought up to this version, for `isEntryForm` to check: one saved before forms had
+ * a parent gets an empty one. Anything else comes back as it is.
+ */
+export function upgradeForm(v: unknown): unknown {
+  return isRecord(v) && !('parent' in v) ? { ...v, parent: [] } : v;
 }
 
 export const emptyForm = (): EntryForm => ({
@@ -87,6 +98,7 @@ export const emptyForm = (): EntryForm => ({
   tags: [],
   links: [],
   externalIds: [],
+  parent: [],
   note: '',
 });
 
@@ -234,7 +246,7 @@ const endpoint = (picked: Picked) => ('id' in picked ? { id: picked.id } : { ref
 
 /** Every entry the form names, in order: what each relation points at. */
 function pickedEntries(form: EntryForm): Picked[] {
-  return [form.credits, form.series, form.properties, form.tags, form.links].flatMap((rows) =>
+  return [form.credits, form.series, form.properties, form.tags, form.links, form.parent].flatMap((rows) =>
     rows.map((row) => row.entity),
   );
 }
@@ -269,6 +281,10 @@ export function relationChanges(form: EntryForm, entry: { id: string } | { ref: 
   for (const x of form.externalIds) {
     // An unchosen scheme never gets here: `validateForm` stops the submission first.
     if (x.scheme) relate('external_id', entry, undefined, { scheme: x.scheme, value: x.value.trim() });
+  }
+  for (const p of form.parent) {
+    const position = p.position.trim();
+    relate('work_part', endpoint(p.entity), entry, position ? { position: Number(position) } : {});
   }
   return changes;
 }
@@ -375,6 +391,13 @@ export function fieldErrors(
 
 const positiveInteger = (raw: string) => /^\d+$/.test(raw.trim()) && Number(raw.trim()) >= 1;
 
+/** The largest part number the API takes (a Postgres `integer`). */
+const POSITION_MAX = 2147483647;
+
+/** A part's number: blank (none), or a whole number from 0 to `POSITION_MAX`. */
+const partNumber = (raw: string) =>
+  raw.trim() === '' || (/^\d+$/.test(raw.trim()) && Number(raw.trim()) <= POSITION_MAX);
+
 /**
  * Checks the form with the same field schemas the API uses (from `@amdb/shared`), plus the rules
  * the API applies to each relation, so the form and the API agree. Empty means it can be sent.
@@ -390,6 +413,9 @@ export function validateForm(form: EntryForm, stored?: EntryForm): FormErrors {
   });
   form.series.forEach((s, i) => {
     if (!positiveInteger(s.position)) errors[`series.${i}.position`] = 'Use a whole number from 1.';
+  });
+  form.parent.forEach((p, i) => {
+    if (!partNumber(p.position)) errors[`parent.${i}.position`] = `Use a whole number from 0 to ${POSITION_MAX}.`;
   });
   form.externalIds.forEach((x, i) => {
     if (!x.scheme) errors[`externalIds.${i}.scheme`] = 'Choose the type of ID.';

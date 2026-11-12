@@ -1,28 +1,19 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
-import { actors, publish, renderApp, seed, type TestApi } from './harness';
+import { expect, test } from 'vitest';
+import {
+  actors,
+  idsByRef,
+  partOf,
+  publish,
+  publishTree,
+  renderApp,
+  seed,
+  tvWork,
+  watchSubmissionBodies,
+  type TestApi,
+} from './harness';
 
 const CC0 = 'I release this contribution into the public domain (CC0)';
-
-const urlOf = (input: Request | string | URL) => (input instanceof Request ? input.url : String(input));
-
-/**
- * Watches the in-process API; the returned function lists the bodies of the submission POSTs so
- * far. A request's body can be read once, so each is copied before the API takes it.
- */
-function watchSubmissions(t: { api: TestApi }) {
-  const real = t.api.app.request.bind(t.api.app);
-  const bodies: Promise<{ cc0: boolean; changes: Record<string, unknown>[] }>[] = [];
-  vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
-    const method = input instanceof Request ? input.method : (init?.method ?? 'GET');
-    if (urlOf(input).endsWith('/api/submissions') && method === 'POST') {
-      const text = input instanceof Request ? input.clone().text() : Promise.resolve(String(init?.body));
-      bodies.push(text.then((raw) => JSON.parse(raw)));
-    }
-    return real(input, init);
-  });
-  return () => Promise.all(bodies);
-}
 
 const stored = (key: string) => localStorage.getItem(`amdb.draft.${key}`);
 
@@ -48,7 +39,7 @@ test('the form opens pre-filled from the entry, with its kind and media type fix
 test('changing only the year sends an update with the year alone', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const year = await screen.findByLabelText('Release year');
   await t.user.clear(year);
@@ -68,7 +59,7 @@ test('changing only the year sends an update with the year alone', async () => {
 test('clearing an optional field sends null for it', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   await t.user.clear(await screen.findByLabelText(/^Description/));
   await t.user.click(screen.getByLabelText(CC0));
@@ -83,7 +74,7 @@ test('clearing an optional field sends null for it', async () => {
 test('removing a tag sends an unrelate with its relation id', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
   const entity = (await (await t.api.app.request(`/api/entities/${t.seeded.works.spiritedAway}`)).json()) as {
     relations: { tags: { relationId: string }[] };
   };
@@ -110,7 +101,7 @@ test('each Remove button names its row and its section', async () => {
 test('adding a creator sends a relate for it', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   await t.user.type(await screen.findByLabelText('Find a creator'), 'Diana');
   await t.user.click(await screen.findByRole('button', { name: /^Diana Wynne Jones/ }));
@@ -132,7 +123,7 @@ test('adding a creator sends a relate for it', async () => {
 test("changing a credit's role replaces the credit: an unrelate, then a relate", async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   await t.user.selectOptions(await screen.findByLabelText('Role for Hayao Miyazaki'), 'writer');
   await t.user.click(screen.getByLabelText(CC0));
@@ -327,7 +318,7 @@ test('a draft saved before someone else changed the entry sends only what the co
       );
     },
   );
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   // The form follows the entry for what the contributor never touched, and keeps their edit.
   expect(await screen.findByLabelText(/^Original title/)).toHaveValue('Sen to Chihiro');
@@ -359,7 +350,7 @@ test('when both changed the same field the contributor is told, and their value 
       ]);
     },
   );
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   expect(await screen.findByText(/changed since you started editing.*release year/)).toBeInTheDocument();
   expect(screen.getByLabelText('Release year')).toHaveValue(2002);
@@ -387,7 +378,7 @@ test('a relation the contributor removed and someone else removed too sends no u
       await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.tags[0]?.relationId }]);
     },
   );
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   await screen.findByLabelText('Title');
   expect(within(screen.getByRole('list', { name: 'Tags' })).queryByText('Fantasy')).not.toBeInTheDocument();
@@ -417,7 +408,7 @@ test("a background refetch while the form is open sends only the contributor's e
   );
   // ...and the entry is read again, as on returning to the tab.
   await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   await t.user.click(screen.getByLabelText(CC0));
   await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
@@ -443,7 +434,7 @@ test('a credit the contributor changed and someone else removed meanwhile is kep
   const { contributor, moderator } = await actors(t.api);
   await publish(contributor, moderator, [{ op: 'unrelate', relationId: view.relations.creators[0]?.relationId }]);
   await t.router.options.context.queryClient.refetchQueries({ queryKey: ['entity', id] });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   expect(await screen.findByText(/changed since you started editing.*check credits\./)).toBeInTheDocument();
   expect(screen.getByLabelText('Role for Hayao Miyazaki')).toHaveValue('writer');
@@ -529,7 +520,7 @@ const NAMES = 'Also known as';
 test('edit adds a name and submits the array', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   expect(names).toHaveAccessibleDescription('One name per line');
@@ -551,7 +542,7 @@ test('edit adds a name and submits the array', async () => {
 test('duplicate lines and the title are dropped before submit', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   fireEvent.change(names, { target: { value: 'spirited away\n  Sen  \n\nsen\nChihiro\n' } });
@@ -572,7 +563,7 @@ test('duplicate lines and the title are dropped before submit', async () => {
 test('51 lines blocks submit', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   fireEvent.change(names, { target: { value: Array.from({ length: 51 }, (_, i) => `Name ${i}`).join('\n') } });
@@ -604,7 +595,7 @@ test('emptying the list sends an empty array, and leaving it alone sends nothing
     },
   });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   expect(names).toHaveValue('Franz');
@@ -639,7 +630,7 @@ test('a live note lists the lines that will not be saved, and only then', async 
 test('the 50 limit counts the names that would be saved', async () => {
   const t = await renderApp('/', { as: 'contributor', seed });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded.works.spiritedAway } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   const lines = Array.from({ length: 49 }, (_, i) => `Name ${i}`);
@@ -672,7 +663,7 @@ test('editing only the description leaves a stored list alone, even one repeatin
     },
   });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const description = await screen.findByLabelText(/^Description/);
   // The stored "Beta" now repeats the title, but nobody typed it, so it isn't reported as dropped.
@@ -715,7 +706,7 @@ test('an entry a merge left with over 50 names can still be edited, until its na
     },
   });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   expect(String((names as HTMLTextAreaElement).value).split('\n')).toHaveLength(60);
@@ -756,7 +747,7 @@ test('changing a list a merge left over 50 names asks for 50 at most', async () 
     },
   });
   await t.router.navigate({ to: '/entities/$id/edit', params: { id: t.seeded } });
-  const posts = watchSubmissions(t);
+  const posts = watchSubmissionBodies(t);
 
   const names = await screen.findByLabelText(NAMES);
   fireEvent.change(names, { target: { value: `${(names as HTMLTextAreaElement).value}\nOne more` } });
@@ -766,4 +757,112 @@ test('changing a list a merge left over 50 names asks for 50 at most', async () 
   expect(names).toHaveAttribute('aria-invalid', 'true');
   expect(names).toHaveAccessibleDescription('One name per line At most 50 names');
   expect(await posts()).toHaveLength(0);
+});
+
+/** Breaking Bad with two seasons, and the pilot as episode 3 of Season 1. */
+const tree = (api: TestApi) =>
+  publishTree(api, [
+    tvWork('show', 'series', 'Breaking Bad'),
+    tvWork('s1', 'season', 'Breaking Bad Season 1'),
+    tvWork('s2', 'season', 'Breaking Bad Season 2'),
+    tvWork('pilot', 'episode', 'Pilot'),
+    partOf('show', 's1', 1),
+    partOf('show', 's2', 2),
+    partOf('s1', 'pilot', 3),
+  ]);
+
+/** Opens the edit form of the seeded work `ref`, returning its live parent link's relation id. */
+async function editPart(t: Awaited<ReturnType<typeof renderApp<Record<string, string>>>>, ref: string) {
+  const id = t.seeded[ref] ?? '';
+  const entity = (await (await t.api.app.request(`/api/entities/${id}`)).json()) as {
+    relations: { parent: { relationId: string } | null };
+  };
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+  await screen.findByLabelText('Title');
+  return { id, relationId: entity.relations.parent?.relationId };
+}
+
+async function submitEdit(t: Awaited<ReturnType<typeof renderApp>>, posts: ReturnType<typeof watchSubmissionBodies>) {
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  return (await posts())[0]?.changes;
+}
+
+test('edit renumbers a part', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed: tree });
+  const { id, relationId } = await editPart(t, 'pilot');
+  const posts = watchSubmissionBodies(t);
+
+  const part = screen.getByRole('group', { name: 'Part of' });
+  expect(within(part).getByText('Breaking Bad Season 1')).toBeInTheDocument();
+  const number = within(part).getByLabelText(/^Number/);
+  expect(number).toHaveValue(3);
+  await t.user.clear(number);
+  await t.user.type(number, '4');
+
+  expect(await submitEdit(t, posts)).toEqual([
+    { op: 'unrelate', relationId },
+    { op: 'relate', type: 'work_part', from: { id: t.seeded.s1 }, to: { id }, data: { position: 4 } },
+  ]);
+});
+
+test('edit moves a part', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed: tree });
+  const { id, relationId } = await editPart(t, 'pilot');
+  const posts = watchSubmissionBodies(t);
+
+  await t.user.click(screen.getByRole('button', { name: 'Remove Breaking Bad Season 1 from part of' }));
+  await t.user.type(screen.getByLabelText('Find the show or season'), 'Breaking Bad Season 2');
+  await t.user.click(await screen.findByRole('button', { name: /^Breaking Bad · Season 2/ }));
+  await t.user.type(screen.getByLabelText(/^Number/), '1');
+
+  expect(await submitEdit(t, posts)).toEqual([
+    { op: 'unrelate', relationId },
+    { op: 'relate', type: 'work_part', from: { id: t.seeded.s2 }, to: { id }, data: { position: 1 } },
+  ]);
+});
+
+test('edit detaches a part', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed: tree });
+  const { relationId } = await editPart(t, 'pilot');
+  const posts = watchSubmissionBodies(t);
+
+  await t.user.click(screen.getByRole('button', { name: 'Remove Breaking Bad Season 1 from part of' }));
+  // With the row gone, a new parent can be picked.
+  expect(screen.getByLabelText('Find the show or season')).toBeInTheDocument();
+
+  expect(await submitEdit(t, posts)).toEqual([{ op: 'unrelate', relationId }]);
+});
+
+test('edit detaches a part from a removed show', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: async (api) => {
+      const { contributor, moderator } = await actors(api);
+      const changes = [
+        tvWork('show', 'series', 'Gone Show'),
+        tvWork('episode', 'episode', 'Gone Episode'),
+        partOf('show', 'episode', 1),
+      ];
+      const made = await publish(contributor, moderator, changes);
+      const admin = api.as({ kind: 'user', userId: await api.createUser({ role: 'admin' }) });
+      const removed = await admin.post(`/api/admin/changes/${made.changes[0]?.id}/redact`, {
+        reason: 'Abuse',
+        removeEntity: true,
+      });
+      expect(removed.status, await removed.clone().text()).toBe(200);
+      return idsByRef(changes, made.changes);
+    },
+  });
+  const { relationId } = await editPart(t, 'episode');
+  expect(relationId).toBeDefined();
+  const posts = watchSubmissionBodies(t);
+
+  const part = screen.getByRole('group', { name: 'Part of' });
+  expect(part).toHaveTextContent('a removed work');
+  expect(part).not.toHaveTextContent('Gone Show');
+  await t.user.click(within(part).getByRole('button', { name: 'Remove a removed work from part of' }));
+
+  expect(await submitEdit(t, posts)).toEqual([{ op: 'unrelate', relationId }]);
 });

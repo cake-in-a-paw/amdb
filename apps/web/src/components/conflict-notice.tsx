@@ -24,6 +24,7 @@ const fieldNames: Record<string, string> = {
   tags: 'tags',
   links: 'related works',
   externalIds: 'external IDs',
+  parent: 'part of',
 };
 
 /** `kind` is a creator's "Person or organization" and a tag's "Tag kind". */

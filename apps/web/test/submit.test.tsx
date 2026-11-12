@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
 import { buildSubmission, emptyForm, type EntryForm } from '@/lib/submission';
-import { renderApp, seed, type TestApi } from './harness';
+import { partOf, publishTree, renderApp, seed, tvWork, watchSubmissionBodies, type TestApi } from './harness';
 
 type App = Awaited<ReturnType<typeof renderApp<Awaited<ReturnType<typeof seed>>>>>;
 
@@ -314,4 +314,97 @@ test("a failed account lookup doesn't open the signed-out draft; Try again opens
   await t.user.click(screen.getByRole('button', { name: 'Try again' }));
   expect(await screen.findByRole('heading', { level: 1 })).toBeInTheDocument();
   await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+});
+
+/** Breaking Bad, its Season 1, and the season's first episode, "Pilot". */
+const tree = (api: TestApi) =>
+  publishTree(api, [
+    tvWork('show', 'series', 'Breaking Bad'),
+    tvWork('s1', 'season', 'Breaking Bad Season 1'),
+    tvWork('pilot', 'episode', 'Pilot'),
+    partOf('show', 's1', 1),
+    partOf('s1', 'pilot', 1),
+  ]);
+
+/** Starts a new episode titled `title` and picks Season 1 as what it is a part of. */
+async function episodeUnderSeason(t: Awaited<ReturnType<typeof renderApp>>, title: string) {
+  await t.user.selectOptions(screen.getByLabelText('Media type'), 'film_tv');
+  await t.user.selectOptions(screen.getByLabelText('Type'), 'Movie');
+  // A movie is never a part of anything.
+  expect(screen.queryByRole('group', { name: 'Part of' })).not.toBeInTheDocument();
+  await t.user.selectOptions(screen.getByLabelText('Type'), 'Episode');
+  await t.user.type(screen.getByLabelText('Title'), title);
+  // Seasons are left out of search unless the picker asks for parts, and are named by their place.
+  await t.user.type(screen.getByLabelText('Find the show or season'), 'Breaking Bad Season');
+  await t.user.click(await screen.findByRole('button', { name: /^Breaking Bad · Season 1/ }));
+  expect(screen.queryByLabelText('Find the show or season')).not.toBeInTheDocument();
+}
+
+test('submit an episode under a season', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed: tree });
+  const posts = watchSubmissionBodies(t);
+
+  await episodeUnderSeason(t, "Cat's in the Bag...");
+  await t.user.type(screen.getByLabelText(/^Number/), '3');
+  await t.user.click(screen.getByLabelText('I release this contribution into the public domain (CC0)'));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes).toEqual([
+    {
+      op: 'create',
+      kind: 'work',
+      ref: 'entry',
+      fields: { mediaType: 'film_tv', subtype: 'episode', title: "Cat's in the Bag..." },
+    },
+    { op: 'relate', type: 'work_part', from: { id: t.seeded.s1 }, to: { ref: 'entry' }, data: { position: 3 } },
+  ]);
+});
+
+test('blank number sends no position', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed: tree });
+  const posts = watchSubmissionBodies(t);
+
+  await episodeUnderSeason(t, 'Unnumbered');
+  await t.user.type(screen.getByLabelText(/^Number/), '  ');
+  await t.user.click(screen.getByLabelText('I release this contribution into the public domain (CC0)'));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  await waitFor(async () => expect(await posts()).toHaveLength(1));
+  expect((await posts())[0]?.changes.at(-1)).toEqual({
+    op: 'relate',
+    type: 'work_part',
+    from: { id: t.seeded.s1 },
+    to: { ref: 'entry' },
+    data: {},
+  });
+});
+
+test('out-of-range number blocks submit', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed: tree });
+  const posts = watchSubmissionBodies(t);
+
+  await episodeUnderSeason(t, 'Out of Range');
+  const number = screen.getByLabelText(/^Number/);
+  await t.user.type(number, '-1');
+  await t.user.click(screen.getByLabelText('I release this contribution into the public domain (CC0)'));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(number).toHaveAttribute('aria-invalid', 'true');
+  expect(number).toHaveAccessibleDescription('Use a whole number from 0 to 2147483647.');
+  expect(number).toHaveFocus();
+
+  await t.user.clear(number);
+  await t.user.type(number, '2147483648');
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+  expect(number).toHaveAccessibleDescription('Use a whole number from 0 to 2147483647.');
+  expect(await posts()).toHaveLength(0);
+});
+
+test('the duplicate check looks among the parts of the picked parent', async () => {
+  const t = await renderApp('/submit', { as: 'contributor', seed: tree });
+
+  await episodeUnderSeason(t, 'Pilot');
+  const found = await screen.findByRole('list', { name: 'Already in the catalog' });
+  expect(within(found).getByRole('link', { name: 'Pilot' })).toBeInTheDocument();
 });

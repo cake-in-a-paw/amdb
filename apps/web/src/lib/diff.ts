@@ -78,8 +78,14 @@ export function buildEdit(entity: EntityView, form: EntryForm): ChangeInput[] {
     form.externalIds,
     (a, b) => a.scheme === b.scheme && a.value.trim() === b.value.trim(),
   );
+  // A part's number may be blank (none): blank is unchanged only by blank, a number by its number.
+  const partNumber = (raw: string) => Number(raw.trim() || NaN);
+  const parent = rowChanges(original.parent, form.parent, (a, b) => {
+    const [x, y] = [partNumber(a.position), partNumber(b.position)];
+    return x === y || (Number.isNaN(x) && Number.isNaN(y));
+  });
 
-  const removed = [credits, series, properties, tags, links, ids].flatMap((r) => r.removed);
+  const removed = [credits, series, properties, tags, links, ids, parent].flatMap((r) => r.removed);
   const added: EntryForm = {
     ...emptyForm(),
     kind,
@@ -89,6 +95,7 @@ export function buildEdit(entity: EntityView, form: EntryForm): ChangeInput[] {
     tags: tags.added,
     links: links.added,
     externalIds: ids.added,
+    parent: parent.added,
   };
   return [
     ...changes,

@@ -16,6 +16,7 @@ import {
   buildSubmission,
   emptyForm,
   isEntryForm,
+  upgradeForm,
   validateForm,
   type EntryForm as EntryFormValue,
   type FormErrors,
@@ -62,7 +63,12 @@ function Submit() {
 function SubmitForm({ identity, offered }: { identity: string; offered: string | undefined }) {
   const { api } = Route.useRouteContext();
   const { key, adoptFrom } = draftKeys('submit', identity);
-  const [form, setForm, clearDraft] = useDraft<EntryFormValue>(key, EMPTY, { valid: isEntryForm, adoptFrom });
+  const [form, setForm, clearDraft] = useDraft<EntryFormValue>(key, EMPTY, {
+    valid: (v): v is EntryFormValue => isEntryForm(upgradeForm(v)),
+    // `valid` just checked the upgraded draft, so upgraded it is an EntryForm.
+    migrate: (d) => upgradeForm(d) as EntryFormValue,
+    adoptFrom,
+  });
   const [cc0, setCc0] = useState(false);
   // Errors show once a submit was tried, then follow the form as it changes.
   const [checked, setChecked] = useState(false);

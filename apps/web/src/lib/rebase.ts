@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { same } from '@/lib/diff';
 import { useDraft } from '@/lib/drafts';
-import { isEntryForm, type EntryForm } from '@/lib/submission';
+import { isEntryForm, upgradeForm, type EntryForm } from '@/lib/submission';
 
 /**
  * An edit in progress: the form as the contributor started it (`base`, built from the entry at
@@ -92,22 +92,19 @@ export function rebase(
     tags: rows('tags', base.tags, draft.tags, current.tags),
     links: rows('links', base.links, draft.links, current.links),
     externalIds: rows('externalIds', base.externalIds, draft.externalIds, current.externalIds),
+    parent: rows('parent', base.parent, draft.parent, current.parent),
   };
   return { form, conflicts };
 }
 
-/** Whether `v` is an edit draft this version can read: both forms parse, and are of `kind`. */
+/**
+ * Whether `v` is an edit draft this version can read, once each form is upgraded (`upgradeForm`):
+ * both forms parse, and are of `kind`. The draft itself isn't changed, so the caller upgrades it too.
+ */
 export function isEditDraft(v: unknown, kind: EntryForm['kind']): v is EditDraft {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    'base' in v &&
-    'form' in v &&
-    isEntryForm(v.base) &&
-    isEntryForm(v.form) &&
-    v.base.kind === kind &&
-    v.form.kind === kind
-  );
+  if (typeof v !== 'object' || v === null || !('base' in v) || !('form' in v)) return false;
+  const [base, form] = [upgradeForm(v.base), upgradeForm(v.form)];
+  return isEntryForm(base) && isEntryForm(form) && base.kind === kind && form.kind === kind;
 }
 
 /**
@@ -130,7 +127,9 @@ export function useEditDraft(
     {
       valid: (v): v is EditDraft => isEditDraft(v, current.kind),
       migrate: (saved) => {
-        const rebased = rebase(saved.base, saved.form, current);
+        // `valid` checked these forms upgraded: upgraded, they are EntryForms.
+        const [base, form] = [upgradeForm(saved.base) as EntryForm, upgradeForm(saved.form) as EntryForm];
+        const rebased = rebase(base, form, current);
         loaded.current = rebased.conflicts;
         return { base: current, form: rebased.form };
       },

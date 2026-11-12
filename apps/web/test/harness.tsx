@@ -3,7 +3,7 @@ import { createApiClient } from '@amdb/shared/api';
 import { createMemoryHistory, RouterProvider } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { expect, onTestFinished } from 'vitest';
+import { expect, onTestFinished, vi } from 'vitest';
 import { anonHeaders } from '@/lib/api';
 import type { AuthClient } from '@/lib/auth';
 import { createAppRouter } from '@/router';
@@ -271,3 +271,54 @@ const relate = (type: string, from: string, to: string, data: Record<string, unk
   to: { ref: to },
   data,
 });
+
+/** A film/TV work of `subtype`, made under `ref`. */
+export const tvWork = (ref: string, subtype: string, title: string) => ({
+  op: 'create',
+  kind: 'work',
+  ref,
+  fields: { mediaType: 'film_tv', subtype, title },
+});
+export const partOf = (parent: string, child: string, position?: number) => ({
+  op: 'relate',
+  type: 'work_part',
+  from: { ref: parent },
+  to: { ref: child },
+  data: position === undefined ? {} : { position },
+});
+
+/** Publishes `changes` the real way and returns each create's entity id by its ref. */
+export async function publishTree(api: TestApi, changes: ReturnType<typeof tvWork | typeof partOf>[]) {
+  const { contributor, moderator } = await actors(api);
+  const made = await publish(contributor, moderator, changes);
+  return idsByRef(changes, made.changes);
+}
+
+export function idsByRef(changes: { op: string; ref?: string }[], made: { entityId: string | null }[]) {
+  const ids: Record<string, string> = {};
+  changes.forEach((change, i) => {
+    const id = made[i]?.entityId;
+    if (change.op === 'create' && change.ref && id) ids[change.ref] = id;
+  });
+  return ids;
+}
+
+const urlOf = (input: Request | string | URL) => (input instanceof Request ? input.url : String(input));
+
+/**
+ * Watches the in-process API; the returned function lists the bodies of the submission POSTs so
+ * far. A request's body can be read once, so each is copied before the API takes it.
+ */
+export function watchSubmissionBodies(t: { api: TestApi }) {
+  const real = t.api.app.request.bind(t.api.app);
+  const bodies: Promise<{ cc0: boolean; changes: Record<string, unknown>[] }>[] = [];
+  vi.spyOn(t.api.app, 'request').mockImplementation((input, init) => {
+    const method = input instanceof Request ? input.method : (init?.method ?? 'GET');
+    if (urlOf(input).endsWith('/api/submissions') && method === 'POST') {
+      const text = input instanceof Request ? input.clone().text() : Promise.resolve(String(init?.body));
+      bodies.push(text.then((raw) => JSON.parse(raw)));
+    }
+    return real(input, init);
+  });
+  return () => Promise.all(bodies);
+}

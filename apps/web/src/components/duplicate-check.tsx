@@ -14,19 +14,23 @@ const rootRoute = getRouteApi('__root__');
  * Entries like the one being added, asked of `/api/duplicates` 300ms after typing stops: ones
  * already in the catalog (each with a way to edit it instead), and pending creates, which show
  * only their title, type and year. Advice only; it never blocks the form. `excludeId` is the entry
- * being edited, so it doesn't flag itself. `level` is its heading's, one below the page's own.
+ * being edited, so it doesn't flag itself. `parentId` is the work a new part goes under: parts are
+ * matched only among that work's own, since they are left out otherwise. `level` is its heading's,
+ * one below the page's own.
  */
 export function DuplicateCheck({
   kind,
   title,
   mediaType,
   excludeId,
+  parentId,
   level = 2,
 }: {
   kind: EntityKind;
   title: string;
   mediaType?: MediaType;
   excludeId?: string | undefined;
+  parentId?: string | undefined;
   level?: 2 | 3 | undefined;
 }) {
   const { api } = rootRoute.useRouteContext();
@@ -34,13 +38,21 @@ export function DuplicateCheck({
   const settled = useDebounced(title.trim(), 300);
   // mediaType only narrows works; the API refuses it for any other kind.
   const media = kind === 'work' ? mediaType : undefined;
+  const parent = kind === 'work' ? parentId : undefined;
   const query = useQuery({
-    queryKey: ['duplicates', kind, settled, media],
+    queryKey: ['duplicates', kind, settled, media, parent],
     enabled: settled !== '',
     queryFn: async ({ signal }) =>
       unwrap(
         await api.GET('/api/duplicates', {
-          params: { query: { kind, title: settled, ...(media ? { mediaType: media } : {}) } },
+          params: {
+            query: {
+              kind,
+              title: settled,
+              ...(media ? { mediaType: media } : {}),
+              ...(parent ? { parentId: parent } : {}),
+            },
+          },
           signal,
         }),
       ),

@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { CreatorRole, IdScheme, WorkLinkType, type MediaType } from '@amdb/shared';
+import { CreatorRole, IdScheme, isPartSubtype, Subtype, WorkLinkType, type MediaType } from '@amdb/shared';
 import { DuplicateCheck } from '@/components/duplicate-check';
 import {
   DescriptionField,
@@ -79,6 +79,10 @@ export function WorkFields({
 }: Props & WorkOptions) {
   const props = { value, onChange, errors };
   const mediaType = asMediaType(value.fields.mediaType);
+  // The subtype input outlives a switch away from film and TV, which has no subtypes: read it only there.
+  const subtype = Subtype.safeParse(value.fields.subtype);
+  const isPart = mediaType === 'film_tv' && subtype.success && isPartSubtype(subtype.data);
+  const parent = value.parent[0]?.entity;
   const [reassigned, setReassigned] = useState('');
 
   // Credit roles depend on the media type: keep each one that still fits, else the first that
@@ -128,6 +132,7 @@ export function WorkFields({
           title={value.fields.title ?? ''}
           mediaType={mediaType ?? undefined}
           excludeId={entityId}
+          parentId={parent && 'id' in parent ? parent.id : undefined}
           level={headingLevel}
         />
         <TextField name="originalTitle" label="Original title" hint="(optional)" {...props} />
@@ -151,7 +156,7 @@ export function WorkFields({
         {mediaType && <TextField name="originalLanguage" label="Original language" hint="(e.g. ja)" {...props} />}
       </div>
       <DescriptionField {...props} />
-      {relations && <WorkRelations {...props} mediaType={mediaType} reassigned={reassigned} />}
+      {relations && <WorkRelations {...props} mediaType={mediaType} isPart={isPart} reassigned={reassigned} />}
     </div>
   );
 }
@@ -206,8 +211,9 @@ function WorkRelations({
   onChange,
   errors,
   mediaType,
+  isPart,
   reassigned,
-}: Props & { mediaType: MediaType | null; reassigned: string }) {
+}: Props & { mediaType: MediaType | null; isPart: boolean; reassigned: string }) {
   const without = <T,>(rows: T[], i: number) => rows.filter((_, j) => j !== i);
   const update = <T,>(rows: T[], i: number, patch: Partial<T>) =>
     rows.map((r, j) => (j === i ? { ...r, ...patch } : r));
@@ -260,6 +266,48 @@ function WorkRelations({
           <p className="text-sm text-muted-foreground">Choose a media type to add credits.</p>
         )}
       </Section>
+
+      {/* Kept while it holds a row, even once the type isn't a part's, so the row can be seen and removed. */}
+      {(isPart || value.parent.length > 0) && (
+        <Section title="Part of">
+          <ul aria-label="Part of">
+            {value.parent.map((p, i) => (
+              <PickedRow
+                key={i}
+                entity={p.entity}
+                from="part of"
+                onRemove={() => set({ parent: without(value.parent, i) })}
+              >
+                <Field
+                  name={`parent.${i}.position`}
+                  label="Number"
+                  hint="Season or episode number; leave blank if none"
+                  errors={errors}
+                >
+                  <input
+                    {...fieldProps(`parent.${i}.position`, errors)}
+                    type="number"
+                    inputMode="numeric"
+                    value={p.position}
+                    onChange={(e) => set({ parent: update(value.parent, i, { position: e.target.value }) })}
+                    className={fieldClass}
+                  />
+                </Field>
+              </PickedRow>
+            ))}
+          </ul>
+          {/* A work has one parent, picked from the catalog: a show or season made inline would need its own fields. */}
+          {value.parent.length === 0 && (
+            <RelationPicker
+              kind="work"
+              label="Find the show or season"
+              allowNew={false}
+              includeParts
+              onPick={(entity) => set({ parent: [{ entity, position: '' }] })}
+            />
+          )}
+        </Section>
+      )}
 
       <Section title="Series">
         <ul aria-label="Series">

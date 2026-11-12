@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import { expect, test, vi } from 'vitest';
-import { actors, publish, renderApp, seed, type TestApi } from './harness';
+import { actors, idsByRef, partOf, publish, publishTree, renderApp, seed, tvWork, type TestApi } from './harness';
 
 async function page(pick: (s: Awaited<ReturnType<typeof seed>>) => string) {
   // The path needs ids that only exist after seeding, so start on the home page and navigate.
@@ -171,36 +171,6 @@ test('work page shows Also known as', async () => {
   expect(await screen.findByRole('heading', { level: 1, name: 'Plain' })).toBeInTheDocument();
   expect(screen.queryByText(/Also known as/)).not.toBeInTheDocument();
 });
-
-const tvWork = (ref: string, subtype: string, title: string) => ({
-  op: 'create',
-  kind: 'work',
-  ref,
-  fields: { mediaType: 'film_tv', subtype, title },
-});
-const partOf = (parent: string, child: string, position?: number) => ({
-  op: 'relate',
-  type: 'work_part',
-  from: { ref: parent },
-  to: { ref: child },
-  data: position === undefined ? {} : { position },
-});
-
-/** Publishes `changes` the real way and returns each create's entity id by its ref. */
-async function publishTree(api: TestApi, changes: ReturnType<typeof tvWork | typeof partOf>[]) {
-  const { contributor, moderator } = await actors(api);
-  const made = await publish(contributor, moderator, changes);
-  return idsByRef(changes, made.changes);
-}
-
-function idsByRef(changes: { op: string; ref?: string }[], made: { entityId: string | null }[]) {
-  const ids: Record<string, string> = {};
-  changes.forEach((change, i) => {
-    const id = made[i]?.entityId;
-    if (change.op === 'create' && change.ref && id) ids[change.ref] = id;
-  });
-  return ids;
-}
 
 /** Breaking Bad with Season 2, Specials and Season 1 (added out of order), an episode in each numbered season, and an orphan season. */
 const breakingBad = (api: TestApi) =>

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { getAnonToken } from '@/lib/anon';
 import { moveDrafts, useDraft } from '@/lib/drafts';
 import { emptyForm } from '@/lib/submission';
-import { renderApp, seed } from './harness';
+import { partOf, publishTree, renderApp, seed, tvWork } from './harness';
 
 const KEY = 'amdb.draft.submit.anonymous';
 const CC0 = 'I release this contribution into the public domain (CC0)';
@@ -386,4 +386,52 @@ test('a 400 from the API keeps the draft and the form', async () => {
   expect(screen.getByLabelText('Title')).toHaveValue('Rocannon’s World');
   expect(within(screen.getByRole('list', { name: 'Tags' })).getByText('No such tag')).toBeInTheDocument();
   await waitFor(() => expect(stored()?.fields.title).toBe('Rocannon’s World'));
+});
+
+/** An episode form as saved before forms had a parent: no `parent` key. */
+const oldEpisodeForm = (title: string) => ({
+  kind: 'work',
+  fields: { mediaType: 'film_tv', subtype: 'episode', title },
+  credits: [],
+  series: [],
+  properties: [],
+  tags: [],
+  links: [],
+  externalIds: [],
+  note: '',
+});
+
+test('old draft without parent loads', async () => {
+  localStorage.setItem(KEY, JSON.stringify(oldEpisodeForm('Saved Before Parts')));
+  await renderApp('/submit');
+
+  expect(await screen.findByLabelText('Title')).toHaveValue('Saved Before Parts');
+  expect(screen.getByLabelText('Type')).toHaveValue('episode');
+  const part = screen.getByRole('group', { name: 'Part of' });
+  expect(within(part).queryAllByRole('listitem')).toHaveLength(0);
+  expect(within(part).getByLabelText('Find the show or season')).toBeInTheDocument();
+});
+
+test('an old edit draft without parent loads, keeping the edit and the live parent', async () => {
+  const t = await renderApp('/', {
+    as: 'contributor',
+    seed: (api) =>
+      publishTree(api, [
+        tvWork('show', 'series', 'Breaking Bad'),
+        tvWork('pilot', 'episode', 'Pilot'),
+        partOf('show', 'pilot', 1),
+      ]),
+  });
+  const id = t.seeded.pilot ?? '';
+  // Nested forms aren't laid over a fresh one when a draft loads, so each needs upgrading.
+  localStorage.setItem(
+    `amdb.draft.edit.${id}`,
+    JSON.stringify({ base: oldEpisodeForm('Pilot'), form: oldEpisodeForm('Pilot (edited)') }),
+  );
+  await t.router.navigate({ to: '/entities/$id/edit', params: { id } });
+
+  expect(await screen.findByLabelText('Title')).toHaveValue('Pilot (edited)');
+  const part = screen.getByRole('group', { name: 'Part of' });
+  expect(within(part).getByText('Breaking Bad')).toBeInTheDocument();
+  expect(within(part).getByLabelText(/^Number/)).toHaveValue(1);
 });
