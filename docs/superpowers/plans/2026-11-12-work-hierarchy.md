@@ -52,9 +52,9 @@
   - `400 invalid_tree` at plan time, `409 invalid_tree` at apply: the tree list is broken, or a work would be its own part;
   - `409 has_parent`: a second live parent;
   - `409 conflicting_parents`: a merge of two works with different parents;
-  - `400/409 invalid_relation`: `series_work` or `property_work` to a work whose subtype is a part subtype.
+  - `400/409 invalid_relation`: `series_work` or `property_work` to a work whose subtype is a part subtype, at relate or when a work with one live becomes a part.
 - **What counts as a part:** a work whose subtype is a part subtype (`season`, `episode`), whether attached or not.
-  - Parts are out of default search, browse, related groups and the duplicate check, and never listed as roots.
+  - Parts are out of default search, browse, related groups and the duplicate check's live `existing` matches, and never listed as roots. Pending creates stay in `pending` unfiltered (Task 5, constitution I).
   - Decided: test the subtype, not the presence of a parent. That keeps orphans and parts of removed shows out too, with no join.
 - **Parts order:** by position, then parts with no position, then a `season` numbered 0. Ties break by release date, title, then id.
 - **Import:**
@@ -103,7 +103,7 @@
 **Interfaces:**
 - **Produces in `@amdb/shared`:**
   - `PART_OF` (`satisfies Partial<Record<MediaType, Partial<Record<Subtype, readonly Subtype[]>>>>`) holds the film_tv rows from Global Constraints. A doc comment names the music and games rows to come.
-  - `PART_SUBTYPES: readonly Subtype[]`, derived from `PART_OF`'s keys: `['season', 'episode']`.
+  - `PART_SUBTYPES: readonly Subtype[]`, derived from the subtype keys under every media type in `PART_OF`: `['season', 'episode']`.
   - `ZERO_LAST_SUBTYPES: readonly Subtype[] = ['season']`.
   - `isPartSubtype(subtype: Subtype | null): boolean`.
   - `type WorkShape = { mediaType: MediaType; subtype: Subtype | null }`.
@@ -115,7 +115,7 @@
   - both are declared in `schema.ts`.
 - **Web words:**
   - `season: 'Season'`, `episode: 'Episode'`, `tmdb_season: 'TMDB (season)'`, `tmdb_episode: 'TMDB (episode)'`;
-  - for `work_part`: "Part of a work" in the diff, "Added as a part" plus ` at no. N` in history, and "Part of X" plus `, no. N` in the submission result.
+  - for `work_part`: "Part of a work" in the diff, "Added as a part" plus ` at no. N` in history, and "Under X" plus `, no. N` in the submission result. Decided: not "Part of X", which `property_work` already reads.
 
 - [ ] **Step 1: Write failing tests**
   - `canBePartOf` cases:
@@ -125,6 +125,7 @@
     - `{film_tv, movie}` under `{film_tv, series}` is false;
     - `{film_tv, episode}` under `{book, null}` is false.
   - `isPartSubtype('episode')` is true. `isPartSubtype('series')` and `isPartSubtype(null)` are false.
+  - `PART_SUBTYPES` equals `['season', 'episode']`, and `ZERO_LAST_SUBTYPES` equals `['season']`.
   - In `schema.test.ts`, with the existing `rejects` helper:
     - two live `work_part` rows to one child fail on `"relations_one_parent"`;
     - after the first is retired (`removed_by_change` set), a second succeeds;
@@ -140,6 +141,7 @@
 
 **Files:**
 - Modify: `apps/api/src/features/changes/schemas.ts`. Line 31 changes `position` to `.min(0)`. Decided: 0 is allowed for every type, since a series "book 0" prequel is real, and it is one rule instead of two.
+- Regenerate: the OpenAPI snapshot and client types, since the `position` minimum is in `ChangeInput`.
 - Modify: `apps/api/src/features/changes/service.ts`:
   - `Resolved` 72–78;
   - `RELATION_RULES` 81–96;
@@ -168,35 +170,39 @@
   - `findParentLink(to.id, freed)` → 409 `has_parent` with details `{ relationId }`. `freed` is the relation ids of earlier `unrelate`s in the same submission, as for external ids, so a move (unrelate, then relate) is one submission;
   - `series_work` or `property_work` whose `to` has a part subtype → 400 `invalid_relation`.
 - **In `apply.ts`:**
-  - `assertTree(tx: Tx, workId: string): Promise<void>` reads the work's row, its live parent link and its live children. It throws `conflict('invalid_tree', …, { workId, relationId })` when:
-    - any link fails `canBePartOf`;
-    - or the work has a part subtype and a live `series_work` or `property_work`.
+  - `assertTree(tx: Tx, workId: string): Promise<void>` reads the work's row, its live parent link and its live children. It throws:
+    - `conflict('invalid_tree', …, { workId, relationId })` when any link fails `canBePartOf`;
+    - `conflict('invalid_relation', …, { workId, relationId })` when the work has a part subtype and a live `series_work` or `property_work`, the code the relate path gives the same violation.
+  - `parentIdOf(tx: Tx, workId: string): Promise<string | null>`: the `from_id` of the work's live `work_part`, read without a lock.
   - `lockWithParent(tx: Tx, workId: string): Promise<typeof entities.$inferSelect>`. The lock rule (decided):
 
 ```ts
 // Every tree check holds the lock of the work's parent. A parent-side write already holds its own
 // lock, and every child-side write takes the parent's, so a parent subtype change and a child
-// relate or subtype change serialize. Locks are taken in id order, as requireEntities does.
+// relate or subtype change serialize. Each pass locks in id order, as requireEntities does; a retry
+// keeps the locks already held, as requireEntities does.
 // It replaces the update case's initial `requireEntity`; it never follows it, or a relate locking
-// parent then child could deadlock with it. The work must be live; its parent is locked with a
-// plain row lock, live or not, as in Task 3, so a part under a removed show can still be edited.
+// parent then child could deadlock with it. The parent is locked with `lockRow`, live or not, so a
+// part under a removed show can still be edited.
+const id = await resolveWinner(tx, workId);               // lock the winner, never a merged-away id
 for (;;) {
-  const before = await parentIdOf(tx, workId);            // unlocked read
-  for (const id of [workId, before].filter(Boolean).toSorted()) await lockRow(tx, id);
-  if ((await parentIdOf(tx, workId)) === before) break;   // re-read under lock; retry if it moved
+  const before = await parentIdOf(tx, id);                // unlocked read
+  const ids = [id, before].filter((x): x is string => x !== null).toSorted();
+  for (const x of ids) await lockRow(tx, x);
+  if ((await parentIdOf(tx, id)) === before) break;       // re-read under lock; retry if it moved
 }
-return requireEntity(tx, workId);                         // already locked: resolves and checks it's live
+return requireEntity(tx, id);  // already locked; a removed or retracted work → 409 dependency_pending, as the update case gives today
 ```
 
 - **Where the checks run:**
   - relate `work_part`: `requireEntities` locks both ends as today; after the insert, `assertTree(tx, to)`;
-  - relate `series_work` or `property_work` to a part: 409 `invalid_relation`;
+  - relate `series_work` or `property_work` to a part: 409 `invalid_relation` (the target's subtype is read under the lock `requireEntities` takes);
   - update, and the `set_fields` inverse, of a work whose keys include `mediaType` or `subtype`: `lockWithParent` in place of the first `requireEntity`, then `assertTree` after `writeRow`;
   - `restore_relation` of a `work_part`:
     - lock both ends in id order with `lockRow`;
     - a removed or retracted parent → 409 `entity_unavailable`, the code `lockPair` uses. Decided: a revert never re-attaches a part to a work no one can see;
     - then the restore inside `writeUnique`, then `assertTree(tx, toId)`.
-- **`lockRow(tx: Tx, id: string): Promise<void>`:** `select … for update` on `entities` by id, with no liveness filter. Task 3 uses it for parents too.
+- **`lockRow(tx: Tx, id: string): Promise<void>`:** `select … for update` on `entities` by id, with no liveness filter. Parents are always locked with it, here and in Task 3's merges.
 - **Unique violations:** `writeUnique`'s duplicate callback maps a `work_part` violation to `has_parent`, with the holder's relation id from `findParentLink`.
 
 - [ ] **Step 1: Write failing tests** (`setupTest()`, `publish`/`submit`, a moderator):
@@ -215,15 +221,19 @@ return requireEntity(tx, workId);                         // already locked: res
   - `pending relate then subtype change`: publish a season's change to `movie`, then approve a pending episode relate under it: 409 `invalid_tree`.
   - `revert restores a subtype only if the tree allows`: the update to `series` is applied, a season is attached under it, and the update is reverted: 409 `invalid_tree`.
   - `part under a removed show can still be edited`: an admin removes the show, and then two changes are both applied (200): an update of the season carrying `subtype: 'season'` and a new description, which takes the `lockWithParent` path, and an episode relate under the season.
-  - `series membership of a part is invalid_relation`: `series_work` to an episode at plan time is 400.
+  - `series membership of a part is invalid_relation`:
+    - `series_work` to an episode at plan time is 400;
+    - a pending `series_work` to a movie, then the movie's update to `subtype: 'episode'` applied, then approving the relate: 409 `invalid_relation`;
+    - a movie with a live `series_work`, updated to `subtype: 'episode'`: approve gives 409 `invalid_relation`.
+  - `revert of a detach to a removed parent is 409 entity_unavailable`: detach an episode from its season, an admin removes the season, then revert the detach.
   - `revert a show's create waits for its parts`: revert of the show's create is 409 `has_dependents` until the part relates are reverted, then 200.
-  - `rejecting a pending show rejects its pending part links`:
+  - `rejecting a pending show rejects only the link that depends on it`:
     - the submission holds the show, season and episode creates and both relates, all pending;
-    - rejecting the show's create rejects both relates;
-    - the season and episode creates stay pending. See Plan notes 1.
+    - rejecting the show's create rejects the show → season relate;
+    - the season → episode relate and the season and episode creates stay pending. See Controller ruling 1.
 - [ ] **Step 2:** `pnpm --filter @amdb/api test work-parts`. Expected: FAIL (`work_part` isn't in `RELATION_RULES`).
-- [ ] **Step 3:** Implement as in Interfaces.
-- [ ] **Step 4:** `pnpm test`. Expected: PASS.
+- [ ] **Step 3:** Implement as in Interfaces, then regenerate the snapshot and types.
+- [ ] **Step 4:** `pnpm check`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(api): guard the work tree on relate, update and restore`.
 
 ### Task 3: Merges keep the tree whole
@@ -236,13 +246,14 @@ return requireEntity(tx, workId);                         // already locked: res
 - Test: `apps/api/test/work-parts-merge.test.ts`
 
 **Interfaces:**
-- Consumes: `assertTree` and `has_parent` (Task 2).
+- Consumes: `assertTree`, `lockRow`, `parentIdOf` and `has_parent` (Task 2).
+- **`lockPair(tx, fromId, intoId)`** keeps its signature, its `{ loser, target }` return and its 409 `entity_unavailable` for a non-live end, and now also takes the parent locks. All three callers (the merge case, `assertUndoable`'s merge branch and the unmerge case) get them in their first pass, so a revert of a merge never locks a parent after a higher id.
+  - **Locking:** the loser, the winner and both live parents (`parentIdOf` each) are locked in one id-ordered pass. The parents are locked live or not, with `lockRow`, since a removed show must not block. Re-read the parent links after locking, and retry if they changed; a retry keeps the locks held, as `requireEntities` does.
 - **Merge case:**
-  - **Locking:** the loser, the winner and both live parents (from each one's live `work_part` link) are locked in one id-ordered pass. The parents are locked live or not, with a plain `for update` row lock, since a removed show must not block. Re-read the parent links after locking, and retry if they changed.
   - **Different parents:** both have a live parent, the parents differ, and neither parent is the other merge end → 409 `conflicting_parents`, details `{ fromParent, intoParent }`. This runs before any repoint.
   - **After the repoint loop:** `assertTree(tx, intoId)`. A violation becomes 409 `invalid_tree` and rolls the merge back.
   - **Unchanged:** the same-parent duplicate drop through `relationKey` (position ignored), and the inverse shape.
-- **Unmerge:** after relations are restored, `assertTree` on `from` and on `into`. A unique violation while restoring maps to `has_parent`.
+- **Unmerge:** holds the parent locks from `lockPair` (the spec's "under the parent's lock"); after relations are restored, `assertTree` on `from` and on `into`. A unique violation while restoring maps to `has_parent`.
 
 - [ ] **Step 1: Write failing tests**
   - `merging two copies of a show gathers seasons`:
@@ -257,13 +268,13 @@ return requireEntity(tx, workId);                         // already locked: res
   - `same-parent merge drops the loser's number; unmerge restores it`. The same parent, with the loser at position 3 and the winner with none: the loser's link is dropped as a duplicate. Assert the winner's position is unchanged (none), and that unmerge brings the loser back at position 3. This pins the existing "drop ignores position" rule.
 - [ ] **Step 2:** `pnpm --filter @amdb/api test work-parts-merge`. Expected: FAIL (`conflicting_parents` isn't raised; today the index gives a 500).
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** `pnpm test`. Expected: PASS.
+- [ ] **Step 4:** `pnpm check`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(api): keep the work tree whole across merges`.
 
 ### Task 4: Read API: parent, ancestors and paged parts
 
 **Files:**
-- Modify: `apps/api/src/features/catalog/schemas.ts`: `SummarySchema` 8–14 and `EntitySchema` 25–70; add `PartsQuery`, `PartsCursor` and `PartsSchema`.
+- Modify: `apps/api/src/features/catalog/schemas.ts`: `EntitySchema` 25–70; add `AncestorSchema`, `PartsQuery`, `PartsCursor` and `PartsSchema`.
 - Modify: `apps/api/src/features/catalog/repository.ts`:
   - `activeRelations` 39–45;
   - `worksOfHubs` 143–181;
@@ -274,7 +285,7 @@ return requireEntity(tx, workId);                         // already locked: res
 - Test: `apps/api/test/parts-read.test.ts`, `apps/api/test/related.test.ts`
 
 **Interfaces:**
-- **`AncestorSchema`:** `{ id: uuid, title: string, subtype: Subtype.nullable(), position?: int, removed: boolean }`. `position` is the ancestor's own number under its parent. A removed ancestor keeps its id and stored title (the `[removed]` placeholder), and `removed: true`.
+- **`AncestorSchema`:** `{ id: uuid, title: string, subtype: Subtype.nullable(), position?: int, removed: boolean }`, with `type Ancestor = z.infer<typeof AncestorSchema>`. `position` is the ancestor's own number under its parent. A removed ancestor keeps its id and stored title (the `[removed]` placeholder), and `removed: true`.
 - **`EntitySchema.relations` gains, for works only:**
   - `parent: { relationId, work: SummarySchema, position?: int, removed: boolean } | null`;
   - `ancestors: AncestorSchema[]`, root first, with the parent last and `[]` for a root;
@@ -284,8 +295,8 @@ return requireEntity(tx, workId);                         // already locked: res
   - `workRows(ids: string[])` returns `{ id, title, subtype, mediaType, releaseYear, removed }` with no `listed()` filter;
   - `parts(parentId: string, after: PartsCursor | null, limit: number)` returns listed children, with `limit + 1` rows;
   - `partCount(parentId: string): Promise<number>`.
-- **`ancestry(workId)`:** walks `parentLinks` upward, with at most 8 levels as a guard against corrupt data.
-- **`activeRelations(id)`:** leaves out `work_part` rows whose `from_id` is `id`. A show's parts are never loaded unbounded. The child's own parent link isn't loaded there either; `ancestry` reads it.
+- **`ancestry(workIds: string[]): Promise<Map<string, { link: { relationId: string; parentId: string; position: number | null } | null; ancestors: Ancestor[] }>>`:** the one ancestor walk, used by `getEntity` (one id) and by Task 5's search results (a page of ids). It walks up one level at a time, with one `parentLinks` and one `workRows` call per level, at most 8 levels as a guard against corrupt data. `link` is the work's own parent link, which feeds `parent` here and `part.position` in Task 5.
+- **`activeRelations(id)`:** leaves out every `work_part` row (`type <> 'work_part'`): a show's parts are never loaded unbounded, and the work's own parent link comes from `ancestry`.
 - **`worksOfHubs`:** adds `works.subtype IS NULL OR works.subtype NOT IN PART_SUBTYPES`. Decided: no part fills a "More by" or series group.
 - **`GET /api/entities/{id}/parts`:**
   - query `PartsQuery = { cursor?: string, limit: 1–100, default 50 }`;
@@ -316,7 +327,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
     - seasons at positions 2, 1 and 0, plus one with no position. The order is 1, 2, no position, 0;
     - under a season, episodes at 0, 1 and 2 list as 0, 1, 2.
   - `ties break by date then title`: two parts with no position, dated 2009 and 2008, list as 2008, then 2009.
-  - `parts cursor crosses every group`: with the five seasons above, `limit=1` paging returns each once, in that order.
+  - `parts cursor crosses every group`: with the four seasons above, `limit=1` paging returns each once, in that order.
   - `parts of a removed show still resolve`:
     - an admin removes the show;
     - the season's page answers 200 with `parent.removed: true` and the parent id;
@@ -325,7 +336,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - `More by leaves out parts` (in `related.test.ts`): a director credited on a film and on 3 episodes. The film's `byCreator` group lists no episode.
 - [ ] **Step 2:** `pnpm --filter @amdb/api test parts-read related`. Expected: FAIL.
 - [ ] **Step 3:** Implement, then regenerate the snapshot and types.
-- [ ] **Step 4:** `pnpm test`. Expected: PASS.
+- [ ] **Step 4:** `pnpm check`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(api): show a work's parent chain and page its parts`.
 
 ### Task 5: Search, browse and duplicate check leave parts out
@@ -338,13 +349,13 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 - Test: `apps/api/test/search.test.ts`, `apps/api/test/browse.test.ts`, and the duplicate-check tests in `apps/api/test/entities.test.ts` (wherever `/api/duplicates` is covered today)
 
 **Interfaces:**
-- Consumes: `PART_SUBTYPES` (Task 1); `parentLinks`, `workRows` and `AncestorSchema` (Task 4).
+- Consumes: `PART_SUBTYPES` (Task 1); `ancestry` and `AncestorSchema` (Task 4).
 - **`includeParts`:**
   - `SearchQuery` gains `includeParts: z.enum(['true', 'false']).optional()`. Decided: not `z.coerce.boolean()`, which reads `"false"` as true;
   - the repository filter gets `includeParts: boolean`;
   - without it, the filter adds `works.subtype IS NULL OR works.subtype NOT IN PART_SUBTYPES` (non-work rows have a null subtype).
 - **Browse:** always leaves parts out, with no flag.
-- **Search results:** `SummarySchema.part?: { position?: int, ancestors: AncestorSchema[] }`. It is set on search results when `includeParts` is true and the work has a live parent. One `parentLinks` and `workRows` pass per level per page, never per row.
+- **Search results:** `SummarySchema.part?: { subtype: Subtype, position?: int, ancestors: AncestorSchema[] }`. `subtype` is the part's own (non-null: only parts have live parents), so a client can tell a season from an episode at the same depth. It is set on search results when `includeParts` is true and the work has a live parent, from one `ancestry(pageIds)` call per page, never per row.
 - **Duplicate check:**
   - `DuplicatesQuery` gains `parentId?: uuid`, with kind `work` only (same refine as `mediaType`);
   - with `parentId`, `existingMatching` matches only the live, listed parts of `resolveWinner(parentId)`;
@@ -353,7 +364,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 
 - [ ] **Step 1: Write failing tests**
   - `"Pilot" finds the film, not the episode`: a film "Pilot" and an episode "Pilot". The default search returns only the film.
-  - `includeParts=true adds the episode with its context`: the episode's `part.ancestors` titles are `[show, season]`, and `part.position` is 1.
+  - `includeParts=true adds the episode with its context`: the episode's `part.ancestors` titles are `[show, season]`, `part.subtype` is `'episode'`, and `part.position` is 1.
   - `includeParts=false hides parts`: the same results as no flag.
   - `includeParts=yes is 400`.
   - `browse lists no seasons or episodes`: browsing `kind=work&mediaType=film_tv` lists the show only.
@@ -366,9 +377,9 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
     - a contributor's pending submission creates an episode "Pilot" and its `work_part` under season A;
     - `duplicates?…&parentId=<seasonB>` and `…&parentId=<seasonA>` both list it in `pending`, so its presence doesn't depend on the parent;
     - each pending entry's keys are exactly `['kind', 'mediaType', 'releaseYear', 'title']`.
-- [ ] **Step 2:** `pnpm --filter @amdb/api test search browse entities`. Expected: FAIL.
+- [ ] **Step 2:** `pnpm --filter @amdb/api test search browse entities`. Expected: FAIL, except `pending part reveals only four fields`, which passes today (zod strips the unknown `parentId`). It is the constitution-I test from outside, kept to stop a later parent filter on `pending`.
 - [ ] **Step 3:** Implement, then regenerate the snapshot and types.
-- [ ] **Step 4:** `pnpm test`. Expected: PASS.
+- [ ] **Step 4:** `pnpm check`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(api): keep parts out of default search, browse and duplicates`.
 
 ### Task 6: Web: breadcrumbs, parts list and search context
@@ -390,7 +401,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - episode whose parent is a season with position S: `S{S}E{N}` (`S{S}E?` without its own number);
   - episode directly under a show: `Episode N` (`Episode` with no number);
   - anything else: `''`.
-- **`partTitle(summary)`:** a card title.
+- **`partTitle(summary: Summary): string`:** a card title, from `partLabel(summary.part.subtype, summary.part.position, summary.part.ancestors)`.
   - An episode shows `{root} · {label} · {title}`, as in "Breaking Bad · S1E1 · Pilot".
   - A season shows `{root} · {label}`. Decided: a season's own title usually repeats the show's.
   - A non-part shows its title.
@@ -402,7 +413,8 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - `useInfiniteQuery` on `/parts` with `limit: 50`, using the existing `LoadMore`, `Loading` and `LoadError`;
   - hidden when `partCount === 0`;
   - the heading is "Seasons" when every loaded item is a season, "Episodes" when every one is an episode, else "Seasons and episodes";
-  - rows are `EntryRow`s titled `partLabel`, plus ` · title` for non-seasons.
+  - props `{ workId: string; partCount: number; ancestors: Ancestor[] }`, where `work-page.tsx` passes the page's `ancestors` plus the page's own work as the last entry (its id, title, subtype and `relations.parent.position`, `removed: false`), so an episode row under a season gets `S{S}E{N}`;
+  - rows are `EntryRow`s titled `partLabel(item.subtype, item.position, ancestors)`, plus ` · title` for non-seasons.
 - **Search:**
   - `validateSearch` adds `parts?: true`;
   - a checkbox "Include seasons and episodes" toggles it and sends `includeParts: 'true'`.
@@ -411,9 +423,15 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - `parts.test.ts` checks `partLabel`:
     - a season at 2 is `Season 2`, and at 0 is `Specials`;
     - an episode at 14 under a season at 2 is `S2E14`;
-    - an episode at 5 under a show is `Episode 5`.
+    - an episode at 5 under a show is `Episode 5`;
+    - a season and an episode, each at 3 directly under a show, are `Season 3` and `Episode 3`;
+    - with no position: a season is `Season`, an episode under a season at 2 is `S2E?`, and an episode under a show is `Episode`;
+    - a `movie` is `''`.
+  - `parts.test.ts` checks `partTitle`: an episode "Pilot" at 1 under Season 1 of "Breaking Bad" is `Breaking Bad · S1E1 · Pilot`; a season at 2 is `Breaking Bad · Season 2`; a film is its title.
   - `episode page shows breadcrumbs`: a `navigation` named "Part of" links "Breaking Bad" and "Season 1".
   - `show page lists its seasons in order`: a list under the heading "Seasons" holds "Season 1", "Season 2", "Specials", in that order.
+  - `season page lists its episodes by season number`: under "Episodes", Season 2's episode at 1 reads "S2E1 · {title}".
+  - `mixed parts get the combined heading`: a show with a season and an episode directly under it shows "Seasons and episodes".
   - `a long season loads more`: 60 episodes (seeded by an import-style submission), with 50 shown, then "Load more" shows 60.
   - `parts list error state`: the `/parts` request fails (the harness's failing-fetch helper, as `entity-states.test.tsx` does), and "Retry" is shown.
   - `orphaned season says so`: the text "Not attached to a show".
@@ -435,7 +453,8 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 - Modify:
   - `apps/web/src/lib/entity-form.ts` 9–24;
   - `apps/web/src/lib/diff.ts`, `buildEdit` 58–98;
-  - `apps/web/src/lib/rebase.ts` 85–97 and `isEditDraft` 100;
+  - `apps/web/src/lib/rebase.ts` 85–97, `isEditDraft` 100 and `useEditDraft`'s `useDraft` options 127–135;
+  - `apps/web/src/routes/submit.tsx`, the `useDraft` call at line 65;
   - `apps/web/src/components/work-fields.tsx`, a new section beside series at 266–290;
   - `apps/web/src/components/duplicate-check.tsx`, which passes `parentId`.
 - Test: `apps/web/test/edit.test.tsx`, `apps/web/test/submit.test.tsx`, `apps/web/test/drafts.test.tsx`, `apps/web/test/submission.test.ts`
@@ -444,8 +463,10 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 - Consumes: `isPartSubtype` (Task 1); `relations.parent` (Task 4); `RelationPicker`'s `includeParts` (Task 6).
 - **Form state:**
   - `EntryForm.parent: (Row & { entity: Picked; position: string })[]`, which holds 0 or 1 rows;
-  - `upgradeForm(v: unknown): unknown` in `submission.ts` sets `parent: []` when the key is absent;
-  - it is applied before `isEntryForm` wherever a draft is read: the `useDraft` validators and `isEditDraft`'s `base` and `form`.
+  - `upgradeForm(v: unknown): unknown` in `submission.ts` returns a copy with `parent: []` when `v` is an object without the key, else `v`;
+  - drafts use `useDraft`'s existing `migrate` option, since `valid` can't change the value it checks:
+    - `submit.tsx`: `valid: (v): v is EntryForm => isEntryForm(upgradeForm(v))`, and `migrate: (d) => upgradeForm(d) as EntryForm`, with a why-comment (IX) that `valid` just checked the upgraded value;
+    - `isEditDraft` checks `isEntryForm(upgradeForm(…))` on `base` and `form`, and `useEditDraft`'s `migrate` upgrades `saved.base` and `saved.form` before `rebase`.
 - **Changes sent:**
   - `relationChanges` emits `relate('work_part', endpoint(parent.entity), entry, position ? { position: Number(position) } : {})`;
   - `buildEdit` diffs `parent` with `rowChanges`, keeping it unchanged when `Number(a.position || NaN)` equals `Number(b.position || NaN)` or both are blank;
@@ -455,7 +476,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - one picker (kind `work`, `includeParts`), labeled "Find the show or season";
   - a "Number" input, hint "Season or episode number; leave blank if none";
   - a remove button.
-  - `validateForm` errors `parent.0.position` with "Use a whole number, 0 or more".
+  - `validateForm` errors `parent.0.position` with "Use a whole number from 0 to 2147483647." when it isn't one.
 - **`formFromEntity`:** maps `relations.parent` to the single row, with its `relationId`. A removed parent still makes a row, so it can be detached.
 - **Duplicate check:** `DuplicateCheck` passes `parentId` when the parent row picks an existing entry.
 
@@ -467,8 +488,9 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - `edit moves a part`: a new parent sends an unrelate and a relate.
   - `edit detaches a part`: removing the row sends only the `unrelate`.
   - `blank number sends no position`: `data: {}`.
-  - `negative number blocks submit`: shows "Use a whole number, 0 or more".
-  - `old draft without parent loads` (in `drafts.test.tsx`): a saved form JSON with no `parent` key opens with its fields filled in.
+  - `out-of-range number blocks submit`: `-1` and `2147483648` each show "Use a whole number from 0 to 2147483647.".
+  - `old draft without parent loads` (in `drafts.test.tsx`): a saved episode form JSON with no `parent` key opens with its fields filled in and an empty "Part of" section.
+  - `edit detaches a part from a removed show`: the episode's `relations.parent.removed` is true; the form shows the row, and removing it sends only the `unrelate`.
 - [ ] **Step 2:** `pnpm --filter @amdb/web test edit submit drafts submission`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `pnpm check`. Expected: PASS.
@@ -477,7 +499,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 ### Task 8: Wikidata part mapping and placement (pure)
 
 **Files:**
-- Create: `apps/api/src/features/imports/wikidata/tree.ts`, holding pure placement with no I/O.
+- Create: `apps/api/src/features/imports/wikidata/tree.ts`, holding pure placement with no I/O. It exports every function below except `mapPart`: `ordinal`, `claimTo`, `firstValueClaim`, `hasP1545`, `listedPosition`, `seasonNumber` and `placeEpisodes`.
 - Modify: `apps/api/src/features/imports/wikidata/map.ts`:
   - `externalIds` 183–211 adds `['P12558', 'tmdb_season', /^[1-9]\d*$/]` and `['P12559', 'tmdb_episode', /^[1-9]\d*$/]`;
   - export `valueSnaks` and `entityId`;
@@ -487,7 +509,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 **Interfaces:**
 - **`mapPart(entity: WikidataEntity, subtype: 'season' | 'episode', today: Date): PartRecord | { skip: 'no_title' }`:**
   - built on `mapWork` with candidate `{ qid, sitelinks: 0, mediaType: 'film_tv', subtype }`;
-  - `PartRecord = Pick<WorkRecord, 'qid' | 'fields' | 'creators' | 'externalIds'>`. It drops `series`, `franchises`, `genres` and `links`, so `P155`/`P156` give no `sequel_of` and `P179` gives no series membership.
+  - `PartRecord = Pick<WorkRecord, 'qid' | 'fields' | 'creators' | 'externalIds'>`. It drops `series`, `franchises`, `genres`, `links` and the uncapped, backfill-only `aliases` (`fields.alternateTitles` keeps the first 50), so `P155`/`P156` give no `sequel_of` and `P179` gives no series membership.
 - **`ordinal(claim: Claim): number | null`:** the first value `P1545` qualifier matching `/^\d+$/` and at most 2147483647. Otherwise null, and 0 is allowed.
 - **`claimTo(entity, property: string, targetQid: string): Claim | null`:** the entity's non-deprecated claim on `property` whose value is `targetQid`, preferring the `preferred` rank.
 - **`firstValueClaim(entity, property: string): Claim | null`:** the first non-deprecated value claim, `preferred` rank first.
@@ -501,7 +523,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
   - input:
     - `showQid: string`;
     - `show?: WikidataEntity`;
-    - `seasonsOfShow: Map<string, WikidataEntity>`: every fetched item with `P179` → the show;
+    - `seasonsOfShow: Map<string, WikidataEntity>`: the show's seasons only, i.e. the items `discoverParts`' season query returned for it (episodes, which also carry `P179` → the show, are never in it);
     - `placedSeasons: Set<string>`: the season QIDs imported now or already in AMDB under this show;
     - `showHasSeasonParts: boolean`: AMDB already holds a season under the show;
     - `episodes: WikidataEntity[]`.
@@ -512,7 +534,7 @@ ORDER BY b, p, y, m, d, t, id   -- the cursor compares (b, p, y, m, d, t, id) > 
 for (const e of episodes) {
   const own = firstValueClaim(e, 'P4908');                    // preferred rank first
   const q = own ? entityId(own.mainsnak) : null;
-  if (q && placedSeasons.has(q)) {                            // 1. its P4908 season, same show, imported
+  if (own && q && placedSeasons.has(q)) {                     // 1. its P4908 season, same show, imported
     place(e, q, hasP1545(own) ? ordinal(own) : listedPosition(seasonsOfShow.get(q), e.id).position);
     continue;
   }
@@ -540,6 +562,7 @@ for (const e of episodes) {
   - `child's ordinal wins over the parent's list`: the child says 2 and the parent's list says 3, giving 2.
   - `non-whole ordinal gives no position`: `"1a"` gives null, even when the parent's list says 1.
   - `season 0 is kept`: `"0"` gives 0.
+  - `ordinal past the integer range is null`: `"2147483647"` gives 2147483647, and `"2147483648"` gives null.
   - `episode under its P4908 season`: Q14625947 with `P4908` → Q1582890 and `P1545 "1"` is placed under Q1582890 at 1.
   - `episode found by the season's P527`: no `P4908`, and the placed season lists it at 4, giving that season at 4.
   - `episode of a seasonless show by overall number`: `P179` qualifier `"47"`, giving the show at 47.
@@ -553,7 +576,7 @@ for (const e of episodes) {
   - `maps TMDB season and episode ids`: `P12558 "3572"` gives `tmdb_season`, and `P12559 "62085"` gives `tmdb_episode`.
 - [ ] **Step 2:** `pnpm --filter @amdb/api test wikidata-tree wikidata-map`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** `pnpm test`. Expected: PASS.
+- [ ] **Step 4:** `pnpm check`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(api): map and place wikidata seasons and episodes`.
 
 ### Task 9: The `--parts` importer mode, its dry run and docs
@@ -574,14 +597,17 @@ for (const e of episodes) {
   - `docs/import.md` gains a new §7, "Seasons and episodes";
   - `docs/superpowers/specs/2026-11-05-wikidata-importer-design.md` gains a parts mode next to "Backfill" (line 93) and adds `P12558`/`P12559` to "What it reads".
 - Test: `apps/api/test/wikidata-parts.test.ts`, `apps/api/test/import-cli.test.ts`
+- Test helper:
+  - create `apps/api/test/helpers/wikidata.ts`, exporting `fakeWikidata` and the fixture builders it needs, moved unchanged from `apps/api/test/wikidata-run.test.ts` (line 82 on), then extended (Step 1);
+  - modify `apps/api/test/wikidata-run.test.ts` to import them, since a local function can't be imported.
 
 **Interfaces:**
 - **Consumes:**
   - `mapPart`, `seasonNumber`, `placeEpisodes`, `claimTo` and `ordinal` (Task 8);
-  - `importSubmission` (existing);
-  - `has_parent` and `invalid_tree` (Task 2).
+  - `importSubmission` (existing).
+  - Task 2's `has_parent` and `invalid_tree` get no handling of their own; they are item errors like any other (see Submissions).
 - **Options:**
-  - `RunOptions.parts?: boolean`. `--parts` can't be combined with `--backfill`, `--classes` or `--min-sitelinks`; the args parser throws, naming the flag;
+  - `RunOptions.parts?: boolean`, and `ImportArgs.parts?: true`. `--parts` can't be combined with `--backfill`, `--classes` or `--min-sitelinks`. `parseArgs` records each flag it reads in a local `Set<string>` (the defaults fill `classes` and `minSitelinks` anyway) and, after the loop, throws naming the first such flag given with `--parts`;
   - `--limit` is the most shows, by QID number ascending.
 - **Repository:**
   - `findShows(limit: number): Promise<{ id: string; qid: string }[]>`: listed works of subtype `series` or `anime_series` with a live `wikidata` id;
@@ -596,8 +622,10 @@ for (const e of episodes) {
 - **Run body, per show:**
   - fetch the show, its seasons and its episodes;
   - map them with `mapPart`;
-  - place seasons under the show by `seasonNumber`, and episodes by `placeEpisodes`.
+  - place seasons under the show by `seasonNumber`, and episodes by `placeEpisodes`, whose `seasonsOfShow` is the show's items from the season query.
 - **Skips:**
+  - `mapPart` answers `{ skip: 'no_title' }` → `partsSkipped.no_title`;
+  - wbgetentities answers a discovered QID as missing → `partsSkipped.missing`;
   - an item held as a live non-part work → `partsHeldAsRoot`;
   - held as another kind → `partsSkipped.held_as_other`;
   - a retired QID (`findRetiredWikidataIds`) → `partsSkipped.reverted`, so it stays reverted;
@@ -629,7 +657,7 @@ for (const e of episodes) {
 - **Dry run:**
   - `--parts --dry-run` needs `DATABASE_URL` and only reads it (`findShows` and `findHeldParts`);
   - it discovers, fetches, maps and places, then prints `{ dryRun: true, parts: true, shows, partsFound, partsByClass, placed, partsUnplaced, partsHeldAsRoot, creditsSkipped }`;
-  - the bytes per part come from a real `--parts` run into a local database (the runbook step) and its `bytesPerPart` stat. See Plan notes 2.
+  - the bytes per part come from a real `--parts` run into a local database (the runbook step) and its `bytesPerPart` stat. See Controller ruling 2.
 
 - [ ] **Step 1: Write failing tests**
   - Extend `fakeWikidata` with an optional `sparql(query: string): Record<string, string>[] | Response` answer.
@@ -658,12 +686,20 @@ for (const e of episodes) {
     - a person entered "Season 1" under the show at position 1, with no wikidata id;
     - the run gives it the wikidata id, `partsAdopted: 1`, and its title is unchanged;
     - the episodes land under it.
-  - `revert of the show's import fails until its parts are reverted`: reverting the show's create is 409 `has_dependents`.
   - `per-class counts`: an anime-episode subclass item is counted under its class QID in `partsByClass`.
+  - `an item in both trees is a season`: a QID both queries return is created with `subtype: 'season'`.
   - `batch query failure is split per show`: multi-show SPARQL answers 504 and single-show queries succeed, so the run finishes.
+  - `seasonless show's episodes go 25 to a submission`: 30 episodes directly under a show give 2 submissions, of 25 and 5 episodes.
+  - `unplaced episode is counted, not created`: an episode whose `P4908` season is another show's gives `partsUnplaced: 1`, and no work has its title.
+  - `item held as another kind is skipped`: a QID held as a creator gives `partsSkipped.held_as_other: 1`.
+  - `duplicate external id retries with wikidata ids only`: an episode's `P345` is already another work's `imdb`; the season's parts are added, with no `imdb` id on that episode.
+  - `item error skips one season`: the injected `measureBytes`, on the call before season 2's submission, has an admin remove the show; season 2's parts count toward `partsSkipped.invalid`, and the log has `skipped parts of <season2Qid>: `.
+  - `limit takes shows by QID number`: with shows Q10, Q9 and Q100 held and `limit: 2`, only Q9's and Q10's parts are fetched.
   - In `import-cli.test.ts`:
     - `--parts --backfill` throws, naming `--backfill`;
-    - `--parts --classes Q11424` throws.
+    - `--parts --classes Q11424` throws;
+    - `--parts --min-sitelinks 5` throws, though 5 is the default.
+  - Not tested: the `--parts --dry-run` output, which lives in the script entry like today's untested dry run.
 - [ ] **Step 2:** `pnpm --filter @amdb/api test wikidata-parts import-cli`. Expected: FAIL.
 - [ ] **Step 3:** Implement, then update both docs. `docs/import.md` §7 covers:
   - the command, run detached as in §6: `nohup pnpm import:wikidata --parts --limit N`;

@@ -87,8 +87,9 @@ expansions, is new rows in a value list, not a new model.
   173,000 works and 100,000 creators with their history: roughly 5 KB per entity. The owner
   chose every season and episode Wikidata has (up to about 27,000 seasons and 184,000 episodes),
   so at a similar per-work cost the import could add about 1 GB, taking the database to about
-  2.5 GB. That's under the cap, with little room left for other growth. The builder measures
-  bytes per part in a dry run before any production import. The import stops at the size cap
+  2.5 GB. That's under the cap, with little room left for other growth. Before any production import,
+  a dry run reports counts (per class, placement, skipped credits), and a real run into a local
+  database measures bytes per part. The import stops at the size cap
   like other runs, and only between seasons (see Anti-goals). If the projection passes the cap,
   the deploy runbook's step applies: upgrade the Railway plan and grow the volume first.
 - Production imports need the owner's go-ahead at that moment, run alone, and never overlap a
@@ -312,12 +313,13 @@ None. The owner answered all six on 2026-11-11; the answers are under Decided.
   duplicate of another show's "Pilot".
 - Wikidata items already in AMDB as a `movie` or `series` that Wikidata also calls an episode or a
   season: skip them and count them (`partsHeldAsRoot`); never change a person's subtype.
-- Stats names (`partsAdded`, `partsSkipped`, …) in `docs/import.md`, and the dry run's measured
-  bytes per part.
+- Stats names (`partsAdded`, `partsSkipped`, …) in `docs/import.md`, and the bytes per part
+  measured by a local run.
 - The search filter's name and shape for including parts (the owner decided parts are out by
   default).
 - Re-runs for parts: a reverted season or episode stays reverted, and a season someone entered by
-  hand under the show is adopted, not duplicated (the existing adoption rule).
+  hand under the show is adopted, not duplicated (matched by subtype and number under the same
+  show, then by title).
 - How the browser shows context on cards ("Breaking Bad · S1E1 · Pilot"), breadcrumbs, and an
   orphaned part.
 
@@ -332,7 +334,8 @@ None. The owner answered all six on 2026-11-11; the answers are under Decided.
   refused.
 - Relate a second parent to an episode: 409.
 - Revert a show's import: fails with `has_dependents` until its parts are reverted; reject a
-  pending show create: its pending parts are rejected with it.
+  pending show create: its pending `work_part` links are rejected with it, and its pending part
+  creates stay pending without a parent.
 - Import a show whose episodes carry `P155`: no `sequel_of` links appear between episodes.
 - Import with a low `--max-db-bytes`: the run stops between seasons, and no episode exists without
   its season and show.
