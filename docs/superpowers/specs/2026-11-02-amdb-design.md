@@ -84,8 +84,9 @@ entities and relationships; table and column details are left to the builder (§
   work), so "more by this creator" works across media. A work has many creators, each with a
   **role**. Roles are a fixed value list per media type (director, writer, author, studio,
   illustrator, translator, …).
-- **Series** — an ordered set of works in one line (a trilogy, a book series, a show's
-  seasons if modeled as works). Usually within one medium. Each membership has a position.
+- **Series** — an ordered set of works in one line (a trilogy, a book series). Usually within
+  one medium. A show's seasons and episodes are not series entries: they are works under a
+  parent (see ADR 0007). Each membership has a position.
 - **Property** (IP / franchise) — an umbrella grouping works across media (e.g. *Dune*: the
   novels, the films, the series). A work may belong to a series and a property at once.
 - **Work-to-work link** — a typed, directed relationship between two specific works:
@@ -308,7 +309,8 @@ spelling, shortcuts, ADRs) and governance (amendments by ADR, semver) carry over
 ## 11. Left to the builder
 
 - Table and column design, including how revisions, review units and current state are stored.
-- Edition modeling for books (§4.2) and whether TV seasons/episodes are works.
+- Edition modeling for books (§4.2). TV seasons and episodes are works under a parent, as
+  decided in ADR 0007 and the work-hierarchy spec.
 - The final work-link and creator-role value lists.
 - Bot and abuse protection for anonymous submissions.
 - Whether v1 ships a bulk submission path (§5.2), provided the design doesn't preclude one.
