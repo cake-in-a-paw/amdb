@@ -1535,6 +1535,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                     role: string;
                                     position?: number;
@@ -1551,6 +1565,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                     role?: string;
                                     position?: number;
@@ -1567,6 +1595,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                     position: number;
                                 }[];
@@ -1582,6 +1624,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                 }[];
                                 links?: {
@@ -1600,6 +1656,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                 }[];
                                 tags?: {
@@ -1614,6 +1684,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                 }[];
                                 parent?: {
@@ -1628,6 +1712,20 @@ export interface paths {
                                         /** @enum {string} */
                                         mediaType?: "film_tv" | "book";
                                         releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
                                     };
                                     position?: number;
                                     removed: boolean;
@@ -1660,6 +1758,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         };
                                         works: {
                                             /** Format: uuid */
@@ -1670,6 +1782,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         }[];
                                     }[];
                                     bySeries: {
@@ -1682,6 +1808,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         };
                                         works: {
                                             /** Format: uuid */
@@ -1692,6 +1832,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         }[];
                                     }[];
                                     byProperty: {
@@ -1704,6 +1858,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         };
                                         works: {
                                             /** Format: uuid */
@@ -1714,6 +1882,20 @@ export interface paths {
                                             /** @enum {string} */
                                             mediaType?: "film_tv" | "book";
                                             releaseYear?: number;
+                                            part?: {
+                                                /** @enum {string} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                                position?: number;
+                                                ancestors: {
+                                                    /** Format: uuid */
+                                                    id: string;
+                                                    title: string;
+                                                    /** @enum {string|null} */
+                                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                    position?: number;
+                                                    removed: boolean;
+                                                }[];
+                                            };
                                         }[];
                                     }[];
                                 };
@@ -1814,6 +1996,20 @@ export interface paths {
                                     /** @enum {string} */
                                     mediaType?: "film_tv" | "book";
                                     releaseYear?: number;
+                                    part?: {
+                                        /** @enum {string} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                        position?: number;
+                                        ancestors: {
+                                            /** Format: uuid */
+                                            id: string;
+                                            title: string;
+                                            /** @enum {string|null} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                            position?: number;
+                                            removed: boolean;
+                                        }[];
+                                    };
                                 };
                                 /** @enum {string|null} */
                                 subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
@@ -1904,6 +2100,7 @@ export interface paths {
                     q: string;
                     kind?: "work" | "creator" | "series" | "property" | "tag";
                     mediaType?: "film_tv" | "book";
+                    includeParts?: "true" | "false";
                     cursor?: string;
                     limit?: number;
                 };
@@ -1929,6 +2126,20 @@ export interface paths {
                                 /** @enum {string} */
                                 mediaType?: "film_tv" | "book";
                                 releaseYear?: number;
+                                part?: {
+                                    /** @enum {string} */
+                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                    position?: number;
+                                    ancestors: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        title: string;
+                                        /** @enum {string|null} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                        position?: number;
+                                        removed: boolean;
+                                    }[];
+                                };
                             }[];
                             nextCursor: string | null;
                         };
@@ -1996,6 +2207,20 @@ export interface paths {
                                 /** @enum {string} */
                                 mediaType?: "film_tv" | "book";
                                 releaseYear?: number;
+                                part?: {
+                                    /** @enum {string} */
+                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                    position?: number;
+                                    ancestors: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        title: string;
+                                        /** @enum {string|null} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                        position?: number;
+                                        removed: boolean;
+                                    }[];
+                                };
                             }[];
                             nextCursor: string | null;
                         };
@@ -2039,6 +2264,7 @@ export interface paths {
                     kind: "work" | "creator" | "series" | "property" | "tag";
                     title: string;
                     mediaType?: "film_tv" | "book";
+                    parentId?: string;
                 };
                 header?: never;
                 path?: never;
@@ -2062,6 +2288,20 @@ export interface paths {
                                 /** @enum {string} */
                                 mediaType?: "film_tv" | "book";
                                 releaseYear?: number;
+                                part?: {
+                                    /** @enum {string} */
+                                    subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                    position?: number;
+                                    ancestors: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        title: string;
+                                        /** @enum {string|null} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                        position?: number;
+                                        removed: boolean;
+                                    }[];
+                                };
                             }[];
                             pending: {
                                 /** @enum {string} */

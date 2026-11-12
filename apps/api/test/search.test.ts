@@ -308,3 +308,160 @@ it("a pending create's names are not matched", async () => {
     await t.close();
   }
 });
+
+const node = (ref: string, subtype: string, title: string) => ({
+  op: 'create',
+  kind: 'work',
+  ref,
+  fields: { mediaType: 'film_tv', subtype, title },
+});
+type End = { ref: string } | { id: string };
+const partOf = (parent: End, child: End, position?: number) => ({
+  op: 'relate',
+  type: 'work_part',
+  from: parent,
+  to: child,
+  data: position === undefined ? {} : { position },
+});
+type Part = {
+  subtype: string;
+  position?: number;
+  ancestors: { id: string; title: string; subtype: string | null; position?: number; removed: boolean }[];
+};
+type Duplicates = { existing: Summary[]; pending: Record<string, unknown>[] };
+const idAt = (created: { changes: { entityId: string | null }[] }, i: number) => {
+  const id = created.changes[i]?.entityId;
+  if (!id) throw new Error(`change ${i} has no entity`);
+  return id;
+};
+
+/** A film "Pilot", and an episode "Pilot" numbered 1 in Season 1 of "Show". */
+async function pilots(s: Awaited<ReturnType<typeof setup>>) {
+  const made = await publish(s.author, s.mod, [
+    node('film', 'movie', 'Pilot'),
+    node('show', 'series', 'Show'),
+    node('season', 'season', 'Season 1'),
+    node('ep', 'episode', 'Pilot'),
+    partOf({ ref: 'show' }, { ref: 'season' }, 1),
+    partOf({ ref: 'season' }, { ref: 'ep' }, 1),
+  ]);
+  return { film: idAt(made, 0), show: idAt(made, 1), season: idAt(made, 2), ep: idAt(made, 3) };
+}
+
+/** Two shows, each with a season holding an episode "Pilot". */
+async function siblingPilots(s: Awaited<ReturnType<typeof setup>>) {
+  const made = await publish(s.author, s.mod, [
+    node('a', 'series', 'Show A'),
+    node('sa', 'season', 'Season A'),
+    node('ea', 'episode', 'Pilot'),
+    node('b', 'series', 'Show B'),
+    node('sb', 'season', 'Season B'),
+    node('eb', 'episode', 'Pilot'),
+    partOf({ ref: 'a' }, { ref: 'sa' }, 1),
+    partOf({ ref: 'sa' }, { ref: 'ea' }, 1),
+    partOf({ ref: 'b' }, { ref: 'sb' }, 1),
+    partOf({ ref: 'sb' }, { ref: 'eb' }, 1),
+  ]);
+  return { seasonA: idAt(made, 1), episodeA: idAt(made, 2), seasonB: idAt(made, 4), episodeB: idAt(made, 5) };
+}
+
+it('"Pilot" finds the film, not the episode', async () => {
+  const s = await setup();
+  try {
+    const { film } = await pilots(s);
+    expect((await s.search('q=pilot')).items.map((i) => i.id)).toEqual([film]);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('includeParts=true adds the episode with its context', async () => {
+  const s = await setup();
+  try {
+    const { film, show, season, ep } = await pilots(s);
+    const { items } = await s.search('q=pilot&includeParts=true');
+    const byId = new Map(items.map((i) => [i.id, i as Summary & { part?: Part }]));
+    expect([...byId.keys()].toSorted()).toEqual([film, ep].toSorted());
+    expect(byId.get(film)).not.toHaveProperty('part');
+    const part = byId.get(ep)?.part;
+    expect(part?.ancestors.map((a) => a.title)).toEqual(['Show', 'Season 1']);
+    expect(part).toEqual({
+      subtype: 'episode',
+      position: 1,
+      ancestors: [
+        { id: show, title: 'Show', subtype: 'series', removed: false },
+        { id: season, title: 'Season 1', subtype: 'season', position: 1, removed: false },
+      ],
+    });
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('includeParts=false hides parts', async () => {
+  const s = await setup();
+  try {
+    await pilots(s);
+    expect(await s.search('q=pilot&includeParts=false')).toEqual(await s.search('q=pilot'));
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('includeParts=yes is 400', async () => {
+  const s = await setup();
+  try {
+    const res = await s.anon.get('/api/search?q=pilot&includeParts=yes');
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('invalid_request');
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('duplicate check among siblings', async () => {
+  const s = await setup();
+  try {
+    const { seasonA, episodeA, episodeB } = await siblingPilots(s);
+    const get = async (qs: string) => {
+      const res = await s.anon.get(`/api/duplicates?${qs}`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      return (await res.json()) as Duplicates;
+    };
+    expect((await get(`kind=work&title=Pilot&parentId=${seasonA}`)).existing.map((e) => e.id)).toEqual([episodeA]);
+    const ids = (await get('kind=work&title=Pilot')).existing.map((e) => e.id);
+    expect(ids).not.toContain(episodeA);
+    expect(ids).not.toContain(episodeB);
+    const res = await s.anon.get(`/api/duplicates?kind=creator&title=Pilot&parentId=${seasonA}`);
+    expect(res.status).toBe(400);
+  } finally {
+    await s.t.close();
+  }
+});
+
+it('pending part reveals only four fields', async () => {
+  const s = await setup();
+  try {
+    const made = await publish(s.author, s.mod, [
+      node('a', 'series', 'Show A'),
+      node('sa', 'season', 'Season A'),
+      node('b', 'series', 'Show B'),
+      node('sb', 'season', 'Season B'),
+      partOf({ ref: 'a' }, { ref: 'sa' }, 1),
+      partOf({ ref: 'b' }, { ref: 'sb' }, 1),
+    ]);
+    const [seasonA, seasonB] = [idAt(made, 1), idAt(made, 3)];
+    await submit(s.author, [node('ep', 'episode', 'Pilot'), partOf({ id: seasonA }, { ref: 'ep' }, 1)]);
+    for (const parent of [seasonB, seasonA]) {
+      const res = await s.anon.get(`/api/duplicates?kind=work&title=Pilot&parentId=${parent}`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      const { pending } = (await res.json()) as Duplicates;
+      expect(pending).toHaveLength(1);
+      for (const p of pending) {
+        expect(Object.keys(p).toSorted()).toEqual(['kind', 'mediaType', 'releaseYear', 'title']);
+      }
+    }
+  } finally {
+    await s.t.close();
+  }
+});

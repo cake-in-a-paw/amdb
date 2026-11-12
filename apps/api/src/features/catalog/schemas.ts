@@ -4,23 +4,6 @@ import { PageQuery } from '../../platform/http/pagination';
 
 export const EntityIdParam = z.object({ id: z.uuid() });
 
-/** How an entity appears inside another's relations. A creator's or tag's name is its `title`. */
-export const SummarySchema = z.object({
-  id: z.uuid(),
-  kind: EntityKind,
-  title: z.string(),
-  mediaType: MediaType.optional(),
-  releaseYear: z.number().int().optional(),
-});
-export type Summary = z.infer<typeof SummarySchema>;
-
-/** The most works a "more like this" group lists. */
-export const RELATED_LIMIT = 12;
-
-const relatedWorks = z.array(SummarySchema);
-
-const relationId = z.uuid();
-
 /** One work above another in its tree. `position` is the ancestor's own number under its parent; a removed one keeps its id and stored title. */
 export const AncestorSchema = z.object({
   id: z.uuid(),
@@ -30,6 +13,30 @@ export const AncestorSchema = z.object({
   removed: z.boolean(),
 });
 export type Ancestor = z.infer<typeof AncestorSchema>;
+
+/** How an entity appears inside another's relations. A creator's or tag's name is its `title`. */
+export const SummarySchema = z.object({
+  id: z.uuid(),
+  kind: EntityKind,
+  title: z.string(),
+  mediaType: MediaType.optional(),
+  releaseYear: z.number().int().optional(),
+  /**
+   * Search with `includeParts=true` only: a part with a live parent, its own subtype and number
+   * under that parent, and its ancestors root first.
+   */
+  part: z
+    .object({ subtype: Subtype, position: z.number().int().optional(), ancestors: z.array(AncestorSchema) })
+    .optional(),
+});
+export type Summary = z.infer<typeof SummarySchema>;
+
+/** The most works a "more like this" group lists. */
+export const RELATED_LIMIT = 12;
+
+const relatedWorks = z.array(SummarySchema);
+
+const relationId = z.uuid();
 
 /** Only the groups relevant to the entity's kind are present. */
 export const EntitySchema = z.object({
@@ -95,6 +102,8 @@ export const SearchQuery = z
     kind: EntityKind.optional(),
     /** Only works have a media type, so this limits results to works of it. */
     mediaType: MediaType.optional(),
+    /** `true` also finds parts (seasons, episodes), each with its ancestors. Left out by default. */
+    includeParts: z.enum(['true', 'false']).optional(),
     ...PageQuery,
   })
   .refine((q) => !q.mediaType || !q.kind || q.kind === 'work', {
@@ -126,11 +135,18 @@ export const DuplicatesQuery = z
     kind: EntityKind,
     title: z.string().trim().min(1).max(200),
     mediaType: MediaType.optional(),
+    /** Match only the live, listed parts of this work: siblings of the part being created. */
+    parentId: z.uuid().optional(),
   })
   .refine((q) => !q.mediaType || q.kind === 'work', {
     message: 'mediaType only applies to works',
     path: ['mediaType'],
+  })
+  .refine((q) => !q.parentId || q.kind === 'work', {
+    message: 'parentId only applies to works',
+    path: ['parentId'],
   });
+export type DuplicatesQuery = z.infer<typeof DuplicatesQuery>;
 
 /** Spec §5.3: a pending create shows only these four fields, to anyone. */
 export const PendingDuplicateSchema = z.object({

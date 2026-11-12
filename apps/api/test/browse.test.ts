@@ -88,3 +88,62 @@ it('requires a kind, and a mediaType only with kind=work', async () => {
     await t.close();
   }
 });
+
+const node = (ref: string, subtype: string, title: string) => ({
+  op: 'create',
+  kind: 'work',
+  ref,
+  fields: { mediaType: 'film_tv', subtype, title },
+});
+const partOf = (parent: string, child: string, position: number) => ({
+  op: 'relate',
+  type: 'work_part',
+  from: { ref: parent },
+  to: { ref: child },
+  data: { position },
+});
+
+it('browse lists no seasons or episodes', async () => {
+  const { t, author, mod, browse } = await setup();
+  try {
+    await publish(author, mod, [
+      node('show', 'series', 'Show'),
+      node('season', 'season', 'Season 1'),
+      node('ep', 'episode', 'Episode 1'),
+      partOf('show', 'season', 1),
+      partOf('season', 'ep', 1),
+    ]);
+    expect((await browse('kind=work&mediaType=film_tv')).items.map((i) => i.title)).toEqual(['Show']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('an orphaned season stays out of search and browse', async () => {
+  const { t, author, mod, anon, browse } = await setup();
+  try {
+    const made = await publish(author, mod, [
+      node('show', 'series', 'Show'),
+      node('season', 'season', 'Season 1'),
+      partOf('show', 'season', 1),
+    ]);
+    const season = made.changes[1]!.entityId!;
+    const view = (await (await anon.get(`/api/entities/${season}`)).json()) as {
+      relations: { parent: { relationId: string } | null };
+    };
+    await publish(author, mod, [{ op: 'unrelate', relationId: view.relations.parent!.relationId }]);
+    const search = async (qs: string) => {
+      const res = await anon.get(`/api/search?${qs}`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      return ((await res.json()) as { items: { id: string; part?: unknown }[] }).items;
+    };
+    expect(await search('q=season')).toEqual([]);
+    expect((await browse('kind=work&mediaType=film_tv')).items.map((i) => i.title)).toEqual(['Show']);
+    // Asked for, it's found, with no part context: it has no live parent.
+    const found = await search('q=season&includeParts=true');
+    expect(found.map((i) => i.id)).toEqual([season]);
+    expect(found[0]).not.toHaveProperty('part');
+  } finally {
+    await t.close();
+  }
+});

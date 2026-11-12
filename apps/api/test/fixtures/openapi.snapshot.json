@@ -3130,6 +3130,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3190,6 +3253,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3249,6 +3375,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3306,6 +3495,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3375,6 +3627,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3430,6 +3745,69 @@
                                   },
                                   "releaseYear": {
                                     "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -3482,6 +3860,69 @@
                                 },
                                 "releaseYear": {
                                   "type": "integer"
+                                },
+                                "part": {
+                                  "type": "object",
+                                  "properties": {
+                                    "subtype": {
+                                      "type": "string",
+                                      "enum": [
+                                        "movie",
+                                        "series",
+                                        "anime_series",
+                                        "anime_film",
+                                        "season",
+                                        "episode"
+                                      ]
+                                    },
+                                    "position": {
+                                      "type": "integer"
+                                    },
+                                    "ancestors": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "object",
+                                        "properties": {
+                                          "id": {
+                                            "type": "string",
+                                            "format": "uuid"
+                                          },
+                                          "title": {
+                                            "type": "string"
+                                          },
+                                          "subtype": {
+                                            "type": "string",
+                                            "nullable": true,
+                                            "enum": [
+                                              "movie",
+                                              "series",
+                                              "anime_series",
+                                              "anime_film",
+                                              "season",
+                                              "episode",
+                                              null
+                                            ]
+                                          },
+                                          "position": {
+                                            "type": "integer"
+                                          },
+                                          "removed": {
+                                            "type": "boolean"
+                                          }
+                                        },
+                                        "required": [
+                                          "id",
+                                          "title",
+                                          "subtype",
+                                          "removed"
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "required": [
+                                    "subtype",
+                                    "ancestors"
+                                  ]
                                 }
                               },
                               "required": [
@@ -3617,6 +4058,69 @@
                                       },
                                       "releaseYear": {
                                         "type": "integer"
+                                      },
+                                      "part": {
+                                        "type": "object",
+                                        "properties": {
+                                          "subtype": {
+                                            "type": "string",
+                                            "enum": [
+                                              "movie",
+                                              "series",
+                                              "anime_series",
+                                              "anime_film",
+                                              "season",
+                                              "episode"
+                                            ]
+                                          },
+                                          "position": {
+                                            "type": "integer"
+                                          },
+                                          "ancestors": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "format": "uuid"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "subtype": {
+                                                  "type": "string",
+                                                  "nullable": true,
+                                                  "enum": [
+                                                    "movie",
+                                                    "series",
+                                                    "anime_series",
+                                                    "anime_film",
+                                                    "season",
+                                                    "episode",
+                                                    null
+                                                  ]
+                                                },
+                                                "position": {
+                                                  "type": "integer"
+                                                },
+                                                "removed": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "title",
+                                                "subtype",
+                                                "removed"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "subtype",
+                                          "ancestors"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -3656,6 +4160,69 @@
                                         },
                                         "releaseYear": {
                                           "type": "integer"
+                                        },
+                                        "part": {
+                                          "type": "object",
+                                          "properties": {
+                                            "subtype": {
+                                              "type": "string",
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode"
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "ancestors": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "subtype": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                      "movie",
+                                                      "series",
+                                                      "anime_series",
+                                                      "anime_film",
+                                                      "season",
+                                                      "episode",
+                                                      null
+                                                    ]
+                                                  },
+                                                  "position": {
+                                                    "type": "integer"
+                                                  },
+                                                  "removed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "id",
+                                                  "title",
+                                                  "subtype",
+                                                  "removed"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "subtype",
+                                            "ancestors"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -3706,6 +4273,69 @@
                                       },
                                       "releaseYear": {
                                         "type": "integer"
+                                      },
+                                      "part": {
+                                        "type": "object",
+                                        "properties": {
+                                          "subtype": {
+                                            "type": "string",
+                                            "enum": [
+                                              "movie",
+                                              "series",
+                                              "anime_series",
+                                              "anime_film",
+                                              "season",
+                                              "episode"
+                                            ]
+                                          },
+                                          "position": {
+                                            "type": "integer"
+                                          },
+                                          "ancestors": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "format": "uuid"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "subtype": {
+                                                  "type": "string",
+                                                  "nullable": true,
+                                                  "enum": [
+                                                    "movie",
+                                                    "series",
+                                                    "anime_series",
+                                                    "anime_film",
+                                                    "season",
+                                                    "episode",
+                                                    null
+                                                  ]
+                                                },
+                                                "position": {
+                                                  "type": "integer"
+                                                },
+                                                "removed": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "title",
+                                                "subtype",
+                                                "removed"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "subtype",
+                                          "ancestors"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -3745,6 +4375,69 @@
                                         },
                                         "releaseYear": {
                                           "type": "integer"
+                                        },
+                                        "part": {
+                                          "type": "object",
+                                          "properties": {
+                                            "subtype": {
+                                              "type": "string",
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode"
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "ancestors": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "subtype": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                      "movie",
+                                                      "series",
+                                                      "anime_series",
+                                                      "anime_film",
+                                                      "season",
+                                                      "episode",
+                                                      null
+                                                    ]
+                                                  },
+                                                  "position": {
+                                                    "type": "integer"
+                                                  },
+                                                  "removed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "id",
+                                                  "title",
+                                                  "subtype",
+                                                  "removed"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "subtype",
+                                            "ancestors"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -3795,6 +4488,69 @@
                                       },
                                       "releaseYear": {
                                         "type": "integer"
+                                      },
+                                      "part": {
+                                        "type": "object",
+                                        "properties": {
+                                          "subtype": {
+                                            "type": "string",
+                                            "enum": [
+                                              "movie",
+                                              "series",
+                                              "anime_series",
+                                              "anime_film",
+                                              "season",
+                                              "episode"
+                                            ]
+                                          },
+                                          "position": {
+                                            "type": "integer"
+                                          },
+                                          "ancestors": {
+                                            "type": "array",
+                                            "items": {
+                                              "type": "object",
+                                              "properties": {
+                                                "id": {
+                                                  "type": "string",
+                                                  "format": "uuid"
+                                                },
+                                                "title": {
+                                                  "type": "string"
+                                                },
+                                                "subtype": {
+                                                  "type": "string",
+                                                  "nullable": true,
+                                                  "enum": [
+                                                    "movie",
+                                                    "series",
+                                                    "anime_series",
+                                                    "anime_film",
+                                                    "season",
+                                                    "episode",
+                                                    null
+                                                  ]
+                                                },
+                                                "position": {
+                                                  "type": "integer"
+                                                },
+                                                "removed": {
+                                                  "type": "boolean"
+                                                }
+                                              },
+                                              "required": [
+                                                "id",
+                                                "title",
+                                                "subtype",
+                                                "removed"
+                                              ]
+                                            }
+                                          }
+                                        },
+                                        "required": [
+                                          "subtype",
+                                          "ancestors"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -3834,6 +4590,69 @@
                                         },
                                         "releaseYear": {
                                           "type": "integer"
+                                        },
+                                        "part": {
+                                          "type": "object",
+                                          "properties": {
+                                            "subtype": {
+                                              "type": "string",
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode"
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "ancestors": {
+                                              "type": "array",
+                                              "items": {
+                                                "type": "object",
+                                                "properties": {
+                                                  "id": {
+                                                    "type": "string",
+                                                    "format": "uuid"
+                                                  },
+                                                  "title": {
+                                                    "type": "string"
+                                                  },
+                                                  "subtype": {
+                                                    "type": "string",
+                                                    "nullable": true,
+                                                    "enum": [
+                                                      "movie",
+                                                      "series",
+                                                      "anime_series",
+                                                      "anime_film",
+                                                      "season",
+                                                      "episode",
+                                                      null
+                                                    ]
+                                                  },
+                                                  "position": {
+                                                    "type": "integer"
+                                                  },
+                                                  "removed": {
+                                                    "type": "boolean"
+                                                  }
+                                                },
+                                                "required": [
+                                                  "id",
+                                                  "title",
+                                                  "subtype",
+                                                  "removed"
+                                                ]
+                                              }
+                                            }
+                                          },
+                                          "required": [
+                                            "subtype",
+                                            "ancestors"
+                                          ]
                                         }
                                       },
                                       "required": [
@@ -4045,6 +4864,69 @@
                               },
                               "releaseYear": {
                                 "type": "integer"
+                              },
+                              "part": {
+                                "type": "object",
+                                "properties": {
+                                  "subtype": {
+                                    "type": "string",
+                                    "enum": [
+                                      "movie",
+                                      "series",
+                                      "anime_series",
+                                      "anime_film",
+                                      "season",
+                                      "episode"
+                                    ]
+                                  },
+                                  "position": {
+                                    "type": "integer"
+                                  },
+                                  "ancestors": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "subtype": {
+                                          "type": "string",
+                                          "nullable": true,
+                                          "enum": [
+                                            "movie",
+                                            "series",
+                                            "anime_series",
+                                            "anime_film",
+                                            "season",
+                                            "episode",
+                                            null
+                                          ]
+                                        },
+                                        "position": {
+                                          "type": "integer"
+                                        },
+                                        "removed": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "title",
+                                        "subtype",
+                                        "removed"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "subtype",
+                                  "ancestors"
+                                ]
                               }
                             },
                             "required": [
@@ -4261,6 +5143,18 @@
           },
           {
             "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ]
+            },
+            "required": false,
+            "name": "includeParts",
+            "in": "query"
+          },
+          {
+            "schema": {
               "type": "string"
             },
             "required": false,
@@ -4318,6 +5212,69 @@
                           },
                           "releaseYear": {
                             "type": "integer"
+                          },
+                          "part": {
+                            "type": "object",
+                            "properties": {
+                              "subtype": {
+                                "type": "string",
+                                "enum": [
+                                  "movie",
+                                  "series",
+                                  "anime_series",
+                                  "anime_film",
+                                  "season",
+                                  "episode"
+                                ]
+                              },
+                              "position": {
+                                "type": "integer"
+                              },
+                              "ancestors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "subtype": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "enum": [
+                                        "movie",
+                                        "series",
+                                        "anime_series",
+                                        "anime_film",
+                                        "season",
+                                        "episode",
+                                        null
+                                      ]
+                                    },
+                                    "position": {
+                                      "type": "integer"
+                                    },
+                                    "removed": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title",
+                                    "subtype",
+                                    "removed"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "subtype",
+                              "ancestors"
+                            ]
                           }
                         },
                         "required": [
@@ -4465,6 +5422,69 @@
                           },
                           "releaseYear": {
                             "type": "integer"
+                          },
+                          "part": {
+                            "type": "object",
+                            "properties": {
+                              "subtype": {
+                                "type": "string",
+                                "enum": [
+                                  "movie",
+                                  "series",
+                                  "anime_series",
+                                  "anime_film",
+                                  "season",
+                                  "episode"
+                                ]
+                              },
+                              "position": {
+                                "type": "integer"
+                              },
+                              "ancestors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "subtype": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "enum": [
+                                        "movie",
+                                        "series",
+                                        "anime_series",
+                                        "anime_film",
+                                        "season",
+                                        "episode",
+                                        null
+                                      ]
+                                    },
+                                    "position": {
+                                      "type": "integer"
+                                    },
+                                    "removed": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title",
+                                    "subtype",
+                                    "removed"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "subtype",
+                              "ancestors"
+                            ]
                           }
                         },
                         "required": [
@@ -4562,6 +5582,15 @@
             "required": false,
             "name": "mediaType",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "parentId",
+            "in": "query"
           }
         ],
         "responses": {
@@ -4603,6 +5632,69 @@
                           },
                           "releaseYear": {
                             "type": "integer"
+                          },
+                          "part": {
+                            "type": "object",
+                            "properties": {
+                              "subtype": {
+                                "type": "string",
+                                "enum": [
+                                  "movie",
+                                  "series",
+                                  "anime_series",
+                                  "anime_film",
+                                  "season",
+                                  "episode"
+                                ]
+                              },
+                              "position": {
+                                "type": "integer"
+                              },
+                              "ancestors": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "id": {
+                                      "type": "string",
+                                      "format": "uuid"
+                                    },
+                                    "title": {
+                                      "type": "string"
+                                    },
+                                    "subtype": {
+                                      "type": "string",
+                                      "nullable": true,
+                                      "enum": [
+                                        "movie",
+                                        "series",
+                                        "anime_series",
+                                        "anime_film",
+                                        "season",
+                                        "episode",
+                                        null
+                                      ]
+                                    },
+                                    "position": {
+                                      "type": "integer"
+                                    },
+                                    "removed": {
+                                      "type": "boolean"
+                                    }
+                                  },
+                                  "required": [
+                                    "id",
+                                    "title",
+                                    "subtype",
+                                    "removed"
+                                  ]
+                                }
+                              }
+                            },
+                            "required": [
+                              "subtype",
+                              "ancestors"
+                            ]
                           }
                         },
                         "required": [

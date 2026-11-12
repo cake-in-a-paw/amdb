@@ -7,6 +7,7 @@ import { catalogRepository } from './repository';
 import {
   type Ancestor,
   type BrowseQuery,
+  type DuplicatesQuery,
   type EntityView,
   PartsCursor,
   RELATED_LIMIT,
@@ -305,15 +306,33 @@ export function createCatalogService(db: Db) {
       };
     },
 
-    /** Listed entities matching the query, alphabetical by title. Excludes removed, retracted and merged ones. */
+    /**
+     * Listed entities matching the query, alphabetical by title. Excludes removed, retracted and
+     * merged ones, and parts unless `includeParts=true`; then a part with a live parent carries its
+     * context, from one `ancestry` walk for the whole page.
+     */
     async search(query: SearchQuery) {
+      const includeParts = query.includeParts === 'true';
       const rows = await repo.search(
         normalizeTitle(query.q),
-        { kind: query.kind, mediaType: query.mediaType },
+        { kind: query.kind, mediaType: query.mediaType, includeParts },
         decodeKeyCursor(query.cursor, SearchCursor),
         query.limit,
       );
-      return pageOf(rows, query.limit);
+      const page = pageOf(rows, query.limit);
+      if (!includeParts) return page;
+      const subtypeOf = new Map(rows.map((r) => [r.id, r.subtype]));
+      const trees = await ancestry(page.items.filter((i) => i.kind === 'work').map((i) => i.id));
+      return {
+        ...page,
+        items: page.items.map((item): Summary => {
+          const tree = trees.get(item.id);
+          const subtype = subtypeOf.get(item.id);
+          // The tree list gives a parent only to a part, so a linked work has a subtype; the check only narrows it.
+          if (!tree?.link || !subtype) return item;
+          return { ...item, part: { subtype, ...position(tree.link.position), ancestors: tree.ancestors } };
+        }),
+      };
     },
 
     /** Listed entities of a kind (and media type), alphabetical by title, paged like search. */
@@ -330,11 +349,20 @@ export function createCatalogService(db: Db) {
     /**
      * What a contributor should look at before creating `title`: the entities that already match,
      * and pending creates that match, showing only kind, title, media type and year (spec §5.3).
+     * Existing matches leave parts out, or with `parentId` are only that work's parts.
      */
-    async duplicates(query: { kind: EntityKind; title: string; mediaType?: MediaType }) {
+    async duplicates(query: DuplicatesQuery) {
       const norm = normalizeTitle(query.title);
-      const existing = await repo.existingMatching(norm, query, DUPLICATE_LIMIT);
-      const pending = (await repo.pendingMatching(norm, query, DUPLICATE_LIMIT)).map(({ payload }) => {
+      const parentId = query.parentId ? await resolveWinner(db, query.parentId) : undefined;
+      const existing = await repo.existingMatching(
+        norm,
+        { kind: query.kind, mediaType: query.mediaType, parentId },
+        DUPLICATE_LIMIT,
+      );
+      // Never filtered by parent: that would reveal which parent a pending part sits under (constitution I).
+      const pending = (
+        await repo.pendingMatching(norm, { kind: query.kind, mediaType: query.mediaType }, DUPLICATE_LIMIT)
+      ).map(({ payload }) => {
         const mediaType = MediaType.safeParse(payload?.mediaType);
         const year = payload?.releaseYear;
         return {

@@ -18,6 +18,9 @@ const summaryColumns = {
   releaseYear: works.releaseYear,
 };
 
+/** Not a part: any row but a work whose subtype is a part subtype, attached or not. Non-work rows have a null subtype. */
+const notAPart = () => or(isNull(works.subtype), notInArray(works.subtype, [...PART_SUBTYPES]));
+
 /** Escapes `%`, `_` and `\` so user text matches literally in a `like`. */
 const likeEscape = (s: string) => s.replace(/[\\%_]/g, '\\$&');
 
@@ -169,11 +172,11 @@ export function catalogRepository(db: DbOrTx) {
      * fetches `limit` + 1. Works match on every term, the last as a prefix, against `works.search`
      * or `works.alt_search`; the other kinds match `like %norm%` on their normalized title or name
      * (creators also on alternate names). Rank is 1 for a row matched only through alternate
-     * names, else 0.
+     * names, else 0. Parts are left out unless `includeParts`. Each row carries its work subtype.
      */
     async search(
       norm: string,
-      filter: { kind?: EntityKind; mediaType?: MediaType },
+      filter: { kind?: EntityKind; mediaType?: MediaType; includeParts: boolean },
       after: SearchCursor | null,
       limit: number,
     ) {
@@ -197,7 +200,7 @@ export function catalogRepository(db: DbOrTx) {
       // A `case` treats a null condition (a kind without the column) as false.
       const rankExpr = sql<number>`(case when ${mainMatch} then 0 when ${altMatch} then 1 else 0 end)`;
       return db
-        .select({ ...summaryColumns, rank: rankExpr })
+        .select({ ...summaryColumns, subtype: works.subtype, rank: rankExpr })
         .from(entities)
         .leftJoin(works, eq(works.entityId, entities.id))
         .leftJoin(creators, eq(creators.entityId, entities.id))
@@ -209,6 +212,7 @@ export function catalogRepository(db: DbOrTx) {
             listed(),
             kind ? eq(entities.kind, kind) : undefined,
             filter.mediaType ? eq(works.mediaType, filter.mediaType) : undefined,
+            filter.includeParts ? undefined : notAPart(),
             or(mainMatch, altMatch),
             after
               ? sql`(${rankExpr}, ${titleExpr}, ${entities.id}) > (${after.rank}, ${after.title}, ${after.id}::uuid)`
@@ -219,7 +223,7 @@ export function catalogRepository(db: DbOrTx) {
         .limit(limit + 1);
     },
 
-    /** Listed entities of `kind` (and for works, `mediaType`), ordered by title then id; fetches `limit` + 1. */
+    /** Listed entities of `kind` (and for works, `mediaType`) other than parts, ordered by title then id; fetches `limit` + 1. */
     async browse(kind: EntityKind, mediaType: MediaType | undefined, after: SearchCursor | null, limit: number) {
       return db
         .select(summaryColumns)
@@ -234,6 +238,7 @@ export function catalogRepository(db: DbOrTx) {
             listed(),
             eq(entities.kind, kind),
             mediaType ? eq(works.mediaType, mediaType) : undefined,
+            notAPart(),
             after ? sql`(${titleExpr}, ${entities.id}) > (${after.title}, ${after.id}::uuid)` : undefined,
           ),
         )
@@ -275,7 +280,7 @@ export function catalogRepository(db: DbOrTx) {
             ne(workCol, exceptWorkId),
             listed(),
             // No part fills a related group, attached or not.
-            or(isNull(works.subtype), notInArray(works.subtype, [...PART_SUBTYPES])),
+            notAPart(),
           ),
         )
         .as('ranked');
@@ -291,9 +296,21 @@ export function catalogRepository(db: DbOrTx) {
     /**
      * The duplicate check's matching, the same for existing and pending: the normalized title,
      * name or alternate name contains `norm`. Listed entities, by title; fetches at most `limit`.
+     * With `parentId`, only that work's parts through live `work_part` rows; without it, no parts.
      */
-    async existingMatching(norm: string, filter: { kind: EntityKind; mediaType?: MediaType }, limit: number) {
+    async existingMatching(
+      norm: string,
+      filter: { kind: EntityKind; mediaType?: MediaType; parentId?: string },
+      limit: number,
+    ) {
       const pattern = `%${likeEscape(norm)}%`;
+      const partsOfParent = (parentId: string) =>
+        db
+          .select({ id: relations.toId })
+          .from(relations)
+          .where(
+            and(eq(relations.type, 'work_part'), eq(relations.fromId, parentId), isNull(relations.removedByChange)),
+          );
       return db
         .select(summaryColumns)
         .from(entities)
@@ -307,6 +324,7 @@ export function catalogRepository(db: DbOrTx) {
             listed(),
             eq(entities.kind, filter.kind),
             filter.mediaType ? eq(works.mediaType, filter.mediaType) : undefined,
+            filter.parentId ? inArray(entities.id, partsOfParent(filter.parentId)) : notAPart(),
             or(
               sql`${works.titleNorm} like ${pattern}`,
               sql`${works.alternateTitlesNorm} like ${pattern}`,
