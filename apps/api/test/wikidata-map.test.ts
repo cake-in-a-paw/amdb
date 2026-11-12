@@ -7,6 +7,7 @@ import {
   aliasNames,
   genreTag,
   isLatinScript,
+  mapPart,
   mapRef,
   mapWork,
   type WorkRecord,
@@ -465,5 +466,63 @@ describe('mapRef and genreTag edge cases', () => {
     expect(genreTag('  (noir)! film')).toEqual({ name: '(noir)!', slug: 'noir' });
     expect(genreTag('аниме')).toBeNull();
     expect(genreTag('аниме film')).toBeNull();
+  });
+});
+
+describe('mapPart', () => {
+  const item = (property: string, id: string): Claim => ({
+    mainsnak: { snaktype: 'value', property, datavalue: { value: { 'entity-type': 'item', id } } },
+  });
+  const part = (claims: Record<string, Claim[]>, subtype: 'season' | 'episode' = 'episode') => {
+    const r = mapPart(withClaims(claims), subtype, TODAY);
+    if ('skip' in r) throw new Error('skipped');
+    WorkFields.parse(r.fields);
+    return r;
+  };
+
+  it('mapPart drops sequel and series links', () => {
+    const r = part({
+      P155: [item('P155', 'Q14625946')],
+      P179: [{ ...item('P179', 'Q1079'), qualifiers: { P1545: [{ snaktype: 'value', datavalue: { value: '2' } }] } }],
+      P57: [item('P57', 'Q200')],
+      P345: [str('P345', 'tt0959621')],
+    });
+    expect(r).not.toHaveProperty('links');
+    expect(r).not.toHaveProperty('series');
+    expect(r).not.toHaveProperty('franchises');
+    expect(r).not.toHaveProperty('genres');
+    expect(r).not.toHaveProperty('aliases');
+    expect(r.fields.subtype).toBe('episode');
+    expect(r.fields.mediaType).toBe('film_tv');
+    expect(r.creators).toEqual([{ qid: 'Q200', role: 'director' }]);
+    expect(r.externalIds).toContainEqual({ scheme: 'imdb', value: 'tt0959621' });
+  });
+
+  it('keeps the first 50 aliases as alternateTitles', () => {
+    const entity: WikidataEntity = {
+      id: 'Q1',
+      labels: { en: { value: 'Thing' } },
+      aliases: { en: Array.from({ length: 60 }, (_, i) => ({ value: `Alias ${i}` })) },
+    };
+    const r = mapPart(entity, 'season', TODAY);
+    if ('skip' in r) throw new Error('skipped');
+    expect(r.fields.subtype).toBe('season');
+    expect(r.fields.alternateTitles).toHaveLength(50);
+  });
+
+  it('skips a part with no English title', () => {
+    expect(mapPart({ id: 'Q1', labels: { fr: { value: 'Chose' } } }, 'episode', TODAY)).toEqual({ skip: 'no_title' });
+  });
+
+  it('maps TMDB season and episode ids', () => {
+    const r = part({
+      P12558: [str('P12558', '3572'), str('P12558', '03572')],
+      P12559: [str('P12559', '62085'), str('P12559', 'x1')],
+    });
+    expect(r.externalIds).toEqual([
+      { scheme: 'wikidata', value: 'Q1' },
+      { scheme: 'tmdb_season', value: '3572' },
+      { scheme: 'tmdb_episode', value: '62085' },
+    ]);
   });
 });

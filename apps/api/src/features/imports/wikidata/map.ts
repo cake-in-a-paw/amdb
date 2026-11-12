@@ -42,7 +42,7 @@ export interface WorkRecord {
 const MAX_TITLE = 500;
 const MAX_DESCRIPTION = 5000;
 /** `relations.position` is a Postgres integer. */
-const MAX_POSITION = 2147483647;
+export const MAX_POSITION = 2147483647;
 
 const FILM_TV_ROLES: Record<string, FilmTvRole> = {
   P57: 'director',
@@ -62,7 +62,7 @@ const BOOK_ROLES: Record<string, BookRole> = {
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 
 /** Claims worth reading: not deprecated, with a real value (not "unknown value" / "no value"). */
-function valueSnaks(entity: WikidataEntity, property: string): { claim: Claim; snak: Snak }[] {
+export function valueSnaks(entity: WikidataEntity, property: string): { claim: Claim; snak: Snak }[] {
   return (entity.claims?.[property] ?? [])
     .filter((c) => c.rank !== 'deprecated' && c.mainsnak.snaktype === 'value' && c.mainsnak.datavalue !== undefined)
     .map((claim) => ({ claim, snak: claim.mainsnak }));
@@ -73,7 +73,7 @@ function stringValue(snak: Snak): string | null {
   return typeof v === 'string' ? v : null;
 }
 
-function entityId(snak: Snak): string | null {
+export function entityId(snak: Snak): string | null {
   const v = snak.datavalue?.value;
   return isObject(v) && typeof v.id === 'string' && /^Q\d+$/.test(v.id) ? v.id : null;
 }
@@ -202,6 +202,8 @@ function externalIds(entity: WikidataEntity): { scheme: IdScheme; value: string 
     ['P4947', 'tmdb_movie', /^[1-9]\d{0,7}$/],
     ['P4983', 'tmdb_tv', /^[1-9]\d*$/],
     ['P8729', 'anilist', /^[1-9]\d*$/],
+    ['P12558', 'tmdb_season', /^[1-9]\d*$/],
+    ['P12559', 'tmdb_episode', /^[1-9]\d*$/],
   ] as const)
     for (const { snak } of valueSnaks(entity, property)) {
       const v = stringValue(snak)?.trim();
@@ -309,6 +311,22 @@ export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Dat
     links,
     externalIds: externalIds(entity),
   };
+}
+
+/**
+ * A season or episode: its fields, creators and external ids only. No series membership (P179),
+ * work links (P155/P156), franchises, genres or uncapped aliases; placement comes from `tree.ts`.
+ */
+export type PartRecord = Pick<WorkRecord, 'qid' | 'fields' | 'creators' | 'externalIds'>;
+
+export function mapPart(
+  entity: WikidataEntity,
+  subtype: 'season' | 'episode',
+  today: Date,
+): PartRecord | { skip: 'no_title' } {
+  const r = mapWork(entity, { qid: entity.id, sitelinks: 0, mediaType: 'film_tv', subtype }, today);
+  if ('skip' in r) return r;
+  return { qid: r.qid, fields: r.fields, creators: r.creators, externalIds: r.externalIds };
 }
 
 /** A creator, series, property or genre stub; null without an English (or mul) label. */
