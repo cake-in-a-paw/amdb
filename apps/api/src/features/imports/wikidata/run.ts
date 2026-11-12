@@ -11,7 +11,7 @@ import type { Db } from '../../../platform/db/types';
 import { ApiError } from '../../../platform/http/errors';
 import type { ChangeInput, EntityRef } from '../../changes/schemas';
 import { createChangesService } from '../../changes/service';
-import { createImportsService } from '../service';
+import { createImportsService, type NamesExpectation } from '../service';
 import { type WikidataClient, type WikidataEntity, WikidataUnavailable } from './client';
 import { discover } from './discover';
 import { englishLabel, genreTag, mapRef, mapWork, type WorkRecord } from './map';
@@ -60,7 +60,7 @@ export type WikidataImportStats = {
   idsAdded?: number;
   /** Backfill runs only: ids a work lacked but another live entity holds (or claimed first), so not added. */
   idsSkippedHeld?: number;
-  /** Backfill runs only: imported works and creators given their English aliases (no change had ever set or merged their list). */
+  /** Backfill runs only: imported works and creators given a names update (aliases appended to a list only import runs set). */
   namesAdded?: number;
 };
 
@@ -85,8 +85,8 @@ export interface RunOptions {
   batchSize?: number;
   /**
    * Add the references (creators, series, franchises, genres, work links) and external ids that works
-   * an import run created are missing, and their and their imported creators' English aliases when no
-   * change ever touched the list: no work is created, no other field is edited, and a relation or id
+   * an import run created are missing, and append their and their imported creators' aliases to lists
+   * only import runs ever set: no work is created, no other field is edited, and a relation or id
    * scheme that ever existed, live or removed, is never added again.
    */
   backfill?: boolean;
@@ -513,18 +513,25 @@ export async function runWikidataImport(
     const idChanges = (ids: typeof newIds): ChangeInput[] =>
       ids.map(({ scheme, value }) => ({ op: 'relate', type: 'external_id', from: work, data: { scheme, value } }));
 
-    // Name lists only import runs set: the work's, and each imported creator's it credits. A list
-    // that appending what AMDB lacks wouldn't change is no update.
+    // Name lists only import runs set: the work's, and each imported creator's it credits, appended
+    // from the uncapped alias list. A list that appending what AMDB lacks wouldn't change is no
+    // update. Each update replaces the whole list, so it goes in only if the list is still the one
+    // read (`namesOpen`).
     let names: ChangeInput[] = [];
+    let namesOpen: NamesExpectation[] = [];
     const named: string[] = [];
-    const alternateTitles = titlesBlocked.has(workId) ? null : extended(workId, rec.fields.alternateTitles ?? []);
-    if (alternateTitles) names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
+    const alternateTitles = titlesBlocked.has(workId) ? null : extended(workId, rec.aliases);
+    if (alternateTitles) {
+      names.push({ op: 'update', kind: 'work', entityId: workId, fields: { alternateTitles } });
+      namesOpen.push({ entityId: workId, key: 'alternateTitles', names: storedNames.get(workId) ?? [] });
+    }
     for (const { qid } of rec.creators) {
       const id = nameableCreators.get(qid);
       if (!id || namedCreators.has(id) || named.includes(id)) continue;
-      const alternateNames = extended(id, refItems.get(qid)?.ref?.alternateNames ?? []);
+      const alternateNames = extended(id, refItems.get(qid)?.ref?.aliases ?? []);
       if (!alternateNames) continue;
       names.push({ op: 'update', kind: 'creator', entityId: id, fields: { alternateNames } });
+      namesOpen.push({ entityId: id, key: 'alternateNames', names: storedNames.get(id) ?? [] });
       named.push(id);
     }
 
@@ -537,12 +544,11 @@ export async function runWikidataImport(
       }
       try {
         // The creates go first, so `refs.created`'s indices hold.
-        const result = await changes.importSubmission(runId, [
-          ...refs.creates,
-          ...relates,
-          ...names,
-          ...idChanges(ids),
-        ]);
+        const result = await changes.importSubmission(
+          runId,
+          [...refs.creates, ...relates, ...names, ...idChanges(ids)],
+          { namesOpen },
+        );
         rememberCreated(refs.created, result);
         break;
       } catch (err) {
@@ -553,11 +559,16 @@ export async function runWikidataImport(
           ids = [];
           continue;
         }
-        if ((err.code === 'duplicate_name' || err.code === 'too_many_names') && names.length > 0) {
+        if (
+          (err.code === 'duplicate_name' || err.code === 'too_many_names' || err.code === 'names_changed') &&
+          names.length > 0
+        ) {
           // A name matches what AMDB holds now, though checked against it (a title changed since it
-          // was read): the lists are left for a person, and the rest of the submission goes in.
+          // was read), or a person touched a list since it was read: the lists are left for a
+          // person, and the rest of the submission goes in.
           log(`dropped names for ${rec.qid}: ${err.code} (${err.message})`);
           names = [];
+          namesOpen = [];
           continue;
         }
         stats.skipped.invalid++;

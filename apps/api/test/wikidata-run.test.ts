@@ -68,15 +68,22 @@ const aliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
   ...e,
   aliases: { en: values.map((value) => ({ value })) },
 });
+/** `e` with language-neutral (`mul`) aliases, beside any English ones it has. */
+const mulAliased = (e: WikidataEntity, ...values: string[]): WikidataEntity => ({
+  ...e,
+  aliases: { ...e.aliases, mul: values.map((value) => ({ value })) },
+});
 
 /**
  * A real client over a fake `fetch`: SPARQL answers with `candidates`, wbgetentities with
- * `entities` (absent ids come back `missing`). `down(ids)` makes an entity call answer 503.
+ * `entities` (absent ids come back `missing`). `down(ids)` makes an entity call answer 503;
+ * `onEntities(ids)` is awaited before an entity call answers.
  */
 function fakeWikidata(
   candidates: { qid: string; sitelinks: number }[],
   entities: Record<string, WikidataEntity>,
   down: (ids: string[]) => boolean = () => false,
+  { onEntities }: { onEntities?: (ids: string[]) => Promise<void> } = {},
 ) {
   const entityCalls: string[][] = [];
   const fetch = async (input: string | URL | Request) => {
@@ -93,6 +100,7 @@ function fakeWikidata(
     }
     const ids = (url.searchParams.get('ids') ?? '').split('|');
     entityCalls.push(ids);
+    await onEntities?.(ids);
     if (down(ids)) return new Response('', { status: 503 });
     return Response.json({ entities: Object.fromEntries(ids.map((id) => [id, entities[id] ?? { id, missing: '' }])) });
   };
@@ -1589,7 +1597,7 @@ it('backfill: a series a person entered under the same title is adopted, not dup
   }
 });
 
-// --- Backfill: English aliases for imported works and creators no change ever named ---
+// --- Backfill: aliases for imported works and creators whose lists only import runs set ---
 
 async function namesOf(db: Awaited<ReturnType<typeof setupTest>>['db']) {
   const ws = await db.select({ title: works.title, alt: works.alternateTitles }).from(works);
@@ -1961,6 +1969,167 @@ it('backfill: after its names are dropped, a work still drops an id another work
       skipped: expect.objectContaining({ invalid: 0 }),
     });
     expect(await relationsOf(t.db, 'work_creator')).toHaveLength(2);
+  } finally {
+    await t.close();
+  }
+});
+
+// --- Backfill: language-neutral (`mul`) aliases appended to lists only imports set ---
+
+/** `withAliases`, with Alpha also carrying `mul` aliases: one it has in `en`, a new one and a Cyrillic one. */
+const withMul = { ...withAliases, Q1: mulAliased(withAliases.Q1, 'Alpha One', 'Alpha Prime', 'Альфа') };
+const mulBackfill = (t: Awaited<ReturnType<typeof setupTest>>) =>
+  runWikidataImport(
+    { db: t.db, client: fakeWikidata(ranked('Q1', 'Q2'), withMul).client, measureBytes: bytes(), today: TODAY },
+    BACKFILL,
+  );
+/** `Alpha 1` … `Alpha <n>`. */
+const numbered = (n: number) => Array.from({ length: n }, (_, i) => `Alpha ${i + 1}`);
+
+it('backfill: a list the first names backfill set gains its Latin mul aliases, and a third backfill adds nothing', async () => {
+  const t = await setupTest();
+  try {
+    const { backfill } = await importedWithoutNames(t);
+    await backfill();
+    expect((await namesOf(t.db)).Alpha).toEqual(['Alpha One']);
+    const appended = await mulBackfill(t);
+    expect(appended.stats).toMatchObject({ backfilled: 1, upToDate: 1, namesAdded: 1 });
+    expect((await namesOf(t.db)).Alpha).toEqual(['Alpha One', 'Alpha Prime']);
+    const again = await mulBackfill(t);
+    expect(again.stats).toMatchObject({ backfilled: 0, upToDate: 2, namesAdded: 0 });
+    expect((await namesOf(t.db)).Alpha).toEqual(['Alpha One', 'Alpha Prime']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a list whose import names update a moderator reverted gets no mul aliases', async () => {
+  const t = await setupTest();
+  try {
+    const { mod, backfill, alpha } = await importedWithoutNames(t);
+    const first = await backfill();
+    const [update] = await t.db
+      .select({ id: changesTable.id })
+      .from(changesTable)
+      .innerJoin(submissions, eq(submissions.id, changesTable.submissionId))
+      .where(
+        and(eq(submissions.importRunId, first.runId), eq(changesTable.op, 'update'), eq(changesTable.entityId, alpha)),
+      );
+    const res = await mod.post(`/api/changes/${update!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+    await mulBackfill(t);
+    expect((await namesOf(t.db)).Alpha).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it("backfill: a revert of a work's title edit doesn't stop mul aliases being appended", async () => {
+  const t = await setupTest();
+  try {
+    const { author, mod, backfill, alpha } = await importedWithoutNames(t);
+    await backfill();
+    const renamed = await publish(author, mod, [
+      { op: 'update', kind: 'work', entityId: alpha, fields: { title: 'Alpha Renamed' } },
+    ]);
+    const res = await mod.post(`/api/changes/${renamed.changes[0]!.id}/revert`);
+    expect(res.status, await res.clone().text()).toBe(200);
+    const result = await mulBackfill(t);
+    expect(result.stats).toMatchObject({ namesAdded: 1 });
+    expect((await namesOf(t.db)).Alpha).toEqual(['Alpha One', 'Alpha Prime']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a list holding 48 names gets the first 2 of 3 new mul aliases', async () => {
+  const t = await setupTest();
+  try {
+    const held = aliased(film('Q1', 'Alpha'), ...numbered(48));
+    const before = fakeWikidata(ranked('Q1'), { Q1: held });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    expect((await namesOf(t.db)).Alpha).toEqual(numbered(48));
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: mulAliased(held, 'Extra A', 'Extra B', 'Extra C') });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 1, namesAdded: 1 });
+    expect((await namesOf(t.db)).Alpha).toEqual([...numbered(48), 'Extra A', 'Extra B']);
+  } finally {
+    await t.close();
+  }
+});
+
+it('backfill: a list holding 50 names gets no update', async () => {
+  const t = await setupTest();
+  try {
+    const held = aliased(film('Q1', 'Alpha'), ...numbered(50));
+    const before = fakeWikidata(ranked('Q1'), { Q1: held });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const { client } = fakeWikidata(ranked('Q1'), { Q1: mulAliased(held, 'Extra A') });
+    const result = await runWikidataImport({ db: t.db, client, measureBytes: bytes(), today: TODAY }, BACKFILL);
+    expect(result.stats).toMatchObject({ backfilled: 0, upToDate: 1, namesAdded: 0 });
+    expect((await namesOf(t.db)).Alpha).toEqual(numbered(50));
+    const alpha = (await workIdByTitle(t.db, 'Alpha'))!;
+    const rows = await t.db
+      .select({ id: changesTable.id })
+      .from(changesTable)
+      .innerJoin(submissions, eq(submissions.id, changesTable.submissionId))
+      .where(and(eq(submissions.importRunId, result.runId), eq(changesTable.entityId, alpha)));
+    expect(rows).toEqual([]);
+  } finally {
+    await t.close();
+  }
+});
+
+it("backfill: a person's names edit between the backfill's read and write survives, and the rest goes in", async () => {
+  const t = await setupTest();
+  try {
+    const before = fakeWikidata(ranked('Q1'), { Q1: unaliased.Q1, Q200: unaliased.Q200 });
+    await runWikidataImport({ db: t.db, client: before.client, measureBytes: bytes(), today: TODAY }, OPTS);
+    const author = t.as({ kind: 'user', userId: await t.createUser() });
+    const mod = t.as({ kind: 'user', userId: await t.createUser({ role: 'moderator' }) });
+    const alpha = (await workIdByTitle(t.db, 'Alpha'))!;
+    const [director] = await t.db
+      .select({ id: creators.entityId })
+      .from(creators)
+      .where(eq(creators.name, 'Dana Director'));
+
+    // The run fetches the imported director after it has read the name lists: a person edits its
+    // list then, before the backfill writes.
+    let raced = false;
+    const { client } = fakeWikidata(
+      ranked('Q1'),
+      {
+        Q1: mulAliased(film('Q1', 'Alpha', { director: 'Q200', tmdbMovie: '603' }), 'Alpha Prime'),
+        Q200: mulAliased(unaliased.Q200, 'D. Director'),
+      },
+      undefined,
+      {
+        onEntities: async (ids) => {
+          if (raced || !ids.includes('Q200')) return;
+          raced = true;
+          await publish(author, mod, [
+            { op: 'update', kind: 'creator', entityId: director!.id, fields: { alternateNames: ['Mine'] } },
+          ]);
+        },
+      },
+    );
+    const lines: string[] = [];
+    const result = await runWikidataImport(
+      { db: t.db, client, measureBytes: bytes(), today: TODAY, log: (l) => lines.push(l) },
+      BACKFILL,
+    );
+    expect(raced).toBe(true);
+    expect(result.status).toBe('finished');
+    expect(result.stats).toMatchObject({
+      backfilled: 1,
+      idsAdded: 1,
+      namesAdded: 0,
+      skipped: expect.objectContaining({ invalid: 0 }),
+    });
+    expect(lines.some((l) => l.includes('dropped names for Q1') && l.includes('names_changed'))).toBe(true);
+    expect(await namesOf(t.db)).toEqual({ Alpha: [], 'Dana Director': ['Mine'] });
+    expect(await externalIdsOf(t.db, alpha)).toContain('tmdb_movie:603');
   } finally {
     await t.close();
   }

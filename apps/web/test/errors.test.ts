@@ -167,6 +167,8 @@ describe('every error code the API can send', () => {
     'entity_unavailable',
     'run_not_running',
     'run_in_progress',
+    // Only an import run's submission can get it.
+    'names_changed',
   ];
   const FALLBACK = '<fallback>';
 
