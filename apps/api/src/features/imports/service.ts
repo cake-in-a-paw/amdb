@@ -10,7 +10,6 @@ const alreadyRunning = (id?: string) =>
     `another import run is already running${id ? ` (${id})` : ''}; wait for it, or see docs/import.md if it died`,
   );
 
-export type { NamesKey };
 /** A name list as an import read it, before writing an update that replaces it. */
 export type NamesExpectation = { entityId: string; key: NamesKey; names: string[] };
 

@@ -215,7 +215,9 @@ export function importsRepository(db: DbOrTx) {
                     .where(
                       and(
                         eq(reverted.entityId, changes.entityId),
-                        sql`${reverted.id}::text = ${changes.payload}->>'revertOf'`,
+                        // Uuid-side comparison, so the primary-key index is used. `revertOf` is written only
+                        // by the revert path, always a change's uuid, so the cast never fails.
+                        sql`${reverted.id} = (${changes.payload}->>'revertOf')::uuid`,
                         sql`${reverted.payload} ? ${key}`,
                       ),
                     ),
