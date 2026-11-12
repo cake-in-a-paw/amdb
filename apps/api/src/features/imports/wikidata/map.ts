@@ -16,6 +16,8 @@ type BookRole = (typeof CreatorRole.book.options)[number];
 
 export interface WorkRecord {
   qid: string;
+  /** The uncapped en-then-mul alias list; `fields.alternateTitles` is its first 50. */
+  aliases: string[];
   fields: {
     mediaType: MediaType;
     subtype: Subtype | null;
@@ -231,12 +233,20 @@ export function englishLabel(entity: WikidataEntity): string {
   return (entity.labels?.en ?? entity.labels?.mul)?.value.trim() ?? '';
 }
 
-/** English aliases, trimmed and without empty or over-long ones, minus any equal to a main name; at most 50. */
-function englishAliases(entity: WikidataEntity, main: (string | null | undefined)[]): string[] {
-  const aliases = (entity.aliases?.en ?? [])
-    .map((a) => a.value.trim())
-    .filter((a) => a.length > 0 && a.length <= MAX_TITLE);
-  return dedupeNames(main, aliases).slice(0, ALTERNATE_NAMES_MAX);
+/** True when every letter in `s` is Latin script (a string with no letters qualifies). */
+export function isLatinScript(s: string): boolean {
+  return !/\p{L}(?<!\p{Script=Latin})/u.test(s);
+}
+
+/**
+ * Aliases from `en` then `mul` ("all languages"), in Wikidata's order. Each is trimmed and 1-500
+ * characters, and deduped against `main` and earlier names. `en` aliases are kept as they are; a
+ * `mul` alias is kept only if it is Latin script, since `mul` carries every script. Uncapped.
+ */
+export function aliasNames(entity: WikidataEntity, main: (string | null | undefined)[]): string[] {
+  const trimmed = (language: 'en' | 'mul') =>
+    (entity.aliases?.[language] ?? []).map((a) => a.value.trim()).filter((a) => a.length > 0 && a.length <= MAX_TITLE);
+  return dedupeNames(main, [...trimmed('en'), ...trimmed('mul').filter(isLatinScript)]);
 }
 
 export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Date): WorkRecord | { skip: 'no_title' } {
@@ -253,7 +263,8 @@ export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Dat
   };
   const original = originalTitle(entity, title);
   if (original) fields.originalTitle = original;
-  const alternateTitles = englishAliases(entity, [title, original]);
+  const aliases = aliasNames(entity, [title, original]);
+  const alternateTitles = aliases.slice(0, ALTERNATE_NAMES_MAX);
   if (alternateTitles.length > 0) fields.alternateTitles = alternateTitles;
   const description = entity.descriptions?.en?.value.trim();
   if (description && description.length <= MAX_DESCRIPTION) fields.description = description;
@@ -290,6 +301,7 @@ export function mapWork(entity: WikidataEntity, candidate: Candidate, today: Dat
   return {
     qid: entity.id,
     fields,
+    aliases,
     creators,
     series: seriesLinks(entity),
     franchises: qids(entity, 'P8345'),
@@ -305,15 +317,18 @@ export function mapRef(entity: WikidataEntity): {
   kind: 'person' | 'organization';
   description?: string;
   alternateNames?: string[];
+  aliases: string[];
 } | null {
   const name = englishLabel(entity);
   if (name.length < 1 || name.length > MAX_TITLE) return null;
   const kind = qids(entity, 'P31').includes('Q5') ? 'person' : 'organization';
   const description = entity.descriptions?.en?.value.trim();
-  const alternateNames = englishAliases(entity, [name]);
+  const aliases = aliasNames(entity, [name]);
+  const alternateNames = aliases.slice(0, ALTERNATE_NAMES_MAX);
   return {
     name,
     kind,
+    aliases,
     ...(description && description.length <= MAX_DESCRIPTION ? { description } : {}),
     ...(alternateNames.length > 0 ? { alternateNames } : {}),
   };

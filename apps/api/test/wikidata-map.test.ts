@@ -3,7 +3,14 @@ import { WorkFields } from '@amdb/shared';
 import { describe, expect, it } from 'vitest';
 import type { Claim, WikidataEntity } from '../src/features/imports/wikidata/client.js';
 import type { Candidate } from '../src/features/imports/wikidata/discover.js';
-import { genreTag, mapRef, mapWork, type WorkRecord } from '../src/features/imports/wikidata/map.js';
+import {
+  aliasNames,
+  genreTag,
+  isLatinScript,
+  mapRef,
+  mapWork,
+  type WorkRecord,
+} from '../src/features/imports/wikidata/map.js';
 
 const fixture = (name: string): WikidataEntity =>
   // Fixture JSON is hand-made to the WikidataEntity shape.
@@ -232,10 +239,10 @@ describe('English aliases', () => {
     expect(ok(mapWork(alias(...many), BOOK, TODAY)).fields.alternateTitles).toHaveLength(50);
   });
 
-  it('ignores non-English aliases', () => {
+  it('ignores aliases in languages other than en and mul', () => {
     const e: WikidataEntity = {
       ...alias(),
-      aliases: { de: [{ value: 'Neunzehnhundertvierundachtzig' }], mul: [{ value: 'MulAlias' }] },
+      aliases: { de: [{ value: 'Neunzehnhundertvierundachtzig' }] },
     };
     expect('alternateTitles' in ok(mapWork(e, BOOK, TODAY)).fields).toBe(false);
   });
@@ -246,20 +253,81 @@ describe('English aliases', () => {
       labels: { en: { value: 'George Orwell' } },
       aliases: { en: [{ value: 'Eric Blair' }, { value: 'george orwell' }] },
     };
-    expect(mapRef(e)).toEqual({ name: 'George Orwell', kind: 'organization', alternateNames: ['Eric Blair'] });
-    expect(mapRef({ id: 'Q9', labels: { en: { value: 'Acme' } } })).toEqual({ name: 'Acme', kind: 'organization' });
+    expect(mapRef(e)).toEqual({
+      name: 'George Orwell',
+      kind: 'organization',
+      alternateNames: ['Eric Blair'],
+      aliases: ['Eric Blair'],
+    });
+    expect(mapRef({ id: 'Q9', labels: { en: { value: 'Acme' } } })).toEqual({
+      name: 'Acme',
+      kind: 'organization',
+      aliases: [],
+    });
+  });
+});
+
+describe('en-then-mul aliases', () => {
+  const list = (values: string[]) => values.map((value) => ({ language: 'x', value }));
+
+  it('aliasNames puts en first, then Latin mul, dropping duplicates, non-Latin and the main title', () => {
+    const e: WikidataEntity = {
+      id: 'Q1',
+      aliases: { en: list(['Alpha One']), mul: list(['Alpha One', 'Zoë 2', 'Альфа', 'ALPHA']) },
+    };
+    expect(aliasNames(e, ['Alpha'])).toEqual(['Alpha One', 'Zoë 2']);
+  });
+
+  it('isLatinScript is true when every letter is Latin', () => {
+    expect(isLatinScript('Samuel L. Clemens')).toBe(true);
+    expect(isLatinScript('Zoë 2')).toBe(true);
+    expect(isLatinScript('1984')).toBe(true);
+    expect(isLatinScript('Альфа')).toBe(false);
+    expect(isLatinScript('Mark 黄')).toBe(false);
+  });
+
+  it('mapWork keeps the uncapped list in aliases and the capped one in alternateTitles', () => {
+    const e: WikidataEntity = {
+      id: 'Q2',
+      labels: { en: { value: 'Thing' } },
+      aliases: {
+        en: list(Array.from({ length: 30 }, (_, i) => `En ${i}`)),
+        mul: list(Array.from({ length: 30 }, (_, i) => `Mul ${i}`)),
+      },
+    };
+    const r = ok(mapWork(e, BOOK, TODAY));
+    expect(r.aliases).toHaveLength(60);
+    expect(r.aliases.slice(30)).toEqual(Array.from({ length: 30 }, (_, i) => `Mul ${i}`));
+    expect(r.fields.alternateTitles).toHaveLength(50);
+  });
+
+  it('mapRef reads a mul-only alias into alternateNames and aliases', () => {
+    const e: WikidataEntity = {
+      id: 'Q7245',
+      labels: { en: { value: 'Mark Twain' } },
+      claims: {
+        P31: [{ rank: 'normal', mainsnak: { snaktype: 'value', property: 'P31', datavalue: { value: { id: 'Q5' } } } }],
+      },
+      aliases: { mul: list(['Samuel Clemens']) },
+    };
+    expect(mapRef(e)).toMatchObject({
+      kind: 'person',
+      alternateNames: ['Samuel Clemens'],
+      aliases: ['Samuel Clemens'],
+    });
   });
 });
 
 describe('mapRef and genreTag', () => {
   it('mapRef: Q5 human → person, otherwise organization, null without an English label', () => {
-    expect(mapRef(fixture('person'))).toEqual({ name: 'Jane Director', kind: 'person' });
+    expect(mapRef(fixture('person'))).toEqual({ name: 'Jane Director', kind: 'person', aliases: [] });
     expect(
       mapRef({ id: 'Q9', labels: { en: { value: 'Acme' } }, descriptions: { en: { value: 'a studio' } } }),
     ).toEqual({
       name: 'Acme',
       kind: 'organization',
       description: 'a studio',
+      aliases: [],
     });
     expect(mapRef({ id: 'Q9', labels: { de: { value: 'Acme' } } })).toBeNull();
   });
@@ -333,7 +401,7 @@ describe('mapWork bad-data guards', () => {
       descriptions: { en: { value: long } },
     };
     expect(ok(mapWork(entity, FILM, TODAY)).fields.description).toBeUndefined();
-    expect(mapRef(entity)).toEqual({ name: 'Thing', kind: 'organization' });
+    expect(mapRef(entity)).toEqual({ name: 'Thing', kind: 'organization', aliases: [] });
     const edge = { ...entity, descriptions: { en: { value: 'd'.repeat(5000) } } };
     expect(ok(mapWork(edge, FILM, TODAY)).fields.description).toHaveLength(5000);
   });
