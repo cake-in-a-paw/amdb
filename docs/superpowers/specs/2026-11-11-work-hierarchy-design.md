@@ -1,6 +1,6 @@
 # Work hierarchy (seasons, episodes, tracks): design
 
-Status: draft for the owner's review, 2026-11-11. The owner answered the open questions on
+Status: approved, 2026-11-12. The owner answered the open questions on
 2026-11-11 (see Decided).
 
 ## Why
@@ -267,7 +267,8 @@ By me (each with what it costs if wrong):
   - A merge whose result breaks the subtype list (merging a season into a film that has no place
     for its episodes) is refused with 409 `invalid_tree`.
 - **Retraction and rejection need no new rule.** Rejecting a pending show create already rejects
-  the part creates and relates that depend on it. Reverting a show's create already fails with
+  the `work_part` relates that depend on it. The pending part creates stay pending as parts
+  without a parent, which are allowed, for a moderator to review on their own. Reverting a show's create already fails with
   `has_dependents` while live `work_part` links to it exist, so a show's parts are reverted first.
 - **Legal or abuse removal doesn't cascade.** Removing a show leaves its seasons and episodes in
   place, since each removal is its own decision. Their pages still resolve and say they belong to
