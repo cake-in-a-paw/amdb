@@ -90,7 +90,12 @@ export function catalogRepository(db: DbOrTx) {
      * the credited works under the root, other than the root itself, by subtype.
      */
     async creditRoots(creatorId: string, maxDepth: number) {
-      const result = await db.execute(sql`
+      const result = await db.execute<{
+        rootId: string;
+        rootListed: boolean;
+        roles: string[];
+        parts: { subtype: Subtype; n: number }[];
+      }>(sql`
         with recursive credit as (
           select r.from_id as work_id, r.role, row_number() over (order by r.created_at, r.id) as ord
           from ${relations} r
@@ -135,13 +140,8 @@ export function catalogRepository(db: DbOrTx) {
         left join part_counts k on k.root_id = g.root_id
         order by g.ord
       `);
-      // `execute` returns the driver's raw result, whose `rows` hold these aliased columns. Counts
-      // sit inside JSON, so they arrive as numbers.
-      return (
-        result as unknown as {
-          rows: { rootId: string; rootListed: boolean; roles: string[]; parts: { subtype: Subtype; n: number }[] }[];
-        }
-      ).rows;
+      // Counts sit inside JSON, so they arrive as numbers; a bare bigint would come back as a string.
+      return result.rows;
     },
 
     /**
@@ -150,7 +150,16 @@ export function catalogRepository(db: DbOrTx) {
      * once, under its nearest link, with that link's parent and position and its own sort fields.
      */
     async subtree(workId: string, maxDepth: number) {
-      const result = await db.execute(sql`
+      const result = await db.execute<{
+        id: string;
+        parentId: string;
+        position: number | null;
+        subtype: Subtype | null;
+        title: string;
+        releaseYear: number | null;
+        releaseMonth: number | null;
+        releaseDay: number | null;
+      }>(sql`
         with recursive down(id, parent_id, position, depth) as (
           select r.to_id, r.from_id, r.position, 1
           from ${relations} r
@@ -168,21 +177,7 @@ export function catalogRepository(db: DbOrTx) {
         where d.id <> ${workId}
         order by d.id, d.depth
       `);
-      // `execute` returns the driver's raw result, whose `rows` hold these aliased columns.
-      return (
-        result as unknown as {
-          rows: {
-            id: string;
-            parentId: string;
-            position: number | null;
-            subtype: Subtype | null;
-            title: string;
-            releaseYear: number | null;
-            releaseMonth: number | null;
-            releaseDay: number | null;
-          }[];
-        }
-      ).rows;
+      return result.rows;
     },
 
     /** The creator's live credits to the listed works among `workIds`, one row per role, oldest first. */

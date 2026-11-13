@@ -18,7 +18,8 @@ declare module 'vitest' {
 
 /**
  * SQLSTATE object_in_use: another session (autovacuum, for example) is briefly connected to the
- * template, and Postgres gives up waiting for it after about 5 s.
+ * template. Postgres already waits about 5 s inside each `CREATE DATABASE` attempt before it
+ * raises this, so the 5 attempts below allow about 25 s in all.
  */
 const OBJECT_IN_USE = '55006';
 

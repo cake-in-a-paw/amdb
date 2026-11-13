@@ -1,4 +1,5 @@
 import { eq, sql } from 'drizzle-orm';
+import type { QueryResultRow } from 'pg';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ArtDeps } from '../src/features/art/sources';
 import { entities } from '../src/platform/db/schema';
@@ -503,8 +504,8 @@ describe('the request', () => {
       await s.book({ openlibrary: 'OL7440033M' }),
       await s.book({ openlibrary: 'OL45804W' }),
     ];
-    // `execute` returns the driver's raw result, whose `rows` hold the selected columns.
-    const rows = async <T>(query: ReturnType<typeof sql>) => ((await s.t.db.execute(query)) as { rows: T[] }).rows;
+    const rows = async <T extends QueryResultRow>(query: ReturnType<typeof sql>) =>
+      (await s.t.db.execute<T>(query)).rows;
     const counts = async () => {
       const tables = await rows<{ tablename: string }>(
         sql`select tablename from pg_tables where schemaname = 'public' order by tablename`,

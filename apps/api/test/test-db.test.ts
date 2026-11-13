@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { eq, sql } from 'drizzle-orm';
-import pg from 'pg';
+import pg, { type QueryResultRow } from 'pg';
 import { expect, inject, it } from 'vitest';
 import { MIGRATIONS_FOLDER } from '../src/platform/db/open';
 import { users } from '../src/platform/db/schema';
@@ -8,9 +8,8 @@ import { openTestDb } from './helpers/test-db';
 
 type TestDb = Awaited<ReturnType<typeof openTestDb>>['db'];
 
-/** `Db` leaves the driver's result type open; node-postgres answers `{ rows }`. */
-async function rows<T>(db: TestDb, query: ReturnType<typeof sql>) {
-  return ((await db.execute(query)) as { rows: T[] }).rows;
+async function rows<T extends QueryResultRow>(db: TestDb, query: ReturnType<typeof sql>) {
+  return (await db.execute<T>(query)).rows;
 }
 
 async function currentDatabase(db: TestDb) {
