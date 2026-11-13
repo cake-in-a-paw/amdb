@@ -1,4 +1,4 @@
-import { PART_SUBTYPES, ZERO_LAST_SUBTYPES, type EntityKind, type MediaType } from '@amdb/shared';
+import { PART_SUBTYPES, ZERO_LAST_SUBTYPES, type EntityKind, type MediaType, type Subtype } from '@amdb/shared';
 import { and, asc, count, desc, eq, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import { listed } from '../../platform/db/listed';
@@ -72,6 +72,63 @@ export function catalogRepository(db: DbOrTx) {
         );
       // Matched on `to_id`, so every row has a child; flatMap only narrows the type.
       return rows.flatMap((r) => (r.childId ? [{ ...r, childId: r.childId }] : []));
+    },
+
+    /**
+     * A creator's credits grouped by root work: one row per root, ordered by the root's earliest
+     * credit (`created_at`, then id). A credit is a live `work_creator` to a listed work; its root
+     * is the top of the work's live `work_part` chain, climbed at most `maxDepth` levels whatever
+     * state each parent is in, so a removed show still gathers its listed parts. `parts` counts
+     * the credited works under the root, other than the root itself, by subtype.
+     */
+    async creditRoots(creatorId: string, maxDepth: number) {
+      const result = await db.execute(sql`
+        with recursive credit as (
+          select r.from_id as work_id, r.role, row_number() over (order by r.created_at, r.id) as ord
+          from ${relations} r
+          join ${entities} on ${entities.id} = r.from_id
+          where r.type = 'work_creator' and r.to_id = ${creatorId} and r.removed_by_change is null and ${listed()}
+        ),
+        climb(work_id, node_id, depth) as (
+          select distinct work_id, work_id, 0 from credit
+          union all
+          select c.work_id, p.from_id, c.depth + 1
+          from climb c
+          join ${relations} p on p.type = 'work_part' and p.to_id = c.node_id and p.removed_by_change is null
+          where c.depth < ${maxDepth}
+        ),
+        root as (
+          select distinct on (work_id) work_id, node_id as root_id from climb order by work_id, depth desc
+        ),
+        rooted as (
+          select root.root_id, credit.work_id, credit.role, credit.ord
+          from credit join root on root.work_id = credit.work_id
+        )
+        select
+          g.root_id as "rootId",
+          exists (select 1 from ${entities} where ${entities.id} = g.root_id and ${listed()}) as "rootListed",
+          array_agg(distinct g.role) as roles,
+          coalesce(
+            (select json_agg(json_build_object('subtype', x.subtype, 'n', x.n))
+             from (
+               select w.subtype, count(distinct p.work_id) as n
+               from rooted p join ${works} w on w.entity_id = p.work_id
+               where p.root_id = g.root_id and p.work_id <> p.root_id and w.subtype is not null
+               group by w.subtype
+             ) x),
+            '[]'::json
+          ) as parts
+        from rooted g
+        group by g.root_id
+        order by min(g.ord)
+      `);
+      // `execute` returns the driver's raw result; both PGlite and node-postgres put rows in `rows`,
+      // with these aliased columns. Counts sit inside JSON, so they arrive as numbers on both.
+      return (
+        result as unknown as {
+          rows: { rootId: string; rootListed: boolean; roles: string[]; parts: { subtype: Subtype; n: number }[] }[];
+        }
+      ).rows;
     },
 
     /** Display fields for the works among `ids`, listed or not; `removed` once taken down. */

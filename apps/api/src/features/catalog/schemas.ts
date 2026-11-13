@@ -61,6 +61,22 @@ export const EntitySchema = z.object({
         }),
       )
       .optional(),
+    /**
+     * A creator's credits, one row per root work (a show, a film, an orphan part), in order of
+     * each row's earliest credit. `roles` are every role the creator holds at or under the root;
+     * `parts` counts the credited works under it by subtype. A root taken down while its parts
+     * stay listed is `removed`, with its stored title.
+     */
+    credits: z
+      .array(
+        z.object({
+          work: SummarySchema,
+          removed: z.boolean(),
+          roles: z.array(z.string()),
+          parts: z.partialRecord(Subtype, z.number().int()),
+        }),
+      )
+      .optional(),
     series: z.array(z.object({ relationId, series: SummarySchema, position: z.number().int() })).optional(),
     properties: z.array(z.object({ relationId, property: SummarySchema })).optional(),
     links: z

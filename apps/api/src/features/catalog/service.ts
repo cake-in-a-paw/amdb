@@ -1,4 +1,4 @@
-import { MediaType, normalizeTitle, type EntityKind } from '@amdb/shared';
+import { CreatorRole, MediaType, normalizeTitle, PART_SUBTYPES, type EntityKind } from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
 import { resolveWinner } from '../../platform/db/merge';
 import { gone, notFound } from '../../platform/http/errors';
@@ -34,6 +34,15 @@ const byPosition = <T extends { position?: number }>(items: T[]) =>
 
 /** The deepest ancestor walk; a guard against corrupt data, far above any real tree. */
 const MAX_DEPTH = 8;
+
+/** Every known role, in the order a credit lists them. */
+const ROLE_ORDER: readonly string[] = [...CreatorRole.film_tv.options, ...CreatorRole.book.options];
+
+/** `roles` once each, known roles in `ROLE_ORDER`, then any other alphabetically. */
+function byRoleOrder(roles: string[]): string[] {
+  const rank = (r: string) => (ROLE_ORDER.includes(r) ? ROLE_ORDER.indexOf(r) : ROLE_ORDER.length);
+  return [...new Set(roles)].toSorted((a, b) => rank(a) - rank(b) || (a < b ? -1 : a > b ? 1 : 0));
+}
 
 /** A work's live link to its parent. */
 interface ParentLink {
@@ -162,6 +171,24 @@ export function createCatalogService(db: Db) {
     );
   }
 
+  /** A creator's credits, one row per root work, each root's summary from its stored row. */
+  async function credits(creatorId: string): Promise<NonNullable<EntityView['relations']['credits']>> {
+    const roots = await repo.creditRoots(creatorId, MAX_DEPTH);
+    const rowOf = new Map((await repo.workRows(roots.map((r) => r.rootId))).map((w) => [w.id, w]));
+    return roots.map((r) => {
+      const row = rowOf.get(r.rootId);
+      if (!row) throw new Error(`credit root ${r.rootId} has no work row`);
+      return {
+        work: toSummary({ ...row, kind: 'work' }),
+        removed: !r.rootListed,
+        roles: byRoleOrder(r.roles),
+        parts: Object.fromEntries(
+          PART_SUBTYPES.flatMap((s) => r.parts.filter((p) => p.subtype === s).map((p) => [s, p.n])),
+        ),
+      };
+    });
+  }
+
   return {
     /** Current state of a live entity (410 `removed` once taken down); a merged id answers `{ redirectTo }` with its winner. A reserved id whose create isn't live yet is unknown: 404. */
     async getEntity(id: string): Promise<EntityView | { redirectTo: string }> {
@@ -258,6 +285,7 @@ export function createCatalogService(db: Db) {
             ...(r.role === null ? {} : { role: r.role }),
             ...position(r.position),
           }));
+          relations.credits = await credits(id);
           relations.externalIds = externalIds();
           break;
         case 'series':

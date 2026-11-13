@@ -3338,6 +3338,152 @@
                             ]
                           }
                         },
+                        "credits": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "work": {
+                                "type": "object",
+                                "properties": {
+                                  "id": {
+                                    "type": "string",
+                                    "format": "uuid"
+                                  },
+                                  "kind": {
+                                    "type": "string",
+                                    "enum": [
+                                      "work",
+                                      "creator",
+                                      "series",
+                                      "property",
+                                      "tag"
+                                    ]
+                                  },
+                                  "title": {
+                                    "type": "string"
+                                  },
+                                  "mediaType": {
+                                    "type": "string",
+                                    "enum": [
+                                      "film_tv",
+                                      "book"
+                                    ]
+                                  },
+                                  "releaseYear": {
+                                    "type": "integer"
+                                  },
+                                  "part": {
+                                    "type": "object",
+                                    "properties": {
+                                      "subtype": {
+                                        "type": "string",
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode"
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "ancestors": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "object",
+                                          "properties": {
+                                            "id": {
+                                              "type": "string",
+                                              "format": "uuid"
+                                            },
+                                            "title": {
+                                              "type": "string"
+                                            },
+                                            "subtype": {
+                                              "type": "string",
+                                              "nullable": true,
+                                              "enum": [
+                                                "movie",
+                                                "series",
+                                                "anime_series",
+                                                "anime_film",
+                                                "season",
+                                                "episode",
+                                                null
+                                              ]
+                                            },
+                                            "position": {
+                                              "type": "integer"
+                                            },
+                                            "removed": {
+                                              "type": "boolean"
+                                            }
+                                          },
+                                          "required": [
+                                            "id",
+                                            "title",
+                                            "subtype",
+                                            "removed"
+                                          ]
+                                        }
+                                      }
+                                    },
+                                    "required": [
+                                      "subtype",
+                                      "ancestors"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "id",
+                                  "kind",
+                                  "title"
+                                ]
+                              },
+                              "removed": {
+                                "type": "boolean"
+                              },
+                              "roles": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string"
+                                }
+                              },
+                              "parts": {
+                                "type": "object",
+                                "properties": {
+                                  "movie": {
+                                    "type": "integer"
+                                  },
+                                  "series": {
+                                    "type": "integer"
+                                  },
+                                  "anime_series": {
+                                    "type": "integer"
+                                  },
+                                  "anime_film": {
+                                    "type": "integer"
+                                  },
+                                  "season": {
+                                    "type": "integer"
+                                  },
+                                  "episode": {
+                                    "type": "integer"
+                                  }
+                                }
+                              }
+                            },
+                            "required": [
+                              "work",
+                              "removed",
+                              "roles",
+                              "parts"
+                            ]
+                          }
+                        },
                         "series": {
                           "type": "array",
                           "items": {

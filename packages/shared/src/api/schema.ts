@@ -1584,6 +1584,42 @@ export interface paths {
                                     role?: string;
                                     position?: number;
                                 }[];
+                                credits?: {
+                                    work: {
+                                        /** Format: uuid */
+                                        id: string;
+                                        /** @enum {string} */
+                                        kind: "work" | "creator" | "series" | "property" | "tag";
+                                        title: string;
+                                        /** @enum {string} */
+                                        mediaType?: "film_tv" | "book";
+                                        releaseYear?: number;
+                                        part?: {
+                                            /** @enum {string} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                            position?: number;
+                                            ancestors: {
+                                                /** Format: uuid */
+                                                id: string;
+                                                title: string;
+                                                /** @enum {string|null} */
+                                                subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                                position?: number;
+                                                removed: boolean;
+                                            }[];
+                                        };
+                                    };
+                                    removed: boolean;
+                                    roles: string[];
+                                    parts: {
+                                        movie?: number;
+                                        series?: number;
+                                        anime_series?: number;
+                                        anime_film?: number;
+                                        season?: number;
+                                        episode?: number;
+                                    };
+                                }[];
                                 series?: {
                                     /** Format: uuid */
                                     relationId: string;
