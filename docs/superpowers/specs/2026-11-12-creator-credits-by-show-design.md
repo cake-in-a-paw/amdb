@@ -1,6 +1,6 @@
 # Creator credits grouped by show: design
 
-Status: draft, 2026-11-12. Builds on `2026-11-11-work-hierarchy-design.md`.
+Status: approved by the owner, 2026-11-12. Builds on `2026-11-11-work-hierarchy-design.md`.
 
 ## Why
 
@@ -62,15 +62,17 @@ long as it is today, while every episode credit can still be found from that row
   a film gets one row, "director, writer", instead of two. That keeps films and shows the same
   shape. *Cost if wrong:* the list reads differently for films than today; easy to split back.
 - **Which credits count** (my call): exactly the credits a creator page lists today, meaning
-  every live `work_creator` relation, including those on removed works, which show as removed.
-  A root row exists when at least one such credit sits at or under it. A removed root with
-  credited live parts still gets its row, using the existing "a removed work" copy, so the
-  credits stay reachable. An orphan part is a root of its own, as above.
+  live `work_creator` relations to listed works (not removed, retracted or merged away).
+  - A root row exists when at least one such credit sits at or under it.
+  - A root that isn't listed itself (a removed show) but has credited listed parts still gets its
+    row, marked removed and shown with the existing "a removed work" copy, so the credits stay
+    reachable.
+  - An orphan part is a root of its own, as above.
 - **Roles** (my call):
   - Distinct per row, in the `@amdb/shared` role-list order. Any role string outside that list
     comes after, alphabetically.
-  - A credit with no role adds nothing to `roles`. A row whose only credits have no role has an
-    empty `roles` list and reads like today's row with no role.
+  - Every `work_creator` relation carries a role (`relations_type_columns`), so a row's `roles`
+    is never empty.
 - **Row content** (my call): the root's title and year, as today, then its roles. When the
   creator has credits on its parts, a count follows, such as "12 episodes" or "2 seasons, 14
   episodes", which is the way into the focused view. A row for a root with no credited parts
@@ -120,3 +122,10 @@ long as it is today, while every episode credit can still be found from that row
 - How a removed or merged-away root is shown (follow the work hierarchy's existing "a removed
   work" copy).
 - Whether roles are deduplicated and sorted in SQL or in the service.
+
+## Production Annotations
+
+- The focused view orders one creator's credits under one show in the service, after reading all
+  of them, because the depth-first parts order spans two tree levels. That's bounded by one show's
+  size: at most a few thousand rows for the longest-running shows. If a show ever holds far more,
+  move the order into SQL.
