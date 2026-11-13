@@ -1581,7 +1581,6 @@ export interface paths {
                                             }[];
                                         };
                                     };
-                                    role?: string;
                                     position?: number;
                                 }[];
                                 credits?: {

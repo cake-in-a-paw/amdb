@@ -294,6 +294,36 @@ export async function publishTree(api: TestApi, changes: ReturnType<typeof tvWor
   return idsByRef(changes, made.changes);
 }
 
+/**
+ * Publishes the show `Show` the real way: season `S1` (no. 1) holding episodes `Pilot` (no. 1) and
+ * `Two` (no. 2), and the creator `Showrunner`, who wrote `Pilot` and directed `Two`. With
+ * `directedShow`, they also directed `Show` itself. Returns each id by name, and `showCreate`, the
+ * id of the change that created `Show`.
+ */
+export async function publishShowCredits(api: TestApi, opts: { directedShow?: boolean } = {}) {
+  const changes = [
+    tvWork('show', 'series', 'Show'),
+    tvWork('s1', 'season', 'S1'),
+    tvWork('pilot', 'episode', 'Pilot'),
+    tvWork('two', 'episode', 'Two'),
+    creator('showrunner', 'Showrunner'),
+    partOf('show', 's1', 1),
+    partOf('s1', 'pilot', 1),
+    partOf('s1', 'two', 2),
+    credit('pilot', 'showrunner', 'writer'),
+    credit('two', 'showrunner', 'director'),
+    ...(opts.directedShow ? [credit('show', 'showrunner', 'director')] : []),
+  ];
+  const { contributor, moderator } = await actors(api);
+  const made = (await publish(contributor, moderator, changes)).changes;
+  const { show, s1, pilot, two, showrunner } = idsByRef(changes, made);
+  const showCreate = made[0]?.id;
+  if (!show || !s1 || !pilot || !two || !showrunner || !showCreate) {
+    throw new Error('the show fixture is missing an entity');
+  }
+  return { show, s1, pilot, two, creator: showrunner, showCreate };
+}
+
 export function idsByRef(changes: { op: string; ref?: string }[], made: { entityId: string | null }[]) {
   const ids: Record<string, string> = {};
   changes.forEach((change, i) => {

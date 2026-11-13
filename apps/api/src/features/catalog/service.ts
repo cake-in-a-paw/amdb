@@ -229,7 +229,8 @@ export function createCatalogService(db: Db) {
       if (!row) throw new Error(`entity ${id} has no ${entity.kind} row`);
       const fields = Object.fromEntries(Object.entries(row).filter(([k]) => !DERIVED.has(k)));
 
-      const active = await repo.activeRelations(id);
+      // A creator's credits come grouped from `credits`, so its page never loads every credit row.
+      const active = await repo.activeRelations(id, entity.kind === 'creator' ? { except: ['work_creator'] } : {});
       const others = active.flatMap((r) => [r.fromId, r.toId]).filter((x): x is string => !!x && x !== id);
       const summaries = new Map(
         (await repo.summaries([...new Set(others)])).map((s): [string, Summary] => [s.id, toSummary(s)]),
@@ -309,12 +310,6 @@ export function createCatalogService(db: Db) {
           );
           break;
         case 'creator':
-          relations.works = incoming('work_creator').map((r) => ({
-            relationId: r.id,
-            work: summary(r.fromId),
-            ...(r.role === null ? {} : { role: r.role }),
-            ...position(r.position),
-          }));
           relations.credits = await credits(id);
           relations.externalIds = externalIds();
           break;

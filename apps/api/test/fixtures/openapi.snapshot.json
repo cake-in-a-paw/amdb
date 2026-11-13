@@ -3325,9 +3325,6 @@
                                   "title"
                                 ]
                               },
-                              "role": {
-                                "type": "string"
-                              },
                               "position": {
                                 "type": "integer"
                               }

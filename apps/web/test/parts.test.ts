@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { Summary } from '@/lib/entity';
-import { type Ancestor, partLabel, partTitle } from '@/lib/parts';
+import { type Ancestor, creditPartsLabel, partLabel, partTitle } from '@/lib/parts';
 
 const show: Ancestor = {
   id: '00000000-0000-4000-8000-000000000001',
@@ -82,5 +82,19 @@ describe('partTitle', () => {
         summary('Pilot', { subtype: 'episode', position: 1, ancestors: [{ ...show, removed: true }, season(1)] }),
       ),
     ).toBe('S1E1 · Pilot');
+  });
+});
+
+describe('creditPartsLabel', () => {
+  test('counts seasons, then episodes', () => {
+    expect(creditPartsLabel({ season: 2, episode: 14 })).toBe('2 seasons, 14 episodes');
+  });
+
+  test('one of a kind is singular', () => {
+    expect(creditPartsLabel({ episode: 1 })).toBe('1 episode');
+  });
+
+  test('no parts is empty', () => {
+    expect(creditPartsLabel({})).toBe('');
   });
 });

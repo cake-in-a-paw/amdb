@@ -1,4 +1,11 @@
-import { PART_SUBTYPES, ZERO_LAST_SUBTYPES, type EntityKind, type MediaType, type Subtype } from '@amdb/shared';
+import {
+  PART_SUBTYPES,
+  ZERO_LAST_SUBTYPES,
+  type EntityKind,
+  type MediaType,
+  type RelationType,
+  type Subtype,
+} from '@amdb/shared';
 import { and, asc, count, desc, eq, inArray, isNull, lte, ne, notInArray, or, sql } from 'drizzle-orm';
 import { changes, creators, entities, properties, relations, series, tags, works } from '../../platform/db/schema';
 import { listed } from '../../platform/db/listed';
@@ -39,17 +46,18 @@ export function catalogRepository(db: DbOrTx) {
     },
 
     /**
-     * Active relations starting or ending at `id`, oldest first, except `work_part`: a work's parts
-     * are paged by `parts`, and its own parent link comes from `parentLinks`.
+     * Active relations starting or ending at `id`, oldest first, except `work_part` (a work's parts
+     * are paged by `parts`, and its own parent link comes from `parentLinks`) and any type in
+     * `except`, for a view that reads those another way.
      */
-    async activeRelations(id: string) {
+    async activeRelations(id: string, { except = [] }: { except?: RelationType[] } = {}) {
       return db
         .select()
         .from(relations)
         .where(
           and(
             or(eq(relations.fromId, id), eq(relations.toId, id)),
-            ne(relations.type, 'work_part'),
+            notInArray(relations.type, ['work_part', ...except]),
             isNull(relations.removedByChange),
           ),
         )

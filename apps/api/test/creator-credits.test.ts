@@ -101,3 +101,26 @@ it('a removed film drops out, as today', async () => {
     await s.t.close();
   }
 });
+
+it('only creators trade works for credits', async () => {
+  const s = await setup();
+  try {
+    const { c, f } = await fixture(s);
+    const made = await publish(s.author, s.mod, [
+      { op: 'create', kind: 'series', ref: 'x', fields: { title: 'X' } },
+      { op: 'relate', type: 'series_work', from: { ref: 'x' }, to: { id: f }, data: { position: 1 } },
+    ]);
+    const relationsOf = async (id: string) => {
+      const res = await s.anon.get(`/api/entities/${id}`);
+      expect(res.status, await res.clone().text()).toBe(200);
+      type Relations = { works?: { work: { id: string } }[]; credits?: unknown[] };
+      return ((await res.json()) as { relations: Relations }).relations;
+    };
+    const ofCreator = await relationsOf(c);
+    expect(ofCreator.works).toBeUndefined();
+    expect(ofCreator.credits).toHaveLength(3);
+    expect((await relationsOf(s.idOf(made, 0))).works?.map((w) => w.work.id)).toEqual([f]);
+  } finally {
+    await s.t.close();
+  }
+});

@@ -23,6 +23,7 @@ import { Route as ChangesIdResubmitRouteImport } from './routes/changes.$id.resu
 import { Route as EntitiesIdIndexRouteImport } from './routes/entities.$id.index'
 import { Route as EntitiesIdEditRouteImport } from './routes/entities.$id.edit'
 import { Route as EntitiesIdHistoryRouteImport } from './routes/entities.$id.history'
+import { Route as EntitiesIdCreditsWorkIdRouteImport } from './routes/entities.$id.credits.$workId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -94,6 +95,11 @@ const EntitiesIdHistoryRoute = EntitiesIdHistoryRouteImport.update({
   path: '/history',
   getParentRoute: () => EntitiesIdRoute,
 } as any)
+const EntitiesIdCreditsWorkIdRoute = EntitiesIdCreditsWorkIdRouteImport.update({
+  id: '/credits/$workId',
+  path: '/credits/$workId',
+  getParentRoute: () => EntitiesIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -110,6 +116,7 @@ export interface FileRoutesByFullPath {
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id/': typeof EntitiesIdIndexRoute
+  '/entities/$id/credits/$workId': typeof EntitiesIdCreditsWorkIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id': typeof EntitiesIdIndexRoute
+  '/entities/$id/credits/$workId': typeof EntitiesIdCreditsWorkIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -142,6 +150,7 @@ export interface FileRoutesById {
   '/entities/$id/edit': typeof EntitiesIdEditRoute
   '/entities/$id/history': typeof EntitiesIdHistoryRoute
   '/entities/$id/': typeof EntitiesIdIndexRoute
+  '/entities/$id/credits/$workId': typeof EntitiesIdCreditsWorkIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -160,6 +169,7 @@ export interface FileRouteTypes {
     | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id/'
+    | '/entities/$id/credits/$workId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id'
+    | '/entities/$id/credits/$workId'
   id:
     | '__root__'
     | '/'
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/entities/$id/edit'
     | '/entities/$id/history'
     | '/entities/$id/'
+    | '/entities/$id/credits/$workId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -307,6 +319,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EntitiesIdHistoryRouteImport
       parentRoute: typeof EntitiesIdRoute
     }
+    '/entities/$id/credits/$workId': {
+      id: '/entities/$id/credits/$workId'
+      path: '/credits/$workId'
+      fullPath: '/entities/$id/credits/$workId'
+      preLoaderRoute: typeof EntitiesIdCreditsWorkIdRouteImport
+      parentRoute: typeof EntitiesIdRoute
+    }
   }
 }
 
@@ -314,12 +333,14 @@ interface EntitiesIdRouteChildren {
   EntitiesIdEditRoute: typeof EntitiesIdEditRoute
   EntitiesIdHistoryRoute: typeof EntitiesIdHistoryRoute
   EntitiesIdIndexRoute: typeof EntitiesIdIndexRoute
+  EntitiesIdCreditsWorkIdRoute: typeof EntitiesIdCreditsWorkIdRoute
 }
 
 const EntitiesIdRouteChildren: EntitiesIdRouteChildren = {
   EntitiesIdEditRoute: EntitiesIdEditRoute,
   EntitiesIdHistoryRoute: EntitiesIdHistoryRoute,
   EntitiesIdIndexRoute: EntitiesIdIndexRoute,
+  EntitiesIdCreditsWorkIdRoute: EntitiesIdCreditsWorkIdRoute,
 }
 
 const EntitiesIdRouteWithChildren = EntitiesIdRoute._addFileChildren(

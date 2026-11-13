@@ -78,6 +78,11 @@ export function roleLabel(role: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
+/** A credit's roles in words, in the order given: "Director, Writer". */
+export function rolesLabel(roles: string[]): string {
+  return roles.map(roleLabel).join(', ');
+}
+
 const months = [
   'January',
   'February',

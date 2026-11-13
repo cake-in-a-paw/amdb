@@ -1,5 +1,26 @@
-import type { Subtype } from '@amdb/shared';
+import { PART_OF, PART_SUBTYPES, type Subtype } from '@amdb/shared';
 import type { EntityView, Summary } from './entity';
+
+type PartSubtype = keyof (typeof PART_OF)[keyof typeof PART_OF];
+
+/** Each part subtype counted in words; keyed by `PART_OF`, so a new part subtype fails typecheck until it has them. */
+const partNouns: Record<PartSubtype, { one: string; many: string }> = {
+  season: { one: 'season', many: 'seasons' },
+  episode: { one: 'episode', many: 'episodes' },
+};
+const nounsOf: Partial<Record<Subtype, { one: string; many: string }>> = partNouns;
+
+/**
+ * How many of each part a creator is credited on, in parts order: "2 seasons, 14 episodes",
+ * "1 episode". No parts is ''.
+ */
+export function creditPartsLabel(parts: Partial<Record<Subtype, number>>): string {
+  return PART_SUBTYPES.flatMap((subtype) => {
+    const n = parts[subtype];
+    const nouns = nounsOf[subtype];
+    return n && nouns ? [`${n} ${n === 1 ? nouns.one : nouns.many}`] : [];
+  }).join(', ');
+}
 
 /** One work above another in its show, as the API lists them: root first, parent last. */
 export type Ancestor = NonNullable<EntityView['relations']['ancestors']>[number];

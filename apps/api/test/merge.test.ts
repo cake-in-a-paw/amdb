@@ -25,10 +25,12 @@ const directed = (workRef: unknown, creatorRef: unknown) => ({
 });
 const merge = (kind: string, from: string, into: string) => ({ op: 'merge', kind, from, into });
 
-type Rel = { relationId: string; work: { id: string; title: string } };
 type Entity = {
   fields: Record<string, unknown>;
-  relations: { works?: Rel[]; creators?: { creator: { id: string } }[] };
+  relations: {
+    credits?: { work: { id: string } }[];
+    creators?: { relationId: string; creator: { id: string } }[];
+  };
 };
 
 async function setup() {
@@ -42,6 +44,19 @@ async function setup() {
     expect(res.status, await res.clone().text()).toBe(200);
     return (await res.json()) as Entity;
   };
+  /** The ids of the works creator `id` is credited on. */
+  const creditedWorks = async (id: string) => (await entity(id)).relations.credits!.map((c) => c.work.id);
+  /** The ids of creator `id`'s credit relations on each of `workIds`, read from the works' side. */
+  const creditIds = async (id: string, workIds: string[]) =>
+    (
+      await Promise.all(
+        workIds.map(async (w) =>
+          (await entity(w)).relations.creators!.filter((c) => c.creator.id === id).map((c) => c.relationId),
+        ),
+      )
+    )
+      .flat()
+      .toSorted();
   /** Two creators each directing a work; returns their ids. */
   const twoCreators = async () => {
     const a = await publish(author, mod, [
@@ -61,11 +76,11 @@ async function setup() {
       sicario: b.changes[0]!.entityId!,
     };
   };
-  return { t, author, mod, anon, get, entity, twoCreators };
+  return { t, author, mod, anon, get, entity, creditedWorks, creditIds, twoCreators };
 }
 
 it('after merging two creators, the loser’s id redirects with 308 and the winner lists both works', async () => {
-  const { t, author, mod, anon, get, entity, twoCreators } = await setup();
+  const { t, author, mod, anon, get, entity, creditedWorks, twoCreators } = await setup();
   try {
     const { winner, loser, arrival, sicario } = await twoCreators();
     const [change] = (await publish(author, mod, [merge('creator', loser, winner)])).changes;
@@ -79,8 +94,7 @@ it('after merging two creators, the loser’s id redirects with 308 and the winn
     expect(hist.headers.get('location')).toBe(`/api/entities/${winner}/history`);
     expect(await hist.json()).toEqual({ redirectTo: winner });
 
-    const works = (await entity(winner)).relations.works!;
-    expect(works.map((w) => w.work.id).toSorted()).toEqual([arrival, sicario].toSorted());
+    expect((await creditedWorks(winner)).toSorted()).toEqual([arrival, sicario].toSorted());
     // The works now credit the winner.
     expect((await entity(sicario)).relations.creators!.map((c) => c.creator.id)).toEqual([winner]);
 
@@ -113,28 +127,26 @@ it('a pending update to the loser, approved after the merge, changes the winner'
 });
 
 it('reverting a merge restores both entities and their relations', async () => {
-  const { t, author, mod, get, entity, twoCreators } = await setup();
+  const { t, author, mod, get, entity, creditedWorks, creditIds, twoCreators } = await setup();
   try {
     const { winner, loser, arrival, sicario } = await twoCreators();
     // Both creators also direct a shared work: the loser's duplicate is dropped by the merge.
     const shared = await publish(author, mod, [film('Dune')]);
     const dune = shared.changes[0]!.entityId!;
     await publish(author, mod, [directed({ id: dune }, { id: winner }), directed({ id: dune }, { id: loser })]);
-    const before = {
-      winner: (await entity(winner)).relations.works!.map((w) => w.relationId).toSorted(),
-      loser: (await entity(loser)).relations.works!.map((w) => w.relationId).toSorted(),
-    };
+    const all = [arrival, sicario, dune];
+    const before = { winner: await creditIds(winner, all), loser: await creditIds(loser, all) };
     expect(before.loser).toHaveLength(2);
 
     const merged = await publish(author, mod, [merge('creator', loser, winner)]);
-    expect((await entity(winner)).relations.works!).toHaveLength(3);
+    expect(await creditedWorks(winner)).toHaveLength(3);
     expect((await get(loser)).status).toBe(308);
 
     const res = await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`);
     expect(res.status, await res.clone().text()).toBe(200);
     expect((await get(loser)).status).toBe(200);
-    expect((await entity(winner)).relations.works!.map((w) => w.relationId).toSorted()).toEqual(before.winner);
-    expect((await entity(loser)).relations.works!.map((w) => w.relationId).toSorted()).toEqual(before.loser);
+    expect(await creditIds(winner, all)).toEqual(before.winner);
+    expect(await creditIds(loser, all)).toEqual(before.loser);
     expect((await entity(sicario)).relations.creators!.map((c) => c.creator.id).toSorted()).toEqual([loser]);
     expect((await entity(arrival)).relations.creators!.map((c) => c.creator.id)).toEqual([winner]);
 
@@ -170,7 +182,7 @@ it('the winner’s history includes the loser’s own changes and updates that n
 });
 
 it('an update and a relate naming a loser id are accepted and apply to the winner', async () => {
-  const { t, author, mod, entity, twoCreators } = await setup();
+  const { t, author, mod, entity, creditedWorks, twoCreators } = await setup();
   try {
     const { winner, loser } = await twoCreators();
     await publish(author, mod, [merge('creator', loser, winner)]);
@@ -178,7 +190,7 @@ it('an update and a relate naming a loser id are accepted and apply to the winne
     expect((await entity(winner)).fields.description).toBe('y');
     const w = await publish(author, mod, [film('Enemy'), directed({ ref: 'w' }, { id: loser })]);
     const enemy = w.changes[0]!.entityId!;
-    expect((await entity(winner)).relations.works!.map((r) => r.work.id)).toContain(enemy);
+    expect(await creditedWorks(winner)).toContain(enemy);
     // A merge naming the loser as `from` resolves to the winner: merging it into the winner is a self-merge.
     const res = await author.post('/api/submissions', { cc0: true, changes: [merge('creator', loser, winner)] });
     expect(res.status).toBe(400);
@@ -211,7 +223,7 @@ it('rejects a merge of different kinds and a self-merge, including through a mer
 });
 
 it('a merge into a merged entity lands on the winner, and a later change blocks reverting the merge', async () => {
-  const { t, author, mod, entity, get, twoCreators } = await setup();
+  const { t, author, mod, get, creditIds, twoCreators } = await setup();
   try {
     const { winner, loser, sicario } = await twoCreators();
     const third = await publish(author, mod, [creator('Denis V.')]);
@@ -222,8 +234,8 @@ it('a merge into a merged entity lands on the winner, and a later change blocks 
     expect((await get(stray)).headers.get('location')).toBe(`/api/entities/${winner}`);
 
     // A later unrelate of a moved relation makes the first merge irreversible.
-    const rel = (await entity(winner)).relations.works!.find((w) => w.work.id === sicario)!;
-    await publish(author, mod, [{ op: 'unrelate', relationId: rel.relationId }]);
+    const [relationId] = await creditIds(winner, [sicario]);
+    await publish(author, mod, [{ op: 'unrelate', relationId }]);
     const res = await mod.post(`/api/changes/${first.changes[0]!.id}/revert`);
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: { code: string } }).error.code).toBe('stale_change');

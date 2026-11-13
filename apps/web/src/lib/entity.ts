@@ -4,6 +4,8 @@ import { unwrap } from './api';
 
 export type EntityView = paths['/api/entities/{id}']['get']['responses'][200]['content']['application/json'];
 export type Summary = paths['/api/browse']['get']['responses'][200]['content']['application/json']['items'][number];
+/** One row of a creator's credits: a show or film, every role they had at or under it, and their part counts. */
+export type Credit = NonNullable<EntityView['relations']['credits']>[number];
 
 /** How many entries a list asks for at a time. */
 export const PAGE_SIZE = 20;

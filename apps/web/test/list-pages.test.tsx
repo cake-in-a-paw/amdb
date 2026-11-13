@@ -1,6 +1,6 @@
 import { screen, within } from '@testing-library/react';
 import { expect, test } from 'vitest';
-import { actors, publish, renderApp, seed } from './harness';
+import { actors, publish, publishShowCredits, renderApp, seed } from './harness';
 
 type Seeded = Awaited<ReturnType<typeof seed>>;
 
@@ -27,6 +27,21 @@ test('a creator page lists their works with the role they had', async () => {
   );
   expect(within(list).getAllByRole('listitem')).toHaveLength(3);
   expect(titles(list)[0]).toContain('Director');
+});
+
+test('a creator page lists a show once, with every role under it', async () => {
+  const t = await renderApp('/', { seed: (api) => publishShowCredits(api) });
+  await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.creator } });
+
+  const list = await screen.findByRole('list', { name: 'Works' });
+  const items = titles(list);
+  expect(items).toHaveLength(1);
+  expect(items[0]).toContain('Show');
+  expect(items[0]).toContain('Director, Writer');
+  expect(within(list).getByRole('link', { name: '2 episodes in Show' })).toHaveAttribute(
+    'href',
+    `/entities/${t.seeded.creator}/credits/${t.seeded.show}`,
+  );
 });
 
 test('a series page lists its works in position order, not title order', async () => {

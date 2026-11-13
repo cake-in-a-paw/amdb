@@ -132,9 +132,9 @@ it('rejecting the link and then the create retracts the entity; both changes kee
 
     expect((await t.as({ kind: 'none' }).get(`/api/entities/${w!.entityId}`)).status).toBe(404);
     const creator = (await (await t.as({ kind: 'none' }).get(`/api/entities/${c!.entityId}`)).json()) as {
-      relations: { works: unknown[] };
+      relations: { credits: unknown[] };
     };
-    expect(creator.relations.works).toEqual([]);
+    expect(creator.relations.credits).toEqual([]);
 
     const detail = (await (await author.get(`/api/submissions/${created.id}`)).json()) as Detail;
     expect(detail.changes.map((x) => [x.id, x.status, x.reason])).toEqual([

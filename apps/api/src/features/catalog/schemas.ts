@@ -50,13 +50,12 @@ export const EntitySchema = z.object({
     creators: z
       .array(z.object({ relationId, creator: SummarySchema, role: z.string(), position: z.number().int().optional() }))
       .optional(),
-    /** The works of a creator, series, property or tag. */
+    /** The works of a series, property or tag. */
     works: z
       .array(
         z.object({
           relationId,
           work: SummarySchema,
-          role: z.string().optional(),
           position: z.number().int().optional(),
         }),
       )
