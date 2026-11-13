@@ -9,8 +9,9 @@ ADR 0002 picked a React + Vite single-page app with TanStack Router and Query an
 web app (plan 2) is a public catalog browser, a submission tool and a moderation queue on the
 API's OpenAPI contract. The constitution pins every version exactly (XII), forbids hand-written
 API types (IX), and wants tests on the real API against PGlite with only external services faked
-(VI; PGlite superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)). The owner's other project, rmd, already runs this stack (rmd ADR 0007), so the versions and
-config carry over; its poster look, fonts and tokens do not.
+(VI; PGlite superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)). The
+owner's other project, rmd, already runs this stack (rmd ADR 0007), so the versions and config
+carry over; its poster look, fonts and tokens do not.
 
 ## Decision
 
@@ -177,8 +178,8 @@ dotted leader, running from an entry's title to its details ("Spirited Away ··
 ## Consequences
 
 - Web tests exercise the real routes, rules and database, so an API change that breaks a screen
-  fails the web suite. Each test boots PGlite and runs the migrations, under a second per test (PGlite
-  superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)).
+  fails the web suite. Each test boots PGlite and runs the migrations, under a second per test
+  (PGlite superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)).
 - The web package compiles API source through `@amdb/api/testing`, so the web typecheck also
   covers the API's test helper.
 - shadcn components are copied code; updating one means re-running the pinned CLI and

@@ -40,8 +40,8 @@ pnpm --filter @amdb/web dev      # http://localhost:5173, proxies /api to the AP
 
 Port 5173 is fixed (`strictPort`): it must match `WEB_ORIGIN`, the origin Better Auth trusts.
 
-Web tests run the real API in process on Postgres in Docker (`apps/web/test/harness.tsx`); only Better Auth's
-browser client is stubbed. ADR 0004 explains why.
+Web tests run the real API in process on Postgres in Docker (`apps/web/test/harness.tsx`); only
+Better Auth's browser client is stubbed. ADR 0004 explains why.
 
 ## Checks
 
@@ -77,8 +77,9 @@ pnpm --filter @amdb/shared gen:api
 ```
 
 API and web tests run against Postgres 18 in Docker (the `postgres-test` service, started
-automatically), each test in its own copy of a migrated template. Set `TEST_DATABASE_URL` to use
-another server.
+automatically), each test in its own copy of a migrated template. Set `TEST_DATABASE_URL` to use another server.
+It must be a server URL with no database path, running Postgres 18 with the libc provider and
+`en_US.utf8`.
 
 ## Deploy
 
