@@ -191,34 +191,41 @@ never given a wikidata id, is adopted rather than duplicated when it is the only
 same subtype and number (or, for an unnumbered part, the same title): it gets the wikidata id and
 nothing else changes. That never happens for a QID a moderator removed from any entity.
 
-Step 1, the dry run. It reads the database and Wikidata, writes nothing and starts no run, so it
-needs `DATABASE_URL`. Connecting runs pending migrations, so it only reads a database that is
-already migrated, as production's is:
-
-```sh
-railway ssh --service app -- sh -c 'cd /app/apps/api && pnpm import:wikidata --parts --dry-run --limit N'
-```
-
-It prints `{ dryRun, parts, shows, partsFound, partsByClass, placed, partsUnplaced, partsHeldAsRoot,
-creditsSkipped }`. Check `partsByClass`: a subclass with a large count that isn't really a season or
-an episode should be caught here.
-
-Step 2, the bytes per part. Run a real `--parts` run into a local database that holds shows (imported
+Step 1, the bytes per part. Run a real `--parts` run into a local database that holds shows (imported
 as in §2), and read `bytesPerPart` in its stats:
 
 ```sh
 DATABASE_URL=postgres://localhost/amdb_seed pnpm --filter @amdb/api import:wikidata --parts --limit 20
 ```
 
-Step 3, the projection. The current size plus about 211,000 × `bytesPerPart` must stay under the
+A local database holds few creators, so most episode credits are skipped there (`creditsSkipped`)
+and this figure leaves their rows out. Step 3 measures them.
+
+Step 2, the projection. The current size plus about 211,000 × `bytesPerPart` must stay under the
 3.5 GB cap. If it doesn't, grow the volume first (§5).
 
-Step 4, with the owner's go-ahead, run it detached, as in §3:
+Step 3, with the owner's go-ahead, a first production run of a couple hundred shows, detached as
+in §3:
 
 ```sh
-railway ssh --service app -- sh -c 'cd /app/apps/api && nohup pnpm import:wikidata --parts --limit N > /tmp/import.log 2>&1 < /dev/null &'
+railway ssh --service app -- sh -c 'cd /app/apps/api && nohup pnpm import:wikidata --parts --limit 200 > /tmp/import.log 2>&1 < /dev/null &'
 railway ssh --service app -- tail -n 3 /tmp/import.log
 ```
+
+When it finishes, check `partsByClass`: a subclass with a large count that isn't really a season or
+an episode shows up here, before the rest of the shows bring more of it. Redo the projection with
+this run's `bytesPerPart`, which now includes the credits, and look at a few of its shows' seasons
+and episodes, and a creator credited on them, in the app.
+
+Step 4, with the owner's go-ahead, the rest: the same command with a `--limit` above the number of
+shows AMDB holds (the default is 1,000). It starts again from the first show; the parts step 3 added
+count as `partsPresent`.
+
+The dry run, `--parts --dry-run --limit N`, reads the database and Wikidata, writes nothing and
+starts no run, and prints `{ dryRun, parts, shows, partsFound, partsByClass, placed, partsUnplaced,
+partsHeldAsRoot, creditsSkipped }`. It fetches every part as a real run does, so it costs about as
+much Wikidata time; step 3 gives the same class check with real stats. It needs `DATABASE_URL`, and
+connecting runs pending migrations, so point it only at an already-migrated database.
 
 Read the stats: `candidates` (shows considered), `shows` (those Wikidata lists any part for),
 `partsFound` (seasons and episodes discovered) and `partsByClass` (the same by class QID: the base
