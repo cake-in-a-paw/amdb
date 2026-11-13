@@ -55,9 +55,11 @@ long as it is today, while every episode credit can still be found from that row
 ## Decided
 
 - **Grouping key is the root work.** A part's root is the top of its live `work_part` chain
-  (episode → season → show, or episode → show). A part whose chain is broken (an orphan part, or
-  a part under a removed show) is its own row, so its credit never disappears. *Cost if wrong:*
-  an orphan episode shows as a row of its own until someone attaches it.
+  (episode → season → show, or episode → show), climbed whatever state each parent is in. An
+  orphan part (one with no live parent link) is its own row, so its credit never disappears. A
+  part under a removed show still groups under that show, whose row is marked removed (see
+  "Which credits count"). *Cost if wrong:* an orphan episode shows as a row of its own until
+  someone attaches it.
 - **One row per root for every work, films included** (my call). A creator who directed and wrote
   a film gets one row, "director, writer", instead of two. That keeps films and shows the same
   shape. *Cost if wrong:* the list reads differently for films than today; easy to split back.
@@ -94,15 +96,18 @@ long as it is today, while every episode credit can still be found from that row
 - **API** (my call on the field names):
   - The creator entity view gets `relations.credits` in place of `relations.works`. Series,
     property and tag pages keep `relations.works` as it is.
-  - Each `credits` entry is `{ work: Summary, roles: string[], parts: Record<Subtype, number> }`.
-    `parts` maps each part subtype under that root to how many of them the creator is credited
-    on, and is empty when there are none.
+  - Each `credits` entry is
+    `{ work: Summary, removed: boolean, roles: string[], parts: Record<Subtype, number> }`.
+    `removed` is true for a root taken down while its credited parts stay listed. `parts` maps
+    each part subtype under that root to how many of them the creator is credited on, and is
+    empty when there are none.
   - The web's `list-page` gets a creator branch that reads `credits`. Regenerate the OpenAPI
     snapshot and client types.
   - A new paged endpoint returns one creator's credits at or under one root work, in the focused
     view's order. Each item has the credited work's summary, including its `part` label data, and
     the creator's roles on it. Unknown or merged ids behave like the parts endpoint (404, 410,
-    redirect).
+    redirect). Built as `GET /api/entities/{id}/credits/{workId}`, whose response is
+    `{ under: { work, removed }, items: { work, roles }[], nextCursor }`.
 - **Built in SQL, bounded.** Grouping and counting happen in the database, so building a studio's
   page never reads its part credits one by one. TV trees are at most two levels deep under a show.
 
@@ -129,3 +134,5 @@ long as it is today, while every episode credit can still be found from that row
   of them, because the depth-first parts order spans two tree levels. That's bounded by one show's
   size: at most a few thousand rows for the longest-running shows. If a show ever holds far more,
   move the order into SQL.
+- `creditsAmong` binds one parameter per work in the show's subtree, so a show above about 65,000
+  parts would hit node-postgres's 65,535-parameter limit.
