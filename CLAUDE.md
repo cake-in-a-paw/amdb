@@ -85,6 +85,20 @@ How the layers connect:
 - Shared infrastructure lives in `src/platform/` and knows nothing about features.
 - `createApp(deps)` wires everything, and entry files only wire.
 
+Kinds: when a feature's rules vary by a value from a shared value list (a media type, an import
+source), and three or more values have rules of their own (VII), each such value is a kind.
+
+- Each kind lives in `features/<feature>/kinds/<kind>/` and implements one interface the feature
+  declares. The core reaches a kind through one table keyed by the value list and never compares
+  against a kind's value: `mediaType === 'book'` outside its kind is a defect, in any feature.
+  Another feature that needs a kind's rule asks the owning feature's service.
+- Subtypes belong to their kind (season and episode to film and TV). What kinds share lives once
+  in the core or in a module beside the kinds that share it, never in a copy.
+- Below three, inline checks are allowed. The change that adds the third value first moves the
+  existing checks into kinds.
+- An entity kind's switch that only picks its table and columns isn't a kind's rule.
+- The web app mirrors the split: one module per kind, behind the same keyed table.
+
 ### IX. Types and Schemas Are the Contract
 
 - TypeScript strict with `noUncheckedIndexedAccess`. Every `any`, cast or `@ts-expect-error`, and
@@ -145,4 +159,4 @@ While the pull-request rule is relaxed, an amendment still needs its ADR and ver
 not the approval. The version bump is MAJOR to remove or redefine a principle, MINOR to add one,
 PATCH to clarify.
 
-**Version**: 0.2.0 (proposed) | **Ratified**: — | **Last Amended**: 2026-11-08
+**Version**: 0.3.0 (proposed) | **Ratified**: — | **Last Amended**: 2026-11-13
