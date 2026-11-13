@@ -127,7 +127,7 @@ it('a pending update to the loser, approved after the merge, changes the winner'
 });
 
 it('reverting a merge restores both entities and their relations', async () => {
-  const { t, author, mod, get, entity, creditedWorks, creditIds, twoCreators } = await setup();
+  const { t, author, mod, get, entity, creditIds, twoCreators } = await setup();
   try {
     const { winner, loser, arrival, sicario } = await twoCreators();
     // Both creators also direct a shared work: the loser's duplicate is dropped by the merge.
@@ -139,7 +139,8 @@ it('reverting a merge restores both entities and their relations', async () => {
     expect(before.loser).toHaveLength(2);
 
     const merged = await publish(author, mod, [merge('creator', loser, winner)]);
-    expect(await creditedWorks(winner)).toHaveLength(3);
+    // Three credit relations, not four: the loser's duplicate Dune credit was dropped.
+    expect(await creditIds(winner, all)).toHaveLength(3);
     expect((await get(loser)).status).toBe(308);
 
     const res = await mod.post(`/api/changes/${merged.changes[0]!.id}/revert`);

@@ -111,24 +111,29 @@ export function catalogRepository(db: DbOrTx) {
         rooted as (
           select root.root_id, credit.work_id, credit.role, credit.ord
           from credit join root on root.work_id = credit.work_id
+        ),
+        grouped as (
+          select root_id, array_agg(distinct role) as roles, min(ord) as ord from rooted group by root_id
+        ),
+        -- One pass over every root's credited parts, not a rescan of rooted per root.
+        part_counts as (
+          select root_id, json_agg(json_build_object('subtype', subtype, 'n', n)) as parts
+          from (
+            select p.root_id, w.subtype, count(distinct p.work_id) as n
+            from rooted p join ${works} w on w.entity_id = p.work_id
+            where p.work_id <> p.root_id and w.subtype is not null
+            group by p.root_id, w.subtype
+          ) x
+          group by root_id
         )
         select
           g.root_id as "rootId",
           exists (select 1 from ${entities} where ${entities.id} = g.root_id and ${listed()}) as "rootListed",
-          array_agg(distinct g.role) as roles,
-          coalesce(
-            (select json_agg(json_build_object('subtype', x.subtype, 'n', x.n))
-             from (
-               select w.subtype, count(distinct p.work_id) as n
-               from rooted p join ${works} w on w.entity_id = p.work_id
-               where p.root_id = g.root_id and p.work_id <> p.root_id and w.subtype is not null
-               group by w.subtype
-             ) x),
-            '[]'::json
-          ) as parts
-        from rooted g
-        group by g.root_id
-        order by min(g.ord)
+          g.roles,
+          coalesce(k.parts, '[]'::json) as parts
+        from grouped g
+        left join part_counts k on k.root_id = g.root_id
+        order by g.ord
       `);
       // `execute` returns the driver's raw result; both PGlite and node-postgres put rows in `rows`,
       // with these aliased columns. Counts sit inside JSON, so they arrive as numbers on both.
