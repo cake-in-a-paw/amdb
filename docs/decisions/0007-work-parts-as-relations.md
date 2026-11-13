@@ -28,7 +28,8 @@ the `relations_type_columns` check gains a `work_part` arm.
 
 ## Consequences
 
-Parts reuse revisions, history and revert. Walking a tree takes a recursive query over live
-`work_part` rows, which the partial indexes serve. Parts are told apart from roots by subtype, so
+Parts reuse revisions, history and revert. Walking up a tree reads live `work_part` rows one
+level per query, batched across the works being read and bounded by the tree's depth (three
+levels today); the partial indexes serve each level. Parts are told apart from roots by subtype, so
 orphans stay out of default listings. New media types add rows to `PART_OF`. Revisit if trees
-deepen enough that the recursive read is slow.
+deepen enough that the walk takes too many round trips.
