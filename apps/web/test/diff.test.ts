@@ -57,3 +57,35 @@ test('diff shows lists', () => {
   expect(valueText(['A', 'B'])).toBe('A, B');
   expect(valueText([])).toBe('cleared');
 });
+
+test('an edit removes relations before it updates fields, and adds them after', () => {
+  const season = { id: '00000000-0000-4000-8000-000000000002', title: 'Season 1' };
+  const show = { id: '00000000-0000-4000-8000-000000000004', title: 'The Show' };
+  // Only what formFromEntity reads, as above.
+  const entity = {
+    id: '00000000-0000-4000-8000-000000000001',
+    kind: 'work',
+    fields: { mediaType: 'film_tv', subtype: 'episode', title: 'Pilot' },
+    relations: { parent: { relationId: '00000000-0000-4000-8000-000000000003', work: season, position: 1 } },
+  } as unknown as EntityView;
+  const form = formFromEntity(entity);
+  const asMovie = { ...form.fields, subtype: 'movie' };
+
+  // Detached and made a movie: the unrelate applies first, so the update never meets the season.
+  expect(buildEdit(entity, { ...form, fields: asMovie, parent: [] })).toEqual([
+    { op: 'unrelate', relationId: '00000000-0000-4000-8000-000000000003' },
+    { op: 'update', kind: 'work', entityId: entity.id, fields: { subtype: 'movie' } },
+  ]);
+  // Moved under the show and renamed: unrelate, then update, then relate.
+  expect(
+    buildEdit(entity, {
+      ...form,
+      fields: { ...form.fields, title: 'The Pilot' },
+      parent: [{ entity: show, position: '1' }],
+    }),
+  ).toEqual([
+    { op: 'unrelate', relationId: '00000000-0000-4000-8000-000000000003' },
+    { op: 'update', kind: 'work', entityId: entity.id, fields: { title: 'The Pilot' } },
+    { op: 'relate', type: 'work_part', from: { id: show.id }, to: { id: entity.id }, data: { position: 1 } },
+  ]);
+});

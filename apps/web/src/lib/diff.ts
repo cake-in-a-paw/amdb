@@ -51,8 +51,8 @@ function rowChanges<T extends { relationId?: string | undefined }>(
 }
 
 /**
- * What the form changes about `entity`, as submission changes: one `update` carrying only the
- * changed fields (none if no field changed), an `unrelate` for each relation taken away, and the
+ * What the form changes about `entity`, as submission changes: an `unrelate` for each relation
+ * taken away, one `update` carrying only the changed fields (none if no field changed), and the
  * `create`s and `relate`s for each one added. Empty when the form matches the entry.
  */
 export function buildEdit(entity: EntityView, form: EntryForm): ChangeInput[] {
@@ -97,9 +97,11 @@ export function buildEdit(entity: EntityView, form: EntryForm): ChangeInput[] {
     externalIds: ids.added,
     parent: parent.added,
   };
+  // Unrelates first and relates last, applied in this order: a part detached and retyped, or
+  // retyped and attached, never meets a tree its new subtype doesn't fit.
   return [
-    ...changes,
     ...removed.map((relationId): ChangeInput => ({ op: 'unrelate', relationId })),
+    ...changes,
     ...relationChanges(added, { id: entity.id }),
   ];
 }

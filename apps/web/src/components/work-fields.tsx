@@ -286,7 +286,9 @@ function WorkRelations({
                 >
                   <input
                     {...fieldProps(`parent.${i}.position`, errors)}
-                    type="number"
+                    // Text, not number: a number input reports bad input such as "1e" as blank, which
+                    // would erase the part's number instead of being refused.
+                    type="text"
                     inputMode="numeric"
                     value={p.position}
                     onChange={(e) => set({ parent: update(value.parent, i, { position: e.target.value }) })}

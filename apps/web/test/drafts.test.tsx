@@ -433,5 +433,5 @@ test('an old edit draft without parent loads, keeping the edit and the live pare
   expect(await screen.findByLabelText('Title')).toHaveValue('Pilot (edited)');
   const part = screen.getByRole('group', { name: 'Part of' });
   expect(within(part).getByText('Breaking Bad')).toBeInTheDocument();
-  expect(within(part).getByLabelText(/^Number/)).toHaveValue(1);
+  expect(within(part).getByLabelText(/^Number/)).toHaveValue('1');
 });

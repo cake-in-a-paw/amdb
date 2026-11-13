@@ -797,7 +797,7 @@ test('edit renumbers a part', async () => {
   const part = screen.getByRole('group', { name: 'Part of' });
   expect(within(part).getByText('Breaking Bad Season 1')).toBeInTheDocument();
   const number = within(part).getByLabelText(/^Number/);
-  expect(number).toHaveValue(3);
+  expect(number).toHaveValue('3');
   await t.user.clear(number);
   await t.user.type(number, '4');
 
@@ -805,6 +805,23 @@ test('edit renumbers a part', async () => {
     { op: 'unrelate', relationId },
     { op: 'relate', type: 'work_part', from: { id: t.seeded.s1 }, to: { id }, data: { position: 4 } },
   ]);
+});
+
+test('a part number that isn’t a whole number is refused, not dropped', async () => {
+  const t = await renderApp('/', { as: 'contributor', seed: tree });
+  await editPart(t, 'pilot');
+  const posts = watchSubmissionBodies(t);
+
+  const number = within(screen.getByRole('group', { name: 'Part of' })).getByLabelText(/^Number/);
+  await t.user.clear(number);
+  await t.user.type(number, '1e');
+  expect(number).toHaveValue('1e');
+  await t.user.click(screen.getByLabelText(CC0));
+  await t.user.click(screen.getByRole('button', { name: 'Submit for review' }));
+
+  expect(await screen.findByText('Use a whole number from 0 to 2147483647.')).toBeInTheDocument();
+  expect(number).toHaveAttribute('aria-invalid', 'true');
+  expect(await posts()).toHaveLength(0);
 });
 
 test('edit moves a part', async () => {
