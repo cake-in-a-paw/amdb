@@ -13,21 +13,22 @@ recorded in `docs/decisions/`.
   - `src/app.ts` wires everything; `src/server.ts` starts it.
 - `apps/web`: the web app (React, Vite, TanStack Router and Query, Tailwind, shadcn/ui).
   - `src/routes/`: file-based routes; `src/routeTree.gen.ts` is generated and committed.
-  - `test/harness.tsx`: renders the app on the real API, in process on PGlite.
+  - `test/harness.tsx`: renders the app on the real API, in process, on a per-test Postgres database.
 - `packages/shared`: zod value lists shared by the API and the web app, and the typed API client.
 
 ## Run the API locally
 
-Requires Node 24 and pnpm 10 (`corepack enable`).
+Requires Node 24, pnpm 10 (`corepack enable`) and Docker.
 
 ```bash
 pnpm install
 cp .env.example apps/api/.env
+pnpm db:up                       # starts Postgres in Docker
 pnpm --filter @amdb/api dev      # http://localhost:3000/api/health
 ```
 
-`DATABASE_URL=pglite:.pglite` keeps an embedded Postgres in `apps/api/.pglite/`, so no database
-install is needed. Point it at a real Postgres URL to use one instead. Migrations run on startup.
+`pnpm db:up` starts the `postgres-dev` service from `compose.yaml` (port 55443, data in the Docker
+volume `amdb-dev-data`), which `.env.example` points `DATABASE_URL` at. Migrations run on startup.
 
 ## Run the web app locally
 
@@ -39,7 +40,7 @@ pnpm --filter @amdb/web dev      # http://localhost:5173, proxies /api to the AP
 
 Port 5173 is fixed (`strictPort`): it must match `WEB_ORIGIN`, the origin Better Auth trusts.
 
-Web tests run the real API in process on PGlite (`apps/web/test/harness.tsx`); only Better Auth's
+Web tests run the real API in process on Postgres in Docker (`apps/web/test/harness.tsx`); only Better Auth's
 browser client is stubbed. ADR 0004 explains why.
 
 ## Checks
@@ -75,7 +76,9 @@ snapshot, then regenerate `schema.ts` and commit both together (a drift test fai
 pnpm --filter @amdb/shared gen:api
 ```
 
-API tests run against an in-memory PGlite database with the real migrations.
+API and web tests run against Postgres 18 in Docker (the `postgres-test` service, started
+automatically), each test in its own copy of a migrated template. Set `TEST_DATABASE_URL` to use
+another server.
 
 ## Deploy
 

@@ -51,7 +51,8 @@ served, never a separate pipeline.
 
 ### VI. Tests Run Against Real Postgres
 
-- Tests drive the HTTP API against PGlite with the real migrations.
+- Tests drive the HTTP API against Postgres in Docker, the same major version and locale as
+  production, with the real migrations; each test gets its own database.
 - Only external services (data sources, OAuth providers) are faked, through injected
   dependencies. Modules are never mocked.
 - A failing test is fixed by fixing the code, or by changing the expectation with the reason in
@@ -159,4 +160,4 @@ While the pull-request rule is relaxed, an amendment still needs its ADR and ver
 not the approval. The version bump is MAJOR to remove or redefine a principle, MINOR to add one,
 PATCH to clarify.
 
-**Version**: 0.3.0 (proposed) | **Ratified**: — | **Last Amended**: 2026-11-13
+**Version**: 0.4.0 (proposed) | **Ratified**: — | **Last Amended**: 2026-11-13

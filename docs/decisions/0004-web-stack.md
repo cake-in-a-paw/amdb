@@ -1,6 +1,6 @@
 # 0004. Web stack
 
-- **Status:** proposed
+- **Status:** proposed, in part superseded by 0009 (the test database)
 - **Date:** 2026-11-03
 
 ## Context
@@ -9,7 +9,7 @@ ADR 0002 picked a React + Vite single-page app with TanStack Router and Query an
 web app (plan 2) is a public catalog browser, a submission tool and a moderation queue on the
 API's OpenAPI contract. The constitution pins every version exactly (XII), forbids hand-written
 API types (IX), and wants tests on the real API against PGlite with only external services faked
-(VI). The owner's other project, rmd, already runs this stack (rmd ADR 0007), so the versions and
+(VI; PGlite superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)). The owner's other project, rmd, already runs this stack (rmd ADR 0007), so the versions and
 config carry over; its poster look, fonts and tokens do not.
 
 ## Decision
@@ -72,7 +72,7 @@ from `WEB_DIST_DIR` with an SPA fallback (plan 2, Task 3).
 ### The test harness: the real API in process
 
 `test/harness.tsx` builds the API's `setupTest()` (a fresh in-memory PGlite with the real
-migrations) and hands `app.request` to `createApiClient` as its `fetch`, with base URL
+migrations; superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)) and hands `app.request` to `createApiClient` as its `fetch`, with base URL
 `http://amdb.test`. A shared `session` object holds who is signed in: the client sends
 `x-test-user` from it on every request, and the stub auth client changes it, so the app and the
 API can't disagree. `renderApp(path, { as, seed })` creates the user for `as`, runs `seed` before
@@ -177,7 +177,8 @@ dotted leader, running from an entry's title to its details ("Spirited Away ··
 ## Consequences
 
 - Web tests exercise the real routes, rules and database, so an API change that breaks a screen
-  fails the web suite. Each test boots PGlite and runs the migrations, under a second per test.
+  fails the web suite. Each test boots PGlite and runs the migrations, under a second per test (PGlite
+  superseded by [0009](0009-postgres-in-docker-for-tests-and-local-dev.md)).
 - The web package compiles API source through `@amdb/api/testing`, so the web typecheck also
   covers the API's test helper.
 - shadcn components are copied code; updating one means re-running the pinned CLI and

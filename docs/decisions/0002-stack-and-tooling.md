@@ -17,7 +17,8 @@ Same stack as rmd, for the owner's familiarity and shared patterns:
 - **API:** Hono with `@hono/zod-openapi`, so zod schemas give validation, the OpenAPI document,
   and generated client types.
 - **Database:** Postgres through Drizzle (schema in TS, generated migrations), with PGlite for
-  tests and local dev.
+  tests and local dev: superseded by
+  [0009](0009-postgres-in-docker-for-tests-and-local-dev.md).
 - **Auth:** Better Auth in the API.
 - **Web:** a React + Vite single-page app, with TanStack Router and Query, and Tailwind.
 - **Hosting:** Railway.
