@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
+import { sql } from 'drizzle-orm';
 import { expect, test, vi } from 'vitest';
 import { actors, publish, renderApp, seed, type SignedInAs, type TestApi } from './harness';
 
@@ -20,15 +21,13 @@ async function submit(author: ReturnType<TestApi['as']>, changes: unknown[]): Pr
 
 /** Makes a submission look `days` old. The queue's order and ages come from these timestamps. */
 async function backdate(api: TestApi, submissionId: string, days: number) {
-  // The API's db is typed for both drivers; PGlite, which tests use, exposes its client as `$client`.
-  const client = (api.db as unknown as { $client: { query: (sql: string, params: unknown[]) => Promise<unknown> } })
-    .$client;
-  for (const table of ['changes', 'submissions']) {
-    const column = table === 'changes' ? 'submission_id' : 'id';
-    await client.query(`update ${table} set created_at = now() - make_interval(days => $1) where ${column} = $2`, [
-      days,
-      submissionId,
-    ]);
+  for (const [table, column] of [
+    ['changes', 'submission_id'],
+    ['submissions', 'id'],
+  ]) {
+    await api.db.execute(
+      sql`update ${sql.identifier(table!)} set created_at = now() - make_interval(days => ${days}) where ${sql.identifier(column!)} = ${submissionId}`,
+    );
   }
 }
 

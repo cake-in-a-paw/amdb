@@ -8,7 +8,7 @@ afterEach(() => {
   localStorage.clear();
 });
 
-// Each test boots PGlite and runs the migrations before its first render, and the first render in
+// Each test copies a migrated template database before its first render, and the first render in
 // a file cold-loads the route tree; under a parallel full run that can pass Testing Library's 1s
 // default. Waits stop as soon as the condition holds, so a generous ceiling costs nothing.
 configure({ asyncUtilTimeout: 10_000 });

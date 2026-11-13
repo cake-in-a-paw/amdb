@@ -7,7 +7,7 @@ import { openTestDb } from './test-db';
 
 export const authTestEnv = (adminEmails = '') =>
   parseEnv({
-    DATABASE_URL: 'pglite:memory',
+    DATABASE_URL: 'postgres://localhost/unused',
     BETTER_AUTH_SECRET: 'x'.repeat(32),
     BETTER_AUTH_URL: 'http://localhost:3000',
     WEB_ORIGIN: 'http://localhost:5173',

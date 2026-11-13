@@ -10,7 +10,8 @@
     "fmt:check": "prettier --check .",
     "lint": "oxlint --deny-warnings",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test",
+    "db:up": "docker compose up -d --wait postgres-dev",
+    "test": "pnpm -r --parallel test",
     "check": "pnpm fmt:check && pnpm lint && pnpm typecheck && pnpm test",
     "prepare": "husky"
   },

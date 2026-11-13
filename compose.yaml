@@ -19,3 +19,22 @@ services:
       interval: 1s
       timeout: 3s
       retries: 30
+
+  # Local dev server (`pnpm db:up`): normal durability, data kept in a named volume.
+  postgres-dev:
+    image: postgres:18.6
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: amdb
+    ports:
+      - '55443:5432'
+    volumes:
+      - amdb-dev-data:/var/lib/postgresql
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']
+      interval: 1s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  amdb-dev-data:

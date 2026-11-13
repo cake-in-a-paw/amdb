@@ -135,8 +135,8 @@ export function catalogRepository(db: DbOrTx) {
         left join part_counts k on k.root_id = g.root_id
         order by g.ord
       `);
-      // `execute` returns the driver's raw result; both PGlite and node-postgres put rows in `rows`,
-      // with these aliased columns. Counts sit inside JSON, so they arrive as numbers on both.
+      // `execute` returns the driver's raw result, whose `rows` hold these aliased columns. Counts
+      // sit inside JSON, so they arrive as numbers.
       return (
         result as unknown as {
           rows: { rootId: string; rootListed: boolean; roles: string[]; parts: { subtype: Subtype; n: number }[] }[];
@@ -168,7 +168,7 @@ export function catalogRepository(db: DbOrTx) {
         where d.id <> ${workId}
         order by d.id, d.depth
       `);
-      // `execute` returns the driver's raw result; both PGlite and node-postgres put rows in `rows`.
+      // `execute` returns the driver's raw result, whose `rows` hold these aliased columns.
       return (
         result as unknown as {
           rows: {

@@ -503,7 +503,7 @@ describe('the request', () => {
       await s.book({ openlibrary: 'OL7440033M' }),
       await s.book({ openlibrary: 'OL45804W' }),
     ];
-    // Both drivers (PGlite here, node-postgres in production) return `{ rows }` from execute.
+    // `execute` returns the driver's raw result, whose `rows` hold the selected columns.
     const rows = async <T>(query: ReturnType<typeof sql>) => ((await s.t.db.execute(query)) as { rows: T[] }).rows;
     const counts = async () => {
       const tables = await rows<{ tablename: string }>(

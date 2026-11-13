@@ -87,10 +87,10 @@ export function stubAuth(session: Session): StubAuth {
 
 /**
  * Mounts the real router at `path` (memory history) on the real API, in process on a fresh
- * PGlite: `app.fetch` behind the typed client, so requests take the same path as in production
- * minus the network. Only Better Auth's browser client is stubbed. `seed` runs before the first
- * render, so the first queries see its data. Teardown is registered here, unmounting before the
- * database closes so no query lands on a closed database.
+ * Postgres database: `app.fetch` behind the typed client, so requests take the same path as in
+ * production minus the network. Only Better Auth's browser client is stubbed. `seed` runs before
+ * the first render, so the first queries see its data. Teardown is registered here, unmounting
+ * before the database closes so no query lands on a closed database.
  */
 export async function renderApp<Seeded = undefined>(
   path: string,
