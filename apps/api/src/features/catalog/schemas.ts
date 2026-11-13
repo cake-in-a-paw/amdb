@@ -204,3 +204,22 @@ export const PartsSchema = z.object({
   ),
   nextCursor: z.string().nullable(),
 });
+
+/**
+ * The decoded credits-under cursor: how many items earlier pages held. The order is built in the
+ * service from one show's credits, which are bounded (see the spec's Production Annotations).
+ */
+export const CreditsCursor = z.object({ o: z.number().int().min(0) });
+
+/**
+ * One creator's credits at or under one work: the work's own credit first, then its credited
+ * parts depth-first in parts order, seasons before episodes directly under the show. Each part
+ * carries `work.part`; `under.removed` once the work was taken down, with its stored title.
+ */
+export const CreditsUnderSchema = z.object({
+  under: z.object({ work: SummarySchema, removed: z.boolean() }),
+  items: z.array(z.object({ work: SummarySchema, roles: z.array(z.string()) })),
+  nextCursor: z.string().nullable(),
+});
+
+export const CreditsUnderParam = z.object({ id: z.uuid(), workId: z.uuid() });

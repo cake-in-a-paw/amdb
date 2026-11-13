@@ -1,4 +1,11 @@
-import { CreatorRole, MediaType, normalizeTitle, PART_SUBTYPES, type EntityKind } from '@amdb/shared';
+import {
+  CreatorRole,
+  MediaType,
+  normalizeTitle,
+  PART_SUBTYPES,
+  ZERO_LAST_SUBTYPES,
+  type EntityKind,
+} from '@amdb/shared';
 import type { Db } from '../../platform/db/types';
 import { resolveWinner } from '../../platform/db/merge';
 import { gone, notFound } from '../../platform/http/errors';
@@ -7,6 +14,7 @@ import { catalogRepository } from './repository';
 import {
   type Ancestor,
   type BrowseQuery,
+  CreditsCursor,
   type DuplicatesQuery,
   type EntityView,
   PartsCursor,
@@ -49,6 +57,28 @@ interface ParentLink {
   relationId: string;
   parentId: string;
   position: number | null;
+}
+
+type SubtreeRow = Awaited<ReturnType<ReturnType<typeof catalogRepository>['subtree']>>[number];
+
+/**
+ * Orders sibling parts: seasons first, then as `repository.parts` does (numbered by number, then
+ * unnumbered, then a zero-last subtype numbered 0; ties by release date, title and id).
+ */
+function bySiblingOrder(a: SubtreeRow, b: SubtreeRow): number {
+  const key = (w: SubtreeRow) => [
+    w.subtype === 'season' ? 0 : 1,
+    w.position === null ? 1 : w.position === 0 && w.subtype && ZERO_LAST_SUBTYPES.includes(w.subtype) ? 2 : 0,
+    w.position ?? 0,
+    w.releaseYear ?? 10000,
+    w.releaseMonth ?? 13,
+    w.releaseDay ?? 32,
+  ];
+  const [ka, kb] = [key(a), key(b)];
+  const i = ka.findIndex((x, n) => x !== kb[n]);
+  if (i >= 0) return (ka[i] ?? 0) - (kb[i] ?? 0);
+  const cmp = (x: string, y: string) => (x < y ? -1 : x > y ? 1 : 0);
+  return cmp(a.title, b.title) || cmp(a.id, b.id);
 }
 
 /** The most existing matches, and the most pending ones, a duplicate check lists. */
@@ -331,6 +361,61 @@ export function createCatalogService(db: Db) {
           rows.length > query.limit && last
             ? encodeKeyCursor({ b: last.b, p: last.p, y: last.y, m: last.m, d: last.d, t: last.title, id: last.id })
             : null,
+      };
+    },
+
+    /**
+     * One page of creator `id`'s credits at or under work `workId`: `workId`'s own credit first,
+     * then its credited parts depth-first, each parent directly before its descendants and
+     * siblings by `bySiblingOrder`. An uncredited part has no item, but its credited parts keep
+     * their place. `id` answers like `parts` (404, 410, `{ redirectTo }`); `workId` is 404 unless
+     * a work, follows merges, and may be removed. Anything but a creator has no credits.
+     */
+    async creditsUnder(id: string, workId: string, query: { cursor?: string; limit: number }) {
+      const live = await resolveLive(id);
+      if ('redirectTo' in live) return live;
+      const offset = decodeKeyCursor(query.cursor, CreditsCursor)?.o ?? 0;
+      const rootId = await resolveWinner(db, workId);
+      const root = await repo.findEntity(rootId);
+      // A retracted work is unknown, as in `resolveLive`.
+      if (!root || root.kind !== 'work' || root.retractedByChange) throw notFound();
+      const [rootRow] = await repo.workRows([rootId]);
+      if (!rootRow) throw new Error(`work ${rootId} has no work row`);
+      const under = { work: toSummary({ ...rootRow, kind: 'work' }), removed: rootRow.removed };
+      if (live.entity.kind !== 'creator') return { under, items: [], nextCursor: null };
+
+      // The whole subtree is read and ordered here; one show bounds it (spec, Production Annotations).
+      const tree = await repo.subtree(rootId, MAX_DEPTH);
+      const rolesOf = new Map<string, string[]>();
+      for (const c of await repo.creditsAmong(id, [rootId, ...tree.map((w) => w.id)]))
+        rolesOf.set(c.workId, [...(rolesOf.get(c.workId) ?? []), c.role]);
+      const childrenOf = new Map<string, SubtreeRow[]>();
+      for (const w of tree) childrenOf.set(w.parentId, [...(childrenOf.get(w.parentId) ?? []), w]);
+      // `subtree` puts each work under its nearest link, so this walk is a tree and visits each once.
+      const walk = (parentId: string): string[] =>
+        (childrenOf.get(parentId) ?? []).toSorted(bySiblingOrder).flatMap((w) => [w.id, ...walk(w.id)]);
+      const ordered = [rootId, ...walk(rootId)].filter((x) => rolesOf.has(x));
+
+      const pageIds = ordered.slice(offset, offset + query.limit);
+      const rowOf = new Map((await repo.workRows(pageIds)).map((w) => [w.id, w]));
+      const trees = await ancestry(pageIds.filter((x) => x !== rootId));
+      return {
+        under,
+        items: pageIds.map((itemId) => {
+          const row = rowOf.get(itemId);
+          if (!row) throw new Error(`credited work ${itemId} has no work row`);
+          const work = toSummary({ ...row, kind: 'work' });
+          const t = trees.get(itemId);
+          return {
+            // Every work below the root has a live link; one with no subtype has no part data, as in search.
+            work:
+              t?.link && row.subtype
+                ? { ...work, part: { subtype: row.subtype, ...position(t.link.position), ancestors: t.ancestors } }
+                : work,
+            roles: byRoleOrder(rolesOf.get(itemId) ?? []),
+          };
+        }),
+        nextCursor: offset + query.limit < ordered.length ? encodeKeyCursor({ o: offset + query.limit }) : null,
       };
     },
 

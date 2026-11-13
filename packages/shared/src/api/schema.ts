@@ -2124,6 +2124,161 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/entities/{id}/credits/{workId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: {
+                    cursor?: string;
+                    limit?: number;
+                };
+                header?: never;
+                path: {
+                    id: string;
+                    workId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description A creator's credits at or under one work, in parts order; anything but a creator has none */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            under: {
+                                work: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "work" | "creator" | "series" | "property" | "tag";
+                                    title: string;
+                                    /** @enum {string} */
+                                    mediaType?: "film_tv" | "book";
+                                    releaseYear?: number;
+                                    part?: {
+                                        /** @enum {string} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                        position?: number;
+                                        ancestors: {
+                                            /** Format: uuid */
+                                            id: string;
+                                            title: string;
+                                            /** @enum {string|null} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                            position?: number;
+                                            removed: boolean;
+                                        }[];
+                                    };
+                                };
+                                removed: boolean;
+                            };
+                            items: {
+                                work: {
+                                    /** Format: uuid */
+                                    id: string;
+                                    /** @enum {string} */
+                                    kind: "work" | "creator" | "series" | "property" | "tag";
+                                    title: string;
+                                    /** @enum {string} */
+                                    mediaType?: "film_tv" | "book";
+                                    releaseYear?: number;
+                                    part?: {
+                                        /** @enum {string} */
+                                        subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode";
+                                        position?: number;
+                                        ancestors: {
+                                            /** Format: uuid */
+                                            id: string;
+                                            title: string;
+                                            /** @enum {string|null} */
+                                            subtype: "movie" | "series" | "anime_series" | "anime_film" | "season" | "episode" | null;
+                                            position?: number;
+                                            removed: boolean;
+                                        }[];
+                                    };
+                                };
+                                roles: string[];
+                            }[];
+                            nextCursor: string | null;
+                        };
+                    };
+                };
+                /** @description The creator id was merged into another entity; follow `Location` */
+                308: {
+                    headers: {
+                        Location: string;
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            /** Format: uuid */
+                            redirectTo: string;
+                        };
+                    };
+                };
+                /** @description Invalid query */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Not found: the creator id, or the work */
+                404: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+                /** @description Removed */
+                410: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": {
+                            error: {
+                                code: string;
+                                message: string;
+                                details?: unknown;
+                            };
+                        };
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/search": {
         parameters: {
             query?: never;

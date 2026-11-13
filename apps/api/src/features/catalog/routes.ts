@@ -1,7 +1,10 @@
 import { createRoute, z } from '@hono/zod-openapi';
+import { PageQuery } from '../../platform/http/pagination';
 import { createApi, ErrorSchema, json, RedirectSchema } from '../../platform/http/openapi';
 import {
   BrowseQuery,
+  CreditsUnderParam,
+  CreditsUnderSchema,
   DuplicatesQuery,
   DuplicatesSchema,
   EntityIdParam,
@@ -44,6 +47,25 @@ const partsRoute = createRoute({
   },
 });
 
+const creditsUnderRoute = createRoute({
+  method: 'get',
+  path: '/api/entities/{id}/credits/{workId}',
+  request: { params: CreditsUnderParam, query: z.object(PageQuery) },
+  responses: {
+    200: json(
+      CreditsUnderSchema,
+      "A creator's credits at or under one work, in parts order; anything but a creator has none",
+    ),
+    308: {
+      ...json(RedirectSchema, 'The creator id was merged into another entity; follow `Location`'),
+      headers: z.object({ Location: z.string() }),
+    },
+    400: json(ErrorSchema, 'Invalid query'),
+    404: json(ErrorSchema, 'Not found: the creator id, or the work'),
+    410: json(ErrorSchema, 'Removed'),
+  },
+});
+
 const searchRoute = createRoute({
   method: 'get',
   path: '/api/search',
@@ -80,6 +102,14 @@ export function catalogRoutes(catalog: CatalogService) {
       return c.json(parts, 308, { Location: `/api/entities/${parts.redirectTo}/parts` });
     }
     return c.json(parts, 200);
+  });
+  app.openapi(creditsUnderRoute, async (c) => {
+    const { id, workId } = c.req.valid('param');
+    const credits = await catalog.creditsUnder(id, workId, c.req.valid('query'));
+    if ('redirectTo' in credits) {
+      return c.json(credits, 308, { Location: `/api/entities/${credits.redirectTo}/credits/${workId}` });
+    }
+    return c.json(credits, 200);
   });
   app.openapi(searchRoute, async (c) => c.json(await catalog.search(c.req.valid('query')), 200));
   app.openapi(browseRoute, async (c) => c.json(await catalog.browse(c.req.valid('query')), 200));

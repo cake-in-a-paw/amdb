@@ -5248,6 +5248,428 @@
         }
       }
     },
+    "/api/entities/{id}/credits/{workId}": {
+      "get": {
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A creator's credits at or under one work, in parts order; anything but a creator has none",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "under": {
+                      "type": "object",
+                      "properties": {
+                        "work": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "work",
+                                "creator",
+                                "series",
+                                "property",
+                                "tag"
+                              ]
+                            },
+                            "title": {
+                              "type": "string"
+                            },
+                            "mediaType": {
+                              "type": "string",
+                              "enum": [
+                                "film_tv",
+                                "book"
+                              ]
+                            },
+                            "releaseYear": {
+                              "type": "integer"
+                            },
+                            "part": {
+                              "type": "object",
+                              "properties": {
+                                "subtype": {
+                                  "type": "string",
+                                  "enum": [
+                                    "movie",
+                                    "series",
+                                    "anime_series",
+                                    "anime_film",
+                                    "season",
+                                    "episode"
+                                  ]
+                                },
+                                "position": {
+                                  "type": "integer"
+                                },
+                                "ancestors": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "id": {
+                                        "type": "string",
+                                        "format": "uuid"
+                                      },
+                                      "title": {
+                                        "type": "string"
+                                      },
+                                      "subtype": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "enum": [
+                                          "movie",
+                                          "series",
+                                          "anime_series",
+                                          "anime_film",
+                                          "season",
+                                          "episode",
+                                          null
+                                        ]
+                                      },
+                                      "position": {
+                                        "type": "integer"
+                                      },
+                                      "removed": {
+                                        "type": "boolean"
+                                      }
+                                    },
+                                    "required": [
+                                      "id",
+                                      "title",
+                                      "subtype",
+                                      "removed"
+                                    ]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "subtype",
+                                "ancestors"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "kind",
+                            "title"
+                          ]
+                        },
+                        "removed": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "work",
+                        "removed"
+                      ]
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "work": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid"
+                              },
+                              "kind": {
+                                "type": "string",
+                                "enum": [
+                                  "work",
+                                  "creator",
+                                  "series",
+                                  "property",
+                                  "tag"
+                                ]
+                              },
+                              "title": {
+                                "type": "string"
+                              },
+                              "mediaType": {
+                                "type": "string",
+                                "enum": [
+                                  "film_tv",
+                                  "book"
+                                ]
+                              },
+                              "releaseYear": {
+                                "type": "integer"
+                              },
+                              "part": {
+                                "type": "object",
+                                "properties": {
+                                  "subtype": {
+                                    "type": "string",
+                                    "enum": [
+                                      "movie",
+                                      "series",
+                                      "anime_series",
+                                      "anime_film",
+                                      "season",
+                                      "episode"
+                                    ]
+                                  },
+                                  "position": {
+                                    "type": "integer"
+                                  },
+                                  "ancestors": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "object",
+                                      "properties": {
+                                        "id": {
+                                          "type": "string",
+                                          "format": "uuid"
+                                        },
+                                        "title": {
+                                          "type": "string"
+                                        },
+                                        "subtype": {
+                                          "type": "string",
+                                          "nullable": true,
+                                          "enum": [
+                                            "movie",
+                                            "series",
+                                            "anime_series",
+                                            "anime_film",
+                                            "season",
+                                            "episode",
+                                            null
+                                          ]
+                                        },
+                                        "position": {
+                                          "type": "integer"
+                                        },
+                                        "removed": {
+                                          "type": "boolean"
+                                        }
+                                      },
+                                      "required": [
+                                        "id",
+                                        "title",
+                                        "subtype",
+                                        "removed"
+                                      ]
+                                    }
+                                  }
+                                },
+                                "required": [
+                                  "subtype",
+                                  "ancestors"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "kind",
+                              "title"
+                            ]
+                          },
+                          "roles": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        },
+                        "required": [
+                          "work",
+                          "roles"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": "string",
+                      "nullable": true
+                    }
+                  },
+                  "required": [
+                    "under",
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "308": {
+            "description": "The creator id was merged into another entity; follow `Location`",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "required": true
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "redirectTo": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "required": [
+                    "redirectTo"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found: the creator id, or the work",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "details": {
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/search": {
       "get": {
         "parameters": [

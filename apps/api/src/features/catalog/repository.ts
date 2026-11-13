@@ -131,6 +131,68 @@ export function catalogRepository(db: DbOrTx) {
       ).rows;
     },
 
+    /**
+     * Every work below `workId` through live `work_part` links, at most `maxDepth` levels down,
+     * whatever state each is in, so a removed season still places its listed episodes. Each work
+     * once, under its nearest link, with that link's parent and position and its own sort fields.
+     */
+    async subtree(workId: string, maxDepth: number) {
+      const result = await db.execute(sql`
+        with recursive down(id, parent_id, position, depth) as (
+          select r.to_id, r.from_id, r.position, 1
+          from ${relations} r
+          where r.type = 'work_part' and r.from_id = ${workId} and r.removed_by_change is null
+          union all
+          select r.to_id, r.from_id, r.position, d.depth + 1
+          from down d
+          join ${relations} r on r.type = 'work_part' and r.from_id = d.id and r.removed_by_change is null
+          where d.depth < ${maxDepth}
+        )
+        select distinct on (d.id)
+          d.id, d.parent_id as "parentId", d.position, w.subtype, w.title,
+          w.release_year as "releaseYear", w.release_month as "releaseMonth", w.release_day as "releaseDay"
+        from down d join ${works} w on w.entity_id = d.id
+        where d.id <> ${workId}
+        order by d.id, d.depth
+      `);
+      // `execute` returns the driver's raw result; both PGlite and node-postgres put rows in `rows`.
+      return (
+        result as unknown as {
+          rows: {
+            id: string;
+            parentId: string;
+            position: number | null;
+            subtype: Subtype | null;
+            title: string;
+            releaseYear: number | null;
+            releaseMonth: number | null;
+            releaseDay: number | null;
+          }[];
+        }
+      ).rows;
+    },
+
+    /** The creator's live credits to the listed works among `workIds`, one row per role, oldest first. */
+    async creditsAmong(creatorId: string, workIds: string[]) {
+      if (!workIds.length) return [];
+      const rows = await db
+        .select({ workId: relations.fromId, role: relations.role })
+        .from(relations)
+        .innerJoin(entities, eq(entities.id, relations.fromId))
+        .where(
+          and(
+            eq(relations.type, 'work_creator'),
+            eq(relations.toId, creatorId),
+            inArray(relations.fromId, workIds),
+            isNull(relations.removedByChange),
+            listed(),
+          ),
+        )
+        .orderBy(relations.createdAt, relations.id);
+      // relations_type_columns gives every work_creator both ends and a role; flatMap only narrows the type.
+      return rows.flatMap((r) => (r.workId && r.role ? [{ workId: r.workId, role: r.role }] : []));
+    },
+
     /** Display fields for the works among `ids`, listed or not; `removed` once taken down. */
     async workRows(ids: string[]) {
       if (!ids.length) return [];
