@@ -3,7 +3,7 @@ import { createApp } from '../../src/app';
 import { parseEnv } from '../../src/env';
 import { createBeforeUserCreate } from '../../src/features/users/auth-hooks';
 import { createAuth, getSessionFromAuth } from '../../src/platform/auth/auth';
-import { openDb } from '../../src/platform/db/open';
+import { openTestDb } from './test-db';
 
 export const authTestEnv = (adminEmails = '') =>
   parseEnv({
@@ -21,11 +21,11 @@ export const authTestEnv = (adminEmails = '') =>
   });
 
 /**
- * In-memory database + an app wired like server.ts with real Better Auth. Email delivery is
+ * Per-test Postgres database + an app wired like server.ts with real Better Auth. Email delivery is
  * faked: codes land in `sent`.
  */
 export async function setupAuthTest(opts: { adminEmails?: string } = {}) {
-  const { db, close } = await openDb('pglite:memory');
+  const { db, close } = await openTestDb();
   const env = authTestEnv(opts.adminEmails);
   const sent: { to: string; code: string }[] = [];
   const auth = createAuth(db, env, {

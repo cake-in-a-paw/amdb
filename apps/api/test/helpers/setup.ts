@@ -3,18 +3,18 @@ import { createApp, type AppDeps } from '../../src/app';
 import { ChangeInput } from '../../src/features/changes/schemas';
 import { createChangesService } from '../../src/features/changes/service';
 import { createImportsService } from '../../src/features/imports/service';
-import { openDb } from '../../src/platform/db/open';
 import { users } from '../../src/platform/db/schema';
+import { openTestDb } from './test-db';
 
 /** Who a test request comes from: a signed-in user, an anonymous visitor with a token, or no one. */
 export type Actor = { kind: 'user'; userId: string } | { kind: 'anon'; token: string } | { kind: 'none' };
 
 /**
- * In-memory database + app. Requests authenticate with the `x-test-user` header; an anonymous
+ * Per-test Postgres database + app. Requests authenticate with the `x-test-user` header; an anonymous
  * visitor is identified by `x-amdb-anon`.
  */
 export async function setupTest(opts: Partial<Omit<AppDeps, 'db'>> = {}) {
-  const { db, close } = await openDb('pglite:memory');
+  const { db, close } = await openTestDb();
   const app = createApp({
     db,
     getSession: async (headers) => {

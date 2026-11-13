@@ -1,12 +1,13 @@
 import { eq, sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { openDb, type OpenedDb } from '../src/platform/db/open';
+import type { OpenedDb } from '../src/platform/db/open';
 import { changes, entities, relations, submissions, users, works } from '../src/platform/db/schema';
+import { openTestDb } from './helpers/test-db';
 
 let opened: OpenedDb;
 beforeEach(async () => {
-  opened = await openDb('pglite:memory');
+  opened = await openTestDb();
 });
 afterEach(async () => {
   await opened.close();

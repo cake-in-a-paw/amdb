@@ -186,7 +186,9 @@ test('an unavailable answer is not reused: coming back to the page asks again', 
   const t = await renderApp('/', { seed: seedWorks, art });
   await t.router.navigate({ to: '/entities/$id', params: { id: t.seeded.a } });
   expect(await screen.findByRole('img', { name: 'No cover for Alpha' })).toBeInTheDocument();
-  expect(tmdbCalls('1')).toBe(1);
+  // The placeholder also stands in while the art loads, and a real Postgres round trip is slower than
+  // PGlite was, so the lookup may not have reached TMDB yet; wait for it (still exactly one call).
+  await vi.waitFor(() => expect(tmdbCalls('1')).toBe(1));
 
   await t.router.navigate({ to: '/submit' });
   await vi.waitFor(() => expect(t.router.state.location.pathname).toBe('/submit'));

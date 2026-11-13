@@ -1,0 +1,21 @@
+# One project name for every checkout and worktree, so they all reuse the same containers.
+name: amdb
+
+services:
+  # Throwaway server for the API and web tests: data in memory, durability off. Never point dev at it.
+  postgres-test:
+    image: postgres:18.6
+    environment:
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - '55442:5432'
+    tmpfs:
+      - /var/lib/postgresql:size=2g
+    command: postgres -c fsync=off -c synchronous_commit=off -c full_page_writes=off -c max_connections=300
+    healthcheck:
+      # Over TCP: during init the image runs a socket-only temporary server that a socket probe
+      # would already report as ready.
+      test: ['CMD', 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']
+      interval: 1s
+      timeout: 3s
+      retries: 30
