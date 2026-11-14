@@ -80,7 +80,8 @@ rmd made the same switch (rmd ADR 0013): its API tests went from 1,088 s to 111 
 - Real Postgres exposed one race that PGlite's slower API had hidden: `artwork.test.tsx` now waits
   for the art query to settle as "unavailable" before it leaves the page. No expected sort orders
   changed.
-- CI time on `main`: recorded after the first run.
+- CI time on `main`, after: `pnpm check` took 1 min 33 s and the whole job 1 min 49 s (run
+  43604804887), against about 10 min 20 s before.
 - An interrupted test run leaves its databases on the tmpfs until
   `docker compose -p amdb down postgres-test` clears them.
 - The setup starts `postgres-test` with `--no-recreate`, so one worktree's differing
